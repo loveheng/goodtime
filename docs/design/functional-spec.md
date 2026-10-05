@@ -22,7 +22,7 @@ updated: 2026-10-05
 
 - Housekeeper：日切（wake_time 切割）、日切扫描（missed/作废）、顺延记账（postpone_count）、悬空巡检、晨间 digest（孤儿/悬空两段）
 - 块状态机全量：proposed/confirmed/done/skipped/missed/archived/melted + execution_quality(full/spark)
-- 机械校验全量：填充率 60%（low 电量 25%）、呼吸律 45/15、deep 禁排（low 电量）、和平条款（human/pinned 不可覆盖）、available_free_windows 拒绝返回
+- 机械校验全量：填充率 60%（low 电量 25%）、呼吸律 45/15、deep 禁排（low 电量；火种豁免刻度=is_day_spark 块 ≤15min 且执行内容取 min_viable_action）、和平条款（human/pinned 不可覆盖）、available_free_windows 拒绝返回
 - pinned/source 字段生效；乐观锁冲突回快照
 - 剩余三工具链路联调：`update_settings`（user_rules/填充率上限等可调项）、`update_fixed_slots`（一周节奏模板改）、`adjust_blocks`（AI 建/挪/缩/删单块——火车行程入口、熔断同效动作；受和平条款门控）
 - **验收**：故意打乱一天→次晨遗留正确呈现；AI 撞 human 块被拒且收到空窗列表
@@ -38,7 +38,7 @@ updated: 2026-10-05
 ### M4 现实接口（物理拼图）
 
 - 日历只读投影（device_calendar，内存硬墙）、settings.exceptions 例外日（旅行模式：fixed_slots 挂起+填充率 35%）
-- today_energy 三档、Landing Gear 依时态抽屉、逆向记账（事实通道）、换乘、四形态渲染、三手势、放工守卫、三日水位线、简易周视图（只读 7 列、复用 BlockRenderer、点块跳日视图）
+- today_energy 三档（含电量晚点选触发当日水流降档重算）、Landing Gear 依时态抽屉、逆向记账（事实通道）、换乘、四形态渲染、三手势、放工守卫、三日水位线、简易周视图（只读 7 列、复用 BlockRenderer、点块跳日视图）
 - 大脑倾倒 SOP 联调、JSON 导出、mDNS 自动发现（bridge+NSD）
 - **验收**：真机全场景走查（日常/混乱/低电量/旅途四天型）
 
