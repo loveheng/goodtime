@@ -37,7 +37,7 @@ updated: 2026-10-05
 
 ### M4 现实接口（物理拼图）
 
-- 日历只读投影（device_calendar，内存硬墙）、settings.exceptions 例外日（旅行模式：fixed_slots 挂起+填充率 35%；夜块走手动/记账通道，睡眠包络不漂移）
+- 日历只读投影（device_calendar，内存硬墙）、天气投影（无 key JSON 源、内存 TTL 缓存、get_schedule 返回体搭载、settings.weather_location 手动城市）、settings.exceptions 例外日（旅行模式：fixed_slots 挂起+填充率 35%；夜块走手动/记账通道，睡眠包络不漂移）
 - today_energy 三档（含电量晚点选触发当日水流降档重算）、Landing Gear 依时态抽屉、逆向记账（事实通道）、换乘、四形态渲染、三手势、放工守卫、三日水位线、简易周视图（只读 7 列、复用 BlockRenderer、点块跳日视图）
 - 大脑倾倒 SOP 联调、JSON 导出、mDNS 自动发现（bridge+NSD）
 - **验收**：真机全场景走查（日常/混乱/低电量/旅途四天型）
@@ -96,5 +96,5 @@ updated: 2026-10-05
 
 - 本地优先：全功能离线可用；MCP 仅 LAN
 - 性能：日视图滚动 60fps；list 查询走派生视图 SQL；启动 <2s
-- 权限：日历只读（失败静默降级）；通知 V1.5 才申请
+- 权限：日历只读（失败静默降级）；天气无 key JSON 源+手动城市，零定位权限；通知 V1.5 才申请
 - 数据：导出 JSON 全量；无任何遥测
