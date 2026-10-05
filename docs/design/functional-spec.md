@@ -32,7 +32,7 @@ updated: 2026-10-05
 - get_history 校准指标全量（膨胀系数/时段热力/耐受阈值/深潜净值/能量回血）
 - 分级确认（火种突出+Routine 折叠）、双轨仪表盘、安全线徽章（含漫游态见证式判定）、能量补给带/自由流动区派生渲染、中性文案规范落地
 - 庆祝块全链路（reward_spec 收集→香槟金渲染→豁免→能量回血）、Clean Slate 静默保护、冷藏池
-- 护航式提案叙事 + protection_manifesto + playbook 初版五文件（clarify/decompose/schedule/govern/dump，含多人假设标注、叙事双语气）+ 金样本评审跑通（#1 有个考试 + #2 全家爬山）
+- 护航式提案叙事 + protection_manifesto + playbook 初版五文件（clarify/decompose/schedule/govern/dump，含多人假设标注、叙事双语气、犒赏付出型限定）+ 金样本评审跑通（#1 有个考试 + #2 全家爬山 + #3 约小李逛商场）
 - **验收**：金样本「有个考试」全流程 + 断流 3 日后 recovery 握手体验
 
 ### M4 现实接口（物理拼图）
