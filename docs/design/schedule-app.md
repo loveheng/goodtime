@@ -107,7 +107,7 @@ flowchart LR
 
 **车上 5 小时想利用 → 分解，不嵌套**：火车块可被替换为「赶车/阅读/处理邮件」若干段，坐着能干的事就是普通 plans，零新机制（明确否决嵌套子块结构）。
 
-**系统日历只读投影（七轮评审拍板）**：经 `device_calendar`（拾贝 PRD V3 同款插件，经验同源）读取当天/明天的系统日历事件，**不入 SQLite，纯内存投影**为 `source='human'、pinned` 的阻隔块——校验引擎视其为不可穿透硬墙，AI 排程自动绕行；用户在外部日历（飞书/Outlook/Google）被拉会时拾光自动感知，免除双重录入。重启/日变更高即重读，零存储污染；日权限申请失败→静默降级为无投影（不影响其余功能）。
+**系统日历只读投影（七轮评审拍板）**：经 `device_calendar`（拾贝 PRD V3 同源；**拾贝无实装代码**，M4 按新集成排期——见 §12 盘点）读取当天/明天的系统日历事件，**不入 SQLite，纯内存投影**为 `source='human'、pinned` 的阻隔块——校验引擎视其为不可穿透硬墙，AI 排程自动绕行；用户在外部日历（飞书/Outlook/Google）被拉会时拾光自动感知，免除双重录入。重启/日变更高即重读，零存储污染；日权限申请失败→静默降级为无投影（不影响其余功能）。
 
 ### 派生状态清单（能算出来的绝不存）
 
@@ -343,7 +343,7 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | 反压迫机制 | get_history 三组校准指标（膨胀系数/时段热力/耐受阈值）+ 呼吸律（>45min 块后 15min 缓冲）+ 时长乘数补正 + 提案附理由（2026-10-05 拍板） |
 | user_rules | settings 新增可空偏好文本，AI 经 update_settings 维护；优先级高于统计推断（2026-10-05 拍板） |
 | 断流复苏 | Clean Slate：Housekeeper 静默保护（archived 中性态，不进聚合）+ AI recovery SOP（禁盘问/一键赦免/极简重启）+ 断流定义=连续 3 作息日无交互或 missed≥5（2026-10-05 拍板） |
-| 网络配对 | mDNS 自动发现（shiguang.local，bridge+Android NSD）+ 设置页状态灯/一键唤醒；手动 IP 兜底（2026-10-05 拍板） |
+| 网络配对 | mDNS 自动发现（shiguang.local，bridge+Android NSD）+ 设置页状态灯/一键唤醒；手动 IP 兜底（2026-10-05 拍板）；拾贝零 mDNS 实装代码，新集成（§12 盘点） |
 | 确认分级 | 提案确认分级折叠：仅突出 Q2 任务+理由+缓冲，Routine 折叠防盲签（2026-10-05 拍板） |
 | 心流保护 | 打卡不实时强制：宽容视窗至次 wake_time+晚间批量补勾；「沉浸中」复用顺延微调（2026-10-05 拍板） |
 | 现实熔断 | 日程页一键：未开始 AI 块整体撤回愿望池（无负罪感标记）或暂缓 2h；human 块不动；命令层原子执行（2026-10-05 拍板） |
@@ -381,16 +381,27 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | 多人假设标注 | 拾光单用户——第三人日程 AI 永不可见，凡提案涉他人时间，理由区显式标注「该空闲系用户口述」+建议临行前口头复核；家人可用性通道=澄清问答/共享日历投影/手工 human 块；零新机制（推演补拍 2026-10-05） |
 | 内黑话外白话 | 界面文案零黑话：火种→今日核心、坍缩→5 分钟启动版、融化→暂缓并收回清单、熔断→遇到突发情况、换乘→换件轻松的、Landing Gear→马上开始、悬空→已停滞 N 天、Clean Slate→轻装重启、例外日→假期与出行、冷藏→收起的旧想法；概念词保留于代码与 playbook（本档内部章节不变）；词汇表 SSOT=ui-spec §0.4，新增文案先入表再上屏（2026-10-05 拍板） |
 
-## 12. 复用清单（自拾贝 goodshare）
+## 12. 复用清单（自拾贝 goodshare，2026-10-05 全仓盘点校准）
 
 | 资产 | 方式 |
 |---|---|
-| `lib/mcp/` jsonrpc + mcp_server 框架层（~215 行） | 原样搬，换 repo 类型，实装 prompts |
-| `mcp-bridge/stdio-bridge.mjs` | 原样 |
-| 命令层纪律（命令入口/CommandResult 回快照/FIFO 锁/乐观锁/防呆下沉） | 模式照抄，代码按新域重写 |
-| `quick_note_bar` 快记模式 / `mcp_page` 设置页 | 抄改 |
-| 前台保活 + AiQueueService 基建 | 管家复用 |
-| dev-init skill | 新仓库 context/ 记忆框架初始化 |
+| `lib/mcp/` jsonrpc(36 行) + mcp_server(178 行) 框架层 | 原样搬，换 repo 类型，实装 prompts |
+| `lib/mcp/tools.dart`（1142 行） | **仅抄注册模式**（schema 注册/错误码/hint 传递），内容按拾光十工具重写 |
+| `mcp-bridge/stdio-bridge.mjs`（108 行）+ `e2e-check.mjs`（111 行） | 原样搬（bridge 侧 mDNS 除外，见预期修正②） |
+| `lib/action/commands.dart`（1410 行）：CommandActor 传输层注入防载荷伪造、机器可读拒绝码+hint（AI 读错自纠）、CommandResult 回快照、FIFO 锁、乐观锁、防呆下沉 | Human-AI Parity 原版蓝本，模式照抄，代码按新域重写 |
+| `lib/data/db.dart`（477 行，迁移史已至 version=21）onUpgrade 分段迁移模式 ／ `lib/data/repository.dart`（1180 行）Repository 模式 | 模式照抄 |
+| `lib/service/foreground_task_init.dart`（35 行）前台服务统一通道 | **原样搬改渠道名**——注释含真机踩坑结论：Doze 下 MCP 应答须持 CPU 锁+Wi-Fi 锁，无锁即假死超时（管家/日切直接受益） |
+| `lib/util/lan_ip.dart`（21 行）局域网 IPv4 探测 | 原样搬（设置页「当前 IP」直用） |
+| `lib/ui/tokens.dart`（44 行）Insets/Radii 令牌模式 | 照此模式落 ui-spec §0 tokens，「禁魔术数字」纪律同抄 |
+| `lib/service/mcp_controller.dart`（120 行）服务启停/状态 ／ `lib/ui/overflow_sheet.dart`、`lib/ui/confirm_dialog.dart` 通用件 | 抄改 |
+| `quick_note_bar`（621 行）快记模式 ／ `mcp_page`（220 行）设置页 | 抄改 |
+| 前台保活 + `ai_queue_service.dart`（201 行）队列基建 | 管家复用 |
+| `test/` 62 文件（1.1 万行） | 代码不可搬，**测试模板可搬**：mcp_server_test/mcp_tools_test/repository_test/action_handler_test ≈ 拾光 M1 四类测试原型 |
+| dev-init skill | 新仓库 context/ 记忆框架初始化（goodshare 自身 context/ + AGENTS.md 即参照实物） |
+
+**盘点结论**：可搬/抄改约 5000–6000 行（拾贝 4.2 万行的 ~13%）；其余为拾贝域代码（端侧 AI 管线 34 文件、文档转换、媒体、标注画布、S3 同步——拾光零端侧 LLM，整目录不用）。
+
+**预期修正（2026-10-05 全仓盘点）**：① **device_calendar 拾贝零实装**——§4「经验同源」仅指 PRD 层面，M4 日历投影（权限/RRULE/时区）按**新集成**排期；② **mDNS 自动发现零代码**——bridge 侧 bonjour 包与 Android 侧 NSD 均需新写（§10 手动 IP 兜底为真）。
 
 ## 13. 克制负清单（永久拒绝，十轮评审定稿）
 
