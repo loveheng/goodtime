@@ -7,13 +7,18 @@ description: shiguang 的 docs/ 项目数据：域目录表、lint/收集脚本�
 
 > 规范机制（frontmatter 时效 / 落点与切片命名 / Mermaid / Tombstone / 引用移动与索引 / 写后自检）见全局 `docs-spec` §1–§7——**本文件只写项目数据**。
 
-## 域目录表（待补：从 docs/ 现状提炼）
+## 域目录表
+
 | 域 | 定位 |
 |---|---|
-| _待补_ | 新文档落点先查项目索引 skill |
+| `design/` | 产品设计域：SSOT（schedule-app.md）、功能施工蓝图（functional-spec.md）、UI 规格（ui-spec.md）——设计三件套，新增设计文档落此域 |
 
-## lint / 收集脚本（待补：无则删本节）
-- 待补
+后续按项目实际长域（如实现期长出 `architecture/`、`deploy/` 再登记），禁止预铺切片。
 
-## 本仓例外（待补：无则删本节）
-- 待补
+## lint / 收集脚本
+
+- `toolbox run docs-lint`（全局脚本；本仓无专属 lint 脚本）
+
+## 本仓例外
+
+- 无（与 docs-spec 无冲突）
