@@ -11,3 +11,4 @@ updated: 2026-10-05
 
 - [schedule-app.md](design/schedule-app.md) —— 拾光产品与架构设计（SSOT，2026-10-05 立项冻结稿）
 - [functional-spec.md](design/functional-spec.md) —— 拾光功能设计施工蓝图（M1–M4 里程碑切片/页面功能清单/命令清单，零新机制，2026-10-05 冻结稿）
+- [ui-spec.md](design/ui-spec.md) —— 拾光 UI 设计规格（视觉 tokens/导航/页面布局/BlockRenderer 渲染矩阵/交互流，2026-10-05 v1 草案待拍板）
