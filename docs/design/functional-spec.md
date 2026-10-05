@@ -20,7 +20,7 @@ updated: 2026-10-05
 
 ### M2 减震系统（机械防线全量）
 
-- Housekeeper：日切（wake_time 切割）、日切扫描（missed/作废）、顺延记账（postpone_count）、悬空巡检、晨间 digest（孤儿/悬空两段）
+- Housekeeper：日切（wake_time 切割）、日切扫描（missed/作废）、顺延记账（postpone_count）、悬空巡检（含 roadmap 步过窗未完成→digest 紧急段+强制实例化带 deadline 叶块）、晨间 digest（孤儿/悬空两段）
 - 块状态机全量：proposed/confirmed/done/skipped/missed/archived/melted + execution_quality(full/spark)
 - 机械校验全量：填充率 60%（low 电量 25%）、呼吸律 45/15、deep 禁排（low 电量；火种豁免刻度=is_day_spark 块 ≤15min 且执行内容取 min_viable_action）、和平条款（human/pinned 不可覆盖）、available_free_windows 拒绝返回
 - pinned/source 字段生效；乐观锁冲突回快照
@@ -30,14 +30,14 @@ updated: 2026-10-05
 ### M3 心理层（护航与庆祝）
 
 - get_history 校准指标全量（膨胀系数/时段热力/耐受阈值/深潜净值/能量回血）
-- 分级确认（火种突出+Routine 折叠）、双轨仪表盘、安全线徽章、能量补给带/自由流动区派生渲染、中性文案规范落地
+- 分级确认（火种突出+Routine 折叠）、双轨仪表盘、安全线徽章（含漫游态见证式判定）、能量补给带/自由流动区派生渲染、中性文案规范落地
 - 庆祝块全链路（reward_spec 收集→香槟金渲染→豁免→能量回血）、Clean Slate 静默保护、冷藏池
 - 护航式提案叙事 + protection_manifesto + playbook 初版五文件（clarify/decompose/schedule/govern/dump）+ 金样本评审跑通
 - **验收**：金样本「有个考试」全流程 + 断流 3 日后 recovery 握手体验
 
 ### M4 现实接口（物理拼图）
 
-- 日历只读投影（device_calendar，内存硬墙）、settings.exceptions 例外日（旅行模式：fixed_slots 挂起+填充率 35%）
+- 日历只读投影（device_calendar，内存硬墙）、settings.exceptions 例外日（旅行模式：fixed_slots 挂起+填充率 35%；夜块走手动/记账通道，睡眠包络不漂移）
 - today_energy 三档（含电量晚点选触发当日水流降档重算）、Landing Gear 依时态抽屉、逆向记账（事实通道）、换乘、四形态渲染、三手势、放工守卫、三日水位线、简易周视图（只读 7 列、复用 BlockRenderer、点块跳日视图）
 - 大脑倾倒 SOP 联调、JSON 导出、mDNS 自动发现（bridge+NSD）
 - **验收**：真机全场景走查（日常/混乱/低电量/旅途四天型）
