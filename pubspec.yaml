@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.0+2002
 
 environment:
   sdk: ^3.13.4
@@ -35,6 +35,16 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # 三表台账存储（schedule-app.md §4；M1 引入，拾贝同版本实测组合）
+  sqflite: ^2.4.4
+  path: ^1.9.1
+
+  # 前台服务保活（M2 管家日切 / MCP Doze 下应答，拾贝同版本）
+  flutter_foreground_task: ^11.0.3
+
+  # mDNS 服务广播（M4 网络配对：shiguang-mcp._tcp；拾贝零实装，新集成 §12 ②）
+  bonsoir: ^5.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -45,6 +55,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+  # VM 单测用 sqlite ffi 工厂（拾贝测试模板同款夹具）
+  sqflite_common_ffi: ^2.4.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -41,3 +41,7 @@ app.*.map.json
 
 # dev-loop: 会话指针不入库（context/ 其余随仓库版本化）
 context/CURRENT
+
+# Android gradle 构建产物（根项目 build 与守护进程目录）
+/android/build/
+/android/.gradle/
