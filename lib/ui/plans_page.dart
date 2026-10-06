@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../action/command_handler.dart';
 import '../action/commands.dart';
@@ -188,7 +191,16 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
+    return Dismissible(
+      key: Key('plan_swipe_${plan.id}'),
+      direction: DismissDirection.endToStart, // 左滑（右滑挂账待「排期」提名流）
+      dismissThresholds: const {
+        DismissDirection.endToStart: StGesture.swapFraction, // 35% 卡点族
+      },
+      background: _swipeBackground(
+          Alignment.centerRight, const EdgeInsets.only(right: 20)),
+      onDismissed: (_) => _archiveWithUndo(context),
+      child: Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         borderRadius: BorderRadius.circular(StScale.radiusCard),
@@ -233,7 +245,54 @@ class _PlanCard extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
+  }
+
+  /// 左滑背景（中性灰，「归档」，绝不显红——减震器语义）。
+  Widget _swipeBackground(Alignment alignment, EdgeInsets padding) {
+    return Container(
+      alignment: alignment,
+      padding: padding,
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: StColors.fixedSlotBg,
+        borderRadius: BorderRadius.circular(StScale.radiusCard),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.archive_outlined, color: StColors.textSecondary),
+          const SizedBox(width: 4),
+          Text('归档', style: TextStyle(color: StColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+
+  /// 左滑归档 + SnackBar 撤销（归档在 UI 上暂不可逆，必附撤销——减震器）。
+  /// 归档会触发清单重建并卸载本卡片，messenger 须在命令执行前捕获（根级、跨卸载存活）。
+  Future<void> _archiveWithUndo(BuildContext context) async {
+    unawaited(HapticFeedback.selectionClick());
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await CommandHandler(_repo).execute(
+      UpdatePlanCommand(
+          id: plan.id!, archived: true, expectedVersion: plan.version),
+    );
+    final fresh = result.snapshot?['version'] as int? ?? plan.version;
+    messenger.showSnackBar(SnackBar(
+      // 浮动+FAB 净空：撤销钮不能被右下角快记 FAB 遮挡（ui-spec §3 层叠规则）
+      behavior: SnackBarBehavior.floating,
+      margin:
+          const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
+      content: Text('已归档「${plan.title}」'),
+      action: SnackBarAction(
+        label: '撤销',
+        onPressed: () => CommandHandler(_repo).execute(
+          UpdatePlanCommand(id: plan.id!, archived: false, expectedVersion: fresh),
+        ),
+      ),
+    ));
   }
 
   Color _quadrantColor(ColorScheme scheme) {

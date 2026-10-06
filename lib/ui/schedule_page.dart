@@ -100,41 +100,46 @@ class _SchedulePageState extends State<SchedulePage> {
             ),
           ),
           Expanded(
-            child: switch (_viewMode) {
-              'week' => _WeekView(
-                  anchor: _selected,
-                  onPick: (date) => setState(() {
-                    _selected = date;
-                    _viewMode = 'day';
-                  }),
-                  onWeekChange: (weeks) => setState(
-                      () => _selected = addDays(_selected, weeks * 7)),
-                ),
-              'month' => _MonthView(
-                  anchor: _selected,
-                  onPick: (date) => setState(() {
-                    _selected = date;
-                    _viewMode = 'day';
-                  }),
-                  onMonthChange: (m) => setState(() => _selected = m),
-                ),
-              _ => FutureBuilder<DayData>(
-                  future: _load(),
-                  builder: (context, snap) {
-                    if (snap.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final data = snap.data;
-                    if (data == null) return const SizedBox.shrink();
-                    return _DayView(
-                      data: data,
-                      onPickToday: _backToToday,
-                      onPrevDay: () => _shiftDay(-1),
-                      onNextDay: () => _shiftDay(1),
-                    );
-                  },
-                ),
-            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragUpdate: _onSwipeUpdate,
+              onHorizontalDragEnd: _onSwipeEnd,
+              child: switch (_viewMode) {
+                'week' => _WeekView(
+                    anchor: _selected,
+                    onPick: (date) => setState(() {
+                      _selected = date;
+                      _viewMode = 'day';
+                    }),
+                    onWeekChange: (weeks) => setState(
+                        () => _selected = addDays(_selected, weeks * 7)),
+                  ),
+                'month' => _MonthView(
+                    anchor: _selected,
+                    onPick: (date) => setState(() {
+                      _selected = date;
+                      _viewMode = 'day';
+                    }),
+                    onMonthChange: (m) => setState(() => _selected = m),
+                  ),
+                _ => FutureBuilder<DayData>(
+                    future: _load(),
+                    builder: (context, snap) {
+                      if (snap.connectionState != ConnectionState.done) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final data = snap.data;
+                      if (data == null) return const SizedBox.shrink();
+                      return _DayView(
+                        data: data,
+                        onPickToday: _backToToday,
+                        onPrevDay: () => _shiftDay(-1),
+                        onNextDay: () => _shiftDay(1),
+                      );
+                    },
+                  ),
+              },
+            ),
           ),
         ],
       ),
@@ -146,6 +151,27 @@ class _SchedulePageState extends State<SchedulePage> {
 
   void _shiftDay(int delta) =>
       setState(() => _selected = addDays(_selected, delta));
+
+  // ---- 视图横滑翻页（ui-spec §6.4，2026-10-06 拍板）----
+
+  double _swipeDx = 0;
+
+  void _onSwipeUpdate(DragUpdateDetails d) => _swipeDx += d.primaryDelta ?? 0;
+
+  /// 日/月视图背景横滑翻页（累计 >pageSwipeDp 触发）；块卡片上块手势优先
+  /// （竞技场内层胜）；周视图内容横向可滚（112dp×7 列）横滑归滚动，翻周走 ‹› 按钮。
+  void _onSwipeEnd(DragEndDetails d) {
+    final dx = _swipeDx;
+    _swipeDx = 0;
+    if (dx.abs() < StGesture.pageSwipeDp) return;
+    final back = dx > 0; // 右滑=回退一周期
+    if (_viewMode == 'month') {
+      setState(() => _selected = DateTime(
+          _selected.year, _selected.month + (back ? -1 : 1), 1));
+    } else if (_viewMode == 'day') {
+      _shiftDay(back ? -1 : 1);
+    }
+  }
 }
 
 class DayData {

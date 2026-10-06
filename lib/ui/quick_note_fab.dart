@@ -221,8 +221,14 @@ class _QuickNotePanelState extends State<QuickNotePanel> {
       await QuickNoteDraft.persist(const QuickNoteDraft());
       if (mounted) Navigator.of(context).pop();
       messenger.showSnackBar(
-        const SnackBar(
-            content: Text('已收入清单'), duration: Duration(seconds: 1)),
+        SnackBar(
+          content: const Text('已收入清单'),
+          duration: const Duration(seconds: 1),
+          // 浮动+FAB 净空：不与右下角快记 FAB 重叠（ui-spec §3 层叠规则）
+          behavior: SnackBarBehavior.floating,
+          margin:
+              const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
+        ),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);

@@ -139,6 +139,10 @@ class StGesture {
   static const int longPressMs = 400;
   static const double longPressScale = 0.98;
 
+  /// 页面级横滑翻页（日/月视图背景层，2026-10-06 拍板）：累计位移下限，
+  /// 不设速度门槛——慢速蓄力拖动同样翻页；低于此位移视为误触弹回。
+  static const double pageSwipeDp = 60;
+
   /// 派生保护区三级绘制过滤阈值（分钟）：≥30 全渲染 / 15–30 图标 / <15 静默。
   static const int bandFullMin = 30;
   static const int bandIconMin = 15;
