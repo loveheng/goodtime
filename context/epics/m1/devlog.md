@@ -20,3 +20,6 @@ last-merge: 2026-10-06
 - [2026-10-06] 清单详情簇切片（uncommitted）：plans_page 编辑 sheet 升级（『## 路线图』checklist 解析进度「▶ 当前进度 x/N」/open_items 手答→「敲定」→已答转「✓ 问题 → 答案」/子树 ≤3 级缩进/reward_spec 字段/「排期」→PlaceBlockCommand）；命令层 UpsertPlan+UpdatePlan 增 openItems（fromJson 解析坏条目静默跳过）；十工具 add_plan 补 open_items 入参声明（原仅 update_plan 有，add_plan 描述早已承诺可带问题建档=工具面漏项）。analyze 0 / test 103/103 / arch-guard 6/6 / docs-lint 过。
 - [2026-10-06] 蓝本校准：functional-spec §2 清单页长按「挂起」移除（数据模型无对应状态，属蓝本超写，就地注明 2026-10-06 对账校准）；ui-spec §4 词汇表入「排期/当前进度/敲定/子计划/犒赏」五行。
 - [2026-10-06] 坑8：同一 sheet 内连续写（先「敲定」再「保存」）必须用 CommandResult.snapshot 回填 version，否则第二次写因乐观锁 version 陈旧冲突——可变 version 变量随每次成功写更新（此前 sheet 用 plan.version 一次性快照，单写无感、连续写即踩）。
+- [2026-10-06] 设置页编辑器簇切片（uncommitted）：settings_page 升级——一周节奏 fixed_slots 增删改（编辑 sheet：名称/ISO 星期 1–7 多选/起止 TimePicker，整单 UpdateFixedSlotsCommand 原子替换）/例外日 exceptions 增删改（起止日期+标签，JSON 落 settings.exceptions）/排程偏好（最小块粒度+单日排量上限+填充率上限+weather_location+user_rules，字段级 UpdateSettingsCommand）。命令层与工具面本就具备（M2 已通），本次纯 UI 收口；analyze 0 / test 104/104（新增 test/ui_settings_editor_test.dart）/ arch-guard 6/6 / docs-lint 过。
+- [2026-10-06] 坑9：设置页是长 ListView（children 懒构建），深处「外观」分段按钮未在首帧入树 → ui_theme_test 原 `find.text('深色')` 报 0 匹配；改为 `_scrollToText` 先滚入视口（fling + 固定 pump，因设置页有常驻帧源 pumpAndSettle 永不收敛，同坑3）。新增段越多越易踩，深位控件一律先滚后点。
+

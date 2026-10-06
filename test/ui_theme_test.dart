@@ -26,6 +26,8 @@ void main() {
     // 2. 设置页切「深色」→ 主题与全局语义面板联动
     await tester.tap(find.byTooltip('设置'));
     await pumpFlush(tester);
+    // 外观段在长列表深处（ListView 懒构建，未滚入视口不在树中），先滚到位再点
+    await _scrollToText(tester, '深色');
     await tester.tap(find.text('深色'));
     await pumpFlush(tester);
     await tester.pump(const Duration(seconds: 1));
@@ -36,6 +38,7 @@ void main() {
     expect(stored, 'dark');
 
     // 3. 切回「浅色」
+    await _scrollToText(tester, '浅色');
     await tester.tap(find.text('浅色'));
     await pumpFlush(tester);
     await tester.pump(const Duration(seconds: 1));
@@ -43,4 +46,18 @@ void main() {
         ThemeMode.light);
     expect(StColors.textPrimary, const Color(0xFF1A1C1E));
   });
+}
+
+/// 在设置页长列表中向下滚动，直到目标文本进入树（应对 ListView 懒构建）。
+/// 用固定 pump（设置页有常驻帧源，pumpAndSettle 永不收敛，见项目约定）。
+Future<void> _scrollToText(WidgetTester tester, String text) async {
+  for (var i = 0; i < 40; i++) {
+    if (find.text(text).evaluate().isNotEmpty) return;
+    await tester.fling(
+        find.byType(Scrollable).first, const Offset(0, -300), 1000);
+    for (var k = 0; k < 12; k++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+  fail('滚动超时：未找到文本「$text」');
 }

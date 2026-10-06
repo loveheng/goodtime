@@ -36,6 +36,7 @@ last-merge: 2026-10-06
 - [2026-10-06] 全局动作 sheet 落地（5c6c10a）：PanicClear 两模式原子批量+两段确认 UI+警示图标钮入口；**坑7（挂账）**：UI 测试中「写+notify 之后的 tester.runAsync 轮询」会无限卡死（单窗口/循环均复现），UI 断言收窄为取消路径、执行语义由命令测试覆盖，根因待查（怀疑 sqflite_ffi 完成通道与 FakeAsync 的交互）。
 - [2026-10-06] 遗留区+冷藏池切片落地（b044fa1）：PostponeBlock 新命令（missed 专用/钟点不变/pc+1/冲突拒）+settingsClearAll（单事务单 notify）；顺延后短 missed 块入时间轴的渲染在 600dp 测试视口会溢出——setSurfaceSize(800,1400) 规避，真机纵向空间充裕；深挖_pending timer_：UI 测试 pending-timer 断言与 FutureBuilder 孤儿 future 的 notify 风暴相关，收敛 notify 次数（settingsClearAll）即愈。
 - [2026-10-06] 清单详情簇切片落地（uncommitted）：plans_page 编辑 sheet 升为详情页（roadmap 进度/open_items 手答敲定/子树 ≤3 级/reward_spec/「排期」）+命令层 openItems 字段（upsert/update 双通道+fromJson 容错）+add_plan 工具面补 open_items 入参（人机澄清闭环：AI 建档可留未决问题，人在 app 内手答敲定）；蓝本校准移除长按「挂起」（数据模型无此状态）。坑8：sheet 内连续写须用 snapshot 回填 version，否则乐观锁陈旧冲突。
+- [2026-10-06] 设置页编辑器簇切片落地（uncommitted）：settings_page 升级——一周节奏 fixed_slots 增删改（编辑 sheet：名称/ISO 星期 1–7 多选/起止，整单 UpdateFixedSlotsCommand 原子替换）/例外日 exceptions 增删改（起止日期+标签，JSON 落 settings.exceptions）/排程偏好（最小块粒度+单日排量上限+填充率上限+weather_location+user_rules，字段级 UpdateSettingsCommand）；命令层与十工具本就具备（M2 已通），本次纯 UI 收口。坑9：长 ListView 懒构建深位控件须先滚后点。
 
 ## 口径决策（实现层拍板留痕，回 SSOT 前有效）
 
@@ -62,4 +63,5 @@ last-merge: 2026-10-06
 ## 断点
 
 - 2026-10-06（清单详情簇后）：flutter analyze 0 issue；flutter test 103/103（新增 test/plan_detail_test.dart）；arch-guard 6/6；docs-lint 过（golden-samples/functional-spec §2/ui-spec §4/README 索引均 2026-10-06）。
-- [断点] 下一步：清单详情簇切片代码与测试已完备、待封账提交（用户点头后 commit）；金样本 #4「云南七天」已备（docs/design/golden-samples.md，含走查脚本与实现差异表）；随后重新 build-apk --install 刷新真机包后进入人工侧验收——真机四天型走查+手势体感+金样本评审（#4 云南七天按幕 8 走查脚本执行；差异表 8 条可当场核对），桌面 AI 全链路（MCP token 在设置页）；mDNS 发现+日历投影实证（挂真机轮）
+- 2026-10-06（设置编辑器簇后）：flutter analyze 0 issue；flutter test 104/104（新增 test/ui_settings_editor_test.dart，顺带修 ui_theme_test 深位控件先滚后点）；arch-guard 6/6；docs-lint 过。
+- [断点] 下一步：设置页编辑器簇切片已完备待提交（UI 收口：一周节奏/例外日/排程偏好，命令层与工具面本就具备）；金样本 #4「云南七天」已备（docs/design/golden-samples.md，含走查脚本与实现差异表）；功能完备性对账剩余：MCP prompts 实装、bonsoir 升级；后续：提交该切片 → 用户自 build-apk --install 刷新真机包 → 人工侧验收（真机四天型走查+手势体感+金样本 #4 评审；桌面 AI 全链路 MCP token 在设置页；mDNS 发现+日历投影实证挂真机轮）
