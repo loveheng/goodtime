@@ -19,6 +19,7 @@ description: shiguang（Flutter Android 日程台账 + MCP 服务端）的「功
 |---|---|---|---|
 | 产品与架构设计 | 定位/数据模型/MCP 工具面/行为层/管家/UI 结构/拍板台账 | —（纯设计域） | `docs/design/schedule-app.md`（SSOT，§11 拍板台账） |
 | 功能蓝图 | M1–M4 里程碑/页面清单/命令清单 | —（施工切片在蓝图） | `docs/design/functional-spec.md` |
+| 金样本评审 | 金样本评审循环固定输入（#4 云南七天=旅行模式全流程+实现差异备忘） | —（纯文档域） | `docs/design/golden-samples.md` |
 | UI 规格 | 视觉 tokens/导航/页面布局/BlockRenderer 矩阵/文案词汇表 | `lib/theme/tokens.dart`（§0 落地件） | `docs/design/ui-spec.md`（§0.4 白话词汇表） |
 | Flutter 工程 | app 本体（M1 起逐步成形） | `lib/`（`find lib -name "*.dart"`） | — |
 | MCP 桥 | stdio-bridge / e2e-check（M1 待建） | `mcp-bridge/`（待建） | schedule-app.md §6 |

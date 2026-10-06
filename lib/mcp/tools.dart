@@ -53,6 +53,18 @@ List<Map<String, Object?>> toolSchemas() => [
             'deadline': {'type': 'string', 'description': '截止日 YYYY-MM-DD，可省略'},
             'estimate': {'type': 'integer', 'description': '预估时长（分钟）'},
             'parent_id': {'type': 'string', 'description': '父计划 id（拆解挂子计划用）'},
+            'open_items': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'question': {'type': 'string'},
+                  'answer': {'type': 'string'},
+                },
+                'required': ['question'],
+              },
+              'description': '澄清中未敲定的问题（answer 留空）；人在 app 内可手答',
+            },
           },
           'required': ['title'],
         },
@@ -79,6 +91,18 @@ List<Map<String, Object?>> toolSchemas() => [
             'deadline': {'type': 'string'},
             'estimate': {'type': 'integer'},
             'parent_id': {'type': 'string'},
+            'open_items': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'question': {'type': 'string'},
+                  'answer': {'type': 'string'},
+                },
+                'required': ['question'],
+              },
+              'description': '澄清中未敲定的问题（answer 留空）；人在 app 内可手答',
+            },
             'archived': {'type': 'boolean', 'description': '归档（清单治理用）'},
           },
           'required': ['id'],

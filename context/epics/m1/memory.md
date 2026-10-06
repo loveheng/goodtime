@@ -27,6 +27,15 @@ last-merge: 2026-10-06
 - [2026-10-06] 拾贝好用脚本迁移 5 件入项目池：arch-guard（六条拾光规则）/build-apk/bump-version/commit-msg-gate/pre-commit-gate + git 钩子垫片（好放行/坏拦截实测）；release-r2 分发链路挂账待发布方式定。
 - [2026-10-06] build-apk 首次真机构建打通：根 android/build.gradle.kts 钳制 library 子项目 compileSdk≥36（修 bonsoir_android 5.1.6 硬编码 33 的 15 条编译错误）+ app minSdk=34（仅支持 Android 14+）。
 - [2026-10-06] 快记入口形态拍板（评审后用户裁定）：顶部常驻输入→右下角 FAB+键盘吸附展开抽屉；草稿三字段（text/星/死线）静默 KV+FAB 琥珀点；TextInputAction.done 回车即存；放工守卫态 FAB 恒可用（平移「快记永不关门」）。M1 封板后切 feature 分支独立切片落地（M1.1，约 0.5 天），执行清单挂 todos.md；方向 B（title/spec 分层+AI 唯一读 spec+open_items 歧义管道）评估=与 SSOT §4/§5 同构且已实装，零改动零文档动作。
+- [2026-10-06] M1 封板版提交 e48da23（81 文件 12389 行，M1–M4 全量首入库；gitignore 补 /android/build 与 .gradle）。
+- [2026-10-06] M1.1 快记 FAB 切片落地（259cc3f）：QuickNoteFab+键盘吸附抽屉+QuickNoteDraftCommand（human-only，不进工具面）+quick_note_draft_* 三内部键（不经 update_settings 白名单）；层叠细则落定=确认卡实为 Column 内联件不与 FAB 竞 z、fabClearanceDp=88 净空令牌；测试拆双文件守「一测一文件」约定（此前 3 testWidgets 同文件致跨测试 FIFO 异步残留挂死，helpers/ui.dart 头注即此约定的事实源）。
+- [2026-10-06] 夜间模式落地（136c461）：解锁 Light Mode 锁定，外观三档（跟随系统/浅/深，默认跟随系统）；theme_mode=uiOnly 键（_gate 新增 ai 越权拒）+update_settings 补 theme_mode 枚举校验（踩坑：开关类新键必须同步补 _updateSettings 的 per-key switch 分支，否则静默丢弃不报错）；StColors 转全局激活面板（applyBrightness 单点置位业务只读），ThemeExtension 否决记录 §11；深色映射逐值拍板入 ui-spec §0.5。
+- [2026-10-06] 手势化第二期落地（237aca9）：日/月视图背景横滑翻页（>60dp pageSwipeDp 不设速度门槛；周视图横向可滚 112dp×7 故横滑归滚动）+清单左滑 35% 卡点归档+必附撤销 SnackBar（undo 走乐观锁新 version）；壳层带动作 SnackBar 浮动+fabClearance 净空（撤销钮曾被 FAB 遮挡）；右滑挂账待排期提名流；确认三键/快记 FAB/设置/块表单明确不滑动化。
+- [2026-10-06] UI 测试两坑沉淀：①卡片类元素在命令后重建卸载——messenger 必须在 await 命令前捕获（快记面板与清单撤销同款）；②plans 页有常驻帧源 pumpAndSettle 永不收敛——一律固定 pump（helpers pumpFlush 同思想）。
+- [2026-10-06] 功能完备性对账：6 簇缺口挂账 todos（遗留区/冷藏池已落地，余 4 簇：全局动作 sheet/清单详情簇/设置编辑器簇/MCP prompts）；捏合缩放梯子（日/周/月切换手势）评估完→拍板点已列、挂账走查后做。
+- [2026-10-06] 全局动作 sheet 落地（5c6c10a）：PanicClear 两模式原子批量+两段确认 UI+警示图标钮入口；**坑7（挂账）**：UI 测试中「写+notify 之后的 tester.runAsync 轮询」会无限卡死（单窗口/循环均复现），UI 断言收窄为取消路径、执行语义由命令测试覆盖，根因待查（怀疑 sqflite_ffi 完成通道与 FakeAsync 的交互）。
+- [2026-10-06] 遗留区+冷藏池切片落地（b044fa1）：PostponeBlock 新命令（missed 专用/钟点不变/pc+1/冲突拒）+settingsClearAll（单事务单 notify）；顺延后短 missed 块入时间轴的渲染在 600dp 测试视口会溢出——setSurfaceSize(800,1400) 规避，真机纵向空间充裕；深挖_pending timer_：UI 测试 pending-timer 断言与 FutureBuilder 孤儿 future 的 notify 风暴相关，收敛 notify 次数（settingsClearAll）即愈。
+- [2026-10-06] 清单详情簇切片落地（uncommitted）：plans_page 编辑 sheet 升为详情页（roadmap 进度/open_items 手答敲定/子树 ≤3 级/reward_spec/「排期」）+命令层 openItems 字段（upsert/update 双通道+fromJson 容错）+add_plan 工具面补 open_items 入参（人机澄清闭环：AI 建档可留未决问题，人在 app 内手答敲定）；蓝本校准移除长按「挂起」（数据模型无此状态）。坑8：sheet 内连续写须用 snapshot 回填 version，否则乐观锁陈旧冲突。
 
 ## 口径决策（实现层拍板留痕，回 SSOT 前有效）
 
@@ -47,8 +56,10 @@ last-merge: 2026-10-06
 
 ## 近期验证状态
 
-- 2026-10-06：flutter analyze 0 issue；flutter test 91/91；bridge e2e PASS（5 项）；arch-guard 6/6；脚本五件 self-test 全 PASS；docs-lint 过（playbook 五件+ui-spec §0.4）；toolbox run build-apk → OK（arm64 release 分包 19M，aapt compileSdk36/minSdk34 + sha256 产物校验过）；build-apk --install 装上真机 3B161700Y0600000 成功（versionCode 4002，防降级守卫自动抬号 pubspec 1.0.0+2002）。四天型走查/桌面 AI 全链路/金样本/手势体感/mDNS 日历实证全部待真机人工+桌面 AI 侧。
+- 2026-10-06：flutter analyze 0 issue；flutter test 91/91；bridge e2e PASS（5 项）；arch-guard 6/6；脚本五件 self-test 全 PASS；docs-lint 过（playbook 五件+ui-spec §0.4）；toolbox run build-apk → OK（arm64 release 分包 19M，aapt compileSdk36/minSdk34 + sha256 产物校验过）；build-apk --install 装上真机 3B161700Y0600000 成功（versionCode 4002，防降级守卫自动抬号 pubspec 1.0.0+2002）。
+- 2026-10-06（M1.1+夜间+手势后）：flutter analyze 0 issue；flutter test 95/95；arch-guard 6/6；docs-lint 过；四提交链 e48da23→259cc3f→136c461→237aca9。快记 FAB/夜间三档/横滑翻页/清单左滑归档撤销均已上机待走查。
 
 ## 断点
 
-- [断点] 下一步：封板候选已装真机（3B161700Y0600000，versionCode 4002），剩余验收全部在人工/桌面 AI 侧：真机四天型走查+手势体感+金样本评审（用户持机）；桌面 AI 全链路（MCP token 在设置页，bridge e2e 已 PASS）；mDNS 发现+日历投影实证（挂真机轮）。M1 封板后切 feature 分支落 M1.1 快记 FAB 切片（todos.md 有清单）；蓝本 functional-spec §1 验收
+- 2026-10-06（清单详情簇后）：flutter analyze 0 issue；flutter test 103/103（新增 test/plan_detail_test.dart）；arch-guard 6/6；docs-lint 过（golden-samples/functional-spec §2/ui-spec §4/README 索引均 2026-10-06）。
+- [断点] 下一步：清单详情簇切片代码与测试已完备、待封账提交（用户点头后 commit）；金样本 #4「云南七天」已备（docs/design/golden-samples.md，含走查脚本与实现差异表）；随后重新 build-apk --install 刷新真机包后进入人工侧验收——真机四天型走查+手势体感+金样本评审（#4 云南七天按幕 8 走查脚本执行；差异表 8 条可当场核对），桌面 AI 全链路（MCP token 在设置页）；mDNS 发现+日历投影实证（挂真机轮）

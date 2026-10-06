@@ -188,6 +188,7 @@ class CommandHandler {
       deadline: cmd.deadline,
       estimate: cmd.estimate,
       parentId: cmd.parentId,
+      openItems: cmd.openItems ?? const [],
     ));
     return CommandResult(op: cmd.op, targetId: plan.id, snapshot: planToJson(plan), note: '计划已创建');
   }
@@ -212,6 +213,8 @@ class CommandHandler {
       if (cmd.deadline != null) 'deadline': cmd.deadline,
       if (cmd.estimate != null) 'estimate': cmd.estimate,
       if (cmd.parentId != null) 'parent_id': cmd.parentId,
+      if (cmd.openItems != null)
+        'open_items': Plan.encodeOpenItems(cmd.openItems!),
       if (cmd.archived != null) 'archived': cmd.archived! ? 1 : 0,
     };
     if (values.isEmpty) {

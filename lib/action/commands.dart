@@ -188,6 +188,19 @@ sealed class ScheduleCommand {
 
   /// JSON → 命令。AI 侧唯一入口：大模型输出什么就反序列化成什么，
   /// 不做任何「只有 UI 才懂」的隐转换。
+  /// open_items 载荷解析（add_plan/update_plan 可携带；坏条目静默跳过）
+  static List<OpenItem>? _openItems(Object? raw) {
+    if (raw is! List) return null;
+    return [
+      for (final e in raw)
+        if (e is Map && e['question'] is String)
+          OpenItem(
+            question: e['question'] as String,
+            answer: e['answer'] is String ? e['answer'] as String : null,
+          ),
+    ];
+  }
+
   static ScheduleCommand fromJson(Map<String, Object?> json) {
     final op = json['op'];
     if (op is! String || op.isEmpty) {
@@ -218,6 +231,7 @@ sealed class ScheduleCommand {
           deadline: _str(json['deadline']),
           estimate: _int(json['estimate']),
           parentId: _str(json['parent_id']),
+          openItems: _openItems(json['open_items']),
         );
       case 'update_plan':
         return UpdatePlanCommand(
@@ -234,6 +248,7 @@ sealed class ScheduleCommand {
           estimate: _int(json['estimate']),
           parentId: _str(json['parent_id']),
           archived: json.containsKey('archived') ? json['archived'] == true : null,
+          openItems: _openItems(json['open_items']),
           expectedVersion: ev,
         );
       case 'propose_schedule':
@@ -492,6 +507,7 @@ final class UpsertPlanCommand extends ScheduleCommand {
     this.deadline,
     this.estimate,
     this.parentId,
+    this.openItems,
   });
 
   final String title;
@@ -505,6 +521,7 @@ final class UpsertPlanCommand extends ScheduleCommand {
   final String? deadline;
   final int? estimate;
   final String? parentId;
+  final List<OpenItem>? openItems;
 
   @override
   String get op => 'upsert_plan';
@@ -542,6 +559,7 @@ final class UpdatePlanCommand extends ScheduleCommand {
     this.deadline,
     this.estimate,
     this.parentId,
+    this.openItems,
     this.archived,
     super.expectedVersion,
   });
@@ -558,6 +576,7 @@ final class UpdatePlanCommand extends ScheduleCommand {
   final String? deadline;
   final int? estimate;
   final String? parentId;
+  final List<OpenItem>? openItems;
 
   /// archived 只在显式给出时进 patch（§11：只发要改的字段）
   final bool? archived;
