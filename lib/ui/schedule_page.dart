@@ -50,9 +50,16 @@ class _SchedulePageState extends State<SchedulePage> {
     }
     final selected = _selected;
     final iso = isoDate(selected);
-    final blocks = await _repo.blocksOnDate(iso);
+    // 昨日+今日单查询分流（昨日 missed = 遗留区处置面，§3.2；门控在 _DayView）
+    final twoDays = await _repo.blocksInRange(isoDate(addDays(today, -1)), iso);
+    final blocks = twoDays.where((b) => b.date == iso).toList();
+    final leftoverBlocks =
+        twoDays.where((b) => b.date != iso && b.status == ScheduleBlock.statusMissed).toList();
     final resolved = await _repo.fixedSlotsForDate(selected);
-    final planIds = {for (final b in blocks) if (b.planId != null) b.planId!};
+    final planIds = {
+      for (final b in blocks) if (b.planId != null) b.planId!,
+      for (final b in leftoverBlocks) if (b.planId != null) b.planId!,
+    };
     final plans = <String, Plan?>{
       for (final id in planIds) id: await _repo.planById(id),
     };
@@ -71,6 +78,7 @@ class _SchedulePageState extends State<SchedulePage> {
       today: selected,
       isToday: iso == isoDate(today),
       blocks: blocks,
+      leftovers: leftoverBlocks,
       fixedOnDate: resolved.onDate,
       fixedSpillover: resolved.spillover,
       plans: plans,
@@ -180,6 +188,7 @@ class DayData {
     required this.sleepAdj,
     required this.today,
     required this.blocks,
+    required this.leftovers,
     required this.fixedOnDate,
     required this.fixedSpillover,
     required this.plans,
@@ -194,6 +203,7 @@ class DayData {
   final int sleepAdj; // 聚焦窗终点（睡眠跨午夜时 >1440）
   final DateTime today;
   final List<ScheduleBlock> blocks;
+  final List<ScheduleBlock> leftovers;
   final List<FixedSlot> fixedOnDate;
   final List<FixedSlot> fixedSpillover;
   final Map<String, Plan?> plans;
@@ -306,6 +316,9 @@ class _DayView extends StatelessWidget {
           ),
         // 双轨仪表盘（§3.1/§10 八轮）：推进任务 × 保护时长并列核心交付指标
         _Dashboard(data: data),
+        // 昨日遗留区（§3.2）：守卫态与 Clean Slate 保护期整区淡出，非今日不渲染
+        if (!windDown && !data.cleanSlate && data.isToday && data.leftovers.isNotEmpty)
+          _LeftoverSection(data: data),
         if (windDown)
           _WindDownBanner(data: data)
         else if (data.cleanSlate && data.isToday)
@@ -406,6 +419,73 @@ class _EnergyToggle extends StatelessWidget {
       tier('normal', '🔋', '平稳'),
       tier('low', '🪫', '低电量（自动降档）'),
     ]);
+  }
+}
+
+/// 昨日遗留区（ui-spec §3.2）：昨日 missed 逐条三键——补勾（自动带补记标）/
+/// 顺延今日/退回愿望池；守卫态与 Clean Slate 保护期整区淡出（_DayView 门控）。
+class _LeftoverSection extends StatelessWidget {
+  const _LeftoverSection({required this.data});
+
+  final DayData data;
+
+  Future<void> _act(
+      BuildContext context, ScheduleBlock b, Future<CommandResult> Function() run) async {
+    // 行点击后本区会随查询重建卸载，messenger 须在 await 前捕获
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await run();
+    } on ActionException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      color: StColors.missedAccent, // missed 中性米黄标（绝不红，§6.2 拍板）
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('昨日遗留 · ${data.leftovers.length} 条',
+                style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            for (final b in data.leftovers)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${b.label ?? (b.planId != null ? data.plans[b.planId]?.title ?? '(计划)' : '(未命名)')} · ${clockOf(b.startMin)}–${clockOf(b.endMin)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _act(context, b, () => CommandHandler(AppServices.repo).execute(TickBlockCommand(b.id!, expectedVersion: b.version))),
+                      child: const Text('补勾'),
+                    ),
+                    TextButton(
+                      onPressed: () => _act(context, b, () => CommandHandler(AppServices.repo).execute(PostponeBlockCommand(b.id!, date: isoDate(data.today), expectedVersion: b.version))),
+                      child: const Text('顺延今日'),
+                    ),
+                    TextButton(
+                      onPressed: () => _act(context, b, () => CommandHandler(AppServices.repo).execute(MeltBlockCommand(b.id!, expectedVersion: b.version))),
+                      child: const Text('退回愿望池'),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -63,5 +63,8 @@ void main() {
     await closeDrawer(tester);
     await waitFor(tester, () async => !QuickNoteDraft.hasDraft.value);
     expect(draftDot(), findsNothing);
+    // 收尾冲刷：退掉一切残余 Timer（SnackBar/防抖尾巴），防 pending-timer 断言偶发
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 1));
   });
 }

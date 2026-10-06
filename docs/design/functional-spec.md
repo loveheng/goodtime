@@ -89,7 +89,8 @@ updated: 2026-10-06
 | DegradeBlock(spark) | 人/AI | 坍缩/降级，文本切 min_viable_action |
 | SwapBlock | 人 | 换乘（app 内挑 light 候选） |
 | MeltBlock / PanicClear | 人 | 右滑融化 / 熔断键批量 |
-| TickBlock / RetroLog | 人 | 打勾（触发接棒检查）/ 逆向记账（事实通道） |
+| TickBlock / RetroLog | 人 | 打勾（触发接棒检查；missed 补勾自动带「补记」）/ 逆向记账（事实通道） |
+| PostponeBlock | 人 | 遗留区「顺延今日」：missed 块整体搬目标日，钟点不变、postpone_count+1、同日活块/固定占用冲突即拒（2026-10-06） |
 | UpdateSettings / UpdateFixedSlots / UpdateExceptions | 人/AI | 配置写 |
 | AI 同域写路径 | AI | 经 MCP 工具映射到上述命令，CommandActor.ai 门控 |
 

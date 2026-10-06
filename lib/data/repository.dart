@@ -261,6 +261,18 @@ class Repository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 批量删键（单事务+单 notify——快记草稿三键整组清除走此口，避免三连重建）。
+  Future<void> settingsClearAll(List<String> keys) async {
+    if (keys.isEmpty) return;
+    final db = await _database();
+    await db.transaction((txn) async {
+      for (final k in keys) {
+        await txn.delete('app_settings', where: 'key = ?', whereArgs: [k]);
+      }
+    });
+    notifyListeners();
+  }
+
   // ---------- schedule_blocks ----------
 
   static const _blockPatchColumns = {

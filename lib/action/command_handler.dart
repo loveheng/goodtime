@@ -68,6 +68,7 @@ class CommandHandler {
         final AdjustBlockTimeCommand c => _adjustBlockTime(c),
         final ShiftBlockCommand c => _shiftBlock(c),
         final TickBlockCommand c => _tickBlock(c),
+        final PostponeBlockCommand c => _postponeBlock(c),
         final UpdateSettingsCommand c => _updateSettings(c),
         final UpdateFixedSlotsCommand c => _updateFixedSlots(c),
       };
@@ -87,7 +88,8 @@ class CommandHandler {
       RejectBlockCommand() ||
       AdjustBlockTimeCommand() ||
       ShiftBlockCommand() ||
-      TickBlockCommand() =>
+      TickBlockCommand() ||
+      PostponeBlockCommand() =>
         true,
       _ => false,
     };
@@ -144,9 +146,11 @@ class CommandHandler {
   Future<CommandResult> _quickNoteDraft(QuickNoteDraftCommand cmd) async {
     final text = cmd.text.trim();
     if (text.isEmpty) {
-      await _repo.settingsClear(SettingsKeys.quickNoteDraftText);
-      await _repo.settingsClear(SettingsKeys.quickNoteDraftImportant);
-      await _repo.settingsClear(SettingsKeys.quickNoteDraftDeadline);
+      await _repo.settingsClearAll([
+        SettingsKeys.quickNoteDraftText,
+        SettingsKeys.quickNoteDraftImportant,
+        SettingsKeys.quickNoteDraftDeadline,
+      ]);
       return CommandResult(op: cmd.op, note: '草稿已清除');
     }
     await _repo.settingsSet({
@@ -1185,6 +1189,70 @@ class CommandHandler {
       targetId: cmd.id,
       snapshot: blockToJson(fresh),
       note: wasMissed ? '已补勾（补记）' : (q == ScheduleBlock.qualitySpark ? '已勾选（5 分钟启动版，计入有效推进）' : '已勾选'),
+    );
+  }
+
+  // ---- 遗留区顺延（ui-spec §3.2，2026-10-06 拍板）----
+
+  /// missed 块整体搬目标日：起止钟点不变、身份不变（postpone_count+1）。
+  /// 仅 missed 可顺延；目标位与同日活块/固定占用重叠即拒（跨午夜溢出段按
+  /// 当日 0 点起钳制比对，遗留块钟点不变场景下足够）。human 专属。
+  Future<CommandResult> _postponeBlock(PostponeBlockCommand cmd) async {
+    final target = tryParseIsoDate(cmd.date);
+    if (target == null) {
+      throw ActionException('date 非法：${cmd.date}', code: ActionErrorCode.invalidRequest);
+    }
+    final b = await _requireBlock(cmd.id);
+    if (b.status != ScheduleBlock.statusMissed) {
+      throw ActionException(
+        '仅 missed 块可顺延（遗留区口径，当前 ${b.status}）',
+        code: ActionErrorCode.invalidRequest,
+        hint: 'proposed/confirmed 走确认三键或 adjust_blocks',
+      );
+    }
+    if (b.date == cmd.date) {
+      throw ActionException('块已在目标日 ${cmd.date}', code: ActionErrorCode.invalidRequest);
+    }
+    for (final o in await _repo.blocksOnDate(cmd.date)) {
+      if (o.id == b.id ||
+          o.status == ScheduleBlock.statusMelted ||
+          o.status == ScheduleBlock.statusArchived) {
+        continue;
+      }
+      if (o.startMin < b.endMin && b.startMin < o.endMin) {
+        throw ActionException(
+          '目标日 ${cmd.date} ${clockOf(b.startMin)}–${clockOf(b.endMin)} 与现有块重叠',
+          code: ActionErrorCode.invalidRequest,
+          hint: '先腾挪该时段，或对块用「改时间」微调',
+        );
+      }
+    }
+    final resolved = await _repo.fixedSlotsForDate(target);
+    final walls = [
+      ...resolved.onDate,
+      ...resolved.spillover,
+    ];
+    for (final s in walls) {
+      final sStart = s.startMin < 0 ? 0 : s.startMin;
+      if (sStart < b.endMin && b.startMin < s.endMin) {
+        throw ActionException(
+          '目标日 ${cmd.date} ${clockOf(b.startMin)}–${clockOf(b.endMin)} 撞固定占用「${s.name}」',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+    }
+    final ok = await _repo.patchBlock(b.id!, {
+      'date': cmd.date,
+      'postpone_count': b.postponeCount + 1,
+    }, expectedVersion: cmd.expectedVersion);
+    if (!ok) throw await _blockConflict(cmd.op, cmd.id);
+    final fresh = await _requireBlock(cmd.id);
+    return CommandResult(
+      op: cmd.op,
+      targetId: cmd.id,
+      snapshot: blockToJson(fresh),
+      note:
+          '已顺延至 ${cmd.date}${fresh.postponeCount >= ScheduleRules.postponeAlert ? '（已顺延 ${fresh.postponeCount} 次，需人工决策）' : ''}',
     );
   }
 

@@ -44,7 +44,8 @@ class PlansPage extends StatelessWidget {
     final wake = settings['wake_time'] as int? ?? 0;
     final today = scheduleDayOf(DateTime.now(), wake);
     final todayIso = isoDate(today);
-    final plans = await _repo.listPlans();
+    // 冷藏池需要 archived 条目：一次查询带回，_load 内分流
+    final plans = await _repo.listPlans(includeArchived: true);
 
     final todayBlocks = await _repo.blocksOnDate(todayIso);
     final planOfBlock = <String, String>{}; // block planId -> date
@@ -72,7 +73,12 @@ class PlansPage extends StatelessWidget {
     final todayPlans = <Plan>[];
     final inProgress = <Plan>[];
     final waiting = <Plan>[];
+    final archivedPlans = <Plan>[];
     for (final p in plans) {
+      if (p.archived) {
+        archivedPlans.add(p); // 冷藏池（§8）：归档条目折叠展示，可恢复
+        continue;
+      }
       final blockDate = planOfBlock[p.id!];
       if (blockDate == todayIso) {
         todayPlans.add(p);
@@ -86,6 +92,7 @@ class PlansPage extends StatelessWidget {
       today: todayPlans,
       inProgress: inProgress,
       waiting: waiting,
+      archivedPlans: archivedPlans,
       proposedByPlan: proposedByPlan,
       sparkPlanIds: sparkPlanIds,
       todayIso: todayIso,
@@ -93,7 +100,10 @@ class PlansPage extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, _PlansView view) {
-    final empty = view.today.isEmpty && view.inProgress.isEmpty && view.waiting.isEmpty;
+    final empty = view.today.isEmpty &&
+        view.inProgress.isEmpty &&
+        view.waiting.isEmpty &&
+        view.archivedPlans.isEmpty; // 冷藏池有货也不算空池
     if (empty) {
       return Center(
         child: Text('池子空空的——想到什么就记下来，30 秒的事',
@@ -119,6 +129,8 @@ class PlansPage extends StatelessWidget {
             _sectionTitle(context, '待安排'),
             ..._quadrants(context, view.waiting),
           ],
+          if (view.archivedPlans.isNotEmpty)
+            _ColdPoolSection(plans: view.archivedPlans),
         ],
       ),
     );
@@ -166,6 +178,7 @@ class _PlansView {
     required this.today,
     required this.inProgress,
     required this.waiting,
+    required this.archivedPlans,
     required this.proposedByPlan,
     required this.sparkPlanIds,
     required this.todayIso,
@@ -174,9 +187,76 @@ class _PlansView {
   final List<Plan> today;
   final List<Plan> inProgress;
   final List<Plan> waiting;
+  final List<Plan> archivedPlans;
   final Map<String, int> proposedByPlan;
   final Set<String> sparkPlanIds;
   final String todayIso;
+}
+
+/// 冷藏池（schedule-app §8；界面文案「收起的旧想法 · N 条」词汇表 §0.4）：
+/// archived 条目折叠区，默认收起；逐条「恢复」=archived:false（乐观锁回主列表）。
+class _ColdPoolSection extends StatefulWidget {
+  const _ColdPoolSection({required this.plans});
+
+  final List<Plan> plans;
+
+  @override
+  State<_ColdPoolSection> createState() => _ColdPoolSectionState();
+}
+
+class _ColdPoolSectionState extends State<_ColdPoolSection> {
+  bool _expanded = false;
+
+  Repository get _repo => AppServices.repo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(StScale.radiusCard),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: StColors.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text('收起的旧想法 · ${widget.plans.length} 条',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(color: StColors.textSecondary)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded)
+            for (final p in widget.plans)
+              ListTile(
+                dense: true,
+                title: Text(p.title, style: Theme.of(context).textTheme.bodyMedium),
+                trailing: TextButton(
+                  onPressed: () => CommandHandler(_repo).execute(
+                    UpdatePlanCommand(
+                        id: p.id!, archived: false, expectedVersion: p.version),
+                  ),
+                  child: const Text('恢复'),
+                ),
+              ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PlanCard extends StatelessWidget {

@@ -915,6 +915,30 @@ final class TickBlockCommand extends ScheduleCommand {
 }
 
 /// 设置写（§3 UpdateSettings，人/AI）：键注册制，传 null 清空对应项。
+/// 遗留区「顺延今日」（ui-spec §3.2，2026-10-06 拍板）：missed 块整体搬到
+/// 目标日，起止钟点不变、身份不变（postpone_count+1）。仅 missed 可顺延；
+/// human 专属（AI 挪块走 adjust_blocks 校验刻度）。
+final class PostponeBlockCommand extends ScheduleCommand {
+  const PostponeBlockCommand(this.id, {required this.date, super.expectedVersion});
+
+  final String id;
+
+  /// 目标日 'yyyy-MM-dd'（遗留区固定传今日）
+  final String date;
+
+  @override
+  String get op => 'postpone_block';
+  @override
+  String? get targetId => id;
+  @override
+  Map<String, Object?> toJson() => {
+        'op': op,
+        'id': id,
+        'date': date,
+        if (expectedVersion != null) 'expected_version': expectedVersion,
+      };
+}
+
 final class UpdateSettingsCommand extends ScheduleCommand {
   const UpdateSettingsCommand({required this.values});
   final Map<String, Object?> values;
