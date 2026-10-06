@@ -69,6 +69,7 @@ class CommandHandler {
         final ShiftBlockCommand c => _shiftBlock(c),
         final TickBlockCommand c => _tickBlock(c),
         final PostponeBlockCommand c => _postponeBlock(c),
+        final PanicClearCommand c => _panicClear(c),
         final UpdateSettingsCommand c => _updateSettings(c),
         final UpdateFixedSlotsCommand c => _updateFixedSlots(c),
       };
@@ -89,7 +90,8 @@ class CommandHandler {
       AdjustBlockTimeCommand() ||
       ShiftBlockCommand() ||
       TickBlockCommand() ||
-      PostponeBlockCommand() =>
+      PostponeBlockCommand() ||
+      PanicClearCommand() =>
         true,
       _ => false,
     };
@@ -1254,6 +1256,98 @@ class CommandHandler {
       note:
           '已顺延至 ${cmd.date}${fresh.postponeCount >= ScheduleRules.postponeAlert ? '（已顺延 ${fresh.postponeCount} 次，需人工决策）' : ''}',
     );
+  }
+
+  // ---- 现实熔断（§8 五轮拍板；ui-spec §3.6，2026-10-06 落地）----
+
+  /// 批量只作用于今日「未开始的 AI 块」（非 pinned、proposed/confirmed）：
+  /// clear_remaining=逐块 melted 无痕回池；push_2h=整体 +120min（顺延计数+1），
+  /// 试算撞手动/pinned/固定占用或越作息边界即整单拒（原子执行）。human 专属。
+  Future<CommandResult> _panicClear(PanicClearCommand cmd) async {
+    final env = await _envelope();
+    final date = isoDate(scheduleDayOf(DateTime.now(), env.wake));
+    final nowMin = cmd.nowMin ?? minutesOfDay(DateTime.now());
+    final targets = (await _repo.blocksOnDate(date))
+        .where((b) =>
+            b.source == ScheduleBlock.sourceAi &&
+            !b.pinned &&
+            (b.status == ScheduleBlock.statusProposed ||
+                b.status == ScheduleBlock.statusConfirmed) &&
+            b.startMin > nowMin)
+        .toList()
+      ..sort((a, b) => a.startMin.compareTo(b.startMin));
+    if (targets.isEmpty) {
+      return CommandResult(op: cmd.op, note: '今天剩余没有需要熔断的 AI 安排');
+    }
+    switch (cmd.mode) {
+      case 'clear_remaining':
+        final melted = <String>[];
+        for (final b in targets) {
+          final ok = await _repo.patchBlock(
+              b.id!, {'status': ScheduleBlock.statusMelted},
+              expectedVersion: b.version);
+          if (!ok) throw await _blockConflict(cmd.op, b.id!);
+          melted.add(b.id!);
+        }
+        return CommandResult(
+          op: cmd.op,
+          note: '已把 ${targets.length} 项放回清单待安排（无痕，零心理负债）',
+          data: {'melted': melted},
+        );
+      case 'push_2h':
+        final parsedDate = tryParseIsoDate(date)!;
+        final fixed = await _repo.fixedSlotsForDate(parsedDate);
+        final walls = <(int, int)>[
+          for (final b in await _repo.blocksOnDate(date))
+            if ((b.source == ScheduleBlock.sourceHuman || b.pinned) &&
+                b.status != ScheduleBlock.statusMelted &&
+                b.status != ScheduleBlock.statusArchived)
+              (b.startMin, b.endMin),
+          for (final s in fixed.onDate) (s.startMin, s.endMin),
+          for (final s in fixed.spillover)
+            (s.startMin < 0 ? 0 : s.startMin, s.endMin),
+        ];
+        for (final b in targets) {
+          final ns = b.startMin + 120;
+          final ne = b.endMin + 120;
+          if (ns < env.wake || ne > env.sleepAdj) {
+            throw ActionException(
+              '后移 2 小时会越出今日作息边界（${clockOf(ns)}–${clockOf(ne)}），试试「全清空」',
+              code: ActionErrorCode.invalidRequest,
+            );
+          }
+          for (final (ws, we) in walls) {
+            if (ws < ne && ns < we) {
+              throw ActionException(
+                '后移 2 小时会撞 ${clockOf(ws)}–${clockOf(we)} 的手动安排或固定占用',
+                code: ActionErrorCode.invalidRequest,
+                hint: '可先对单项用「改时间」微调',
+              );
+            }
+          }
+        }
+        final moved = <String>[];
+        for (final b in targets) {
+          final ok = await _repo.patchBlock(b.id!, {
+            'start_min': b.startMin + 120,
+            'end_min': b.endMin + 120,
+            'postpone_count': b.postponeCount + 1,
+          }, expectedVersion: b.version);
+          if (!ok) throw await _blockConflict(cmd.op, b.id!);
+          moved.add(b.id!);
+        }
+        return CommandResult(
+          op: cmd.op,
+          note: '已把 ${targets.length} 项整体后移 2 小时',
+          data: {'moved': moved},
+        );
+      default:
+        throw ActionException(
+          '未知 mode：${cmd.mode}',
+          code: ActionErrorCode.invalidRequest,
+          hint: '可选 clear_remaining / push_2h',
+        );
+    }
   }
 
   // ---- settings / fixed_slots ----

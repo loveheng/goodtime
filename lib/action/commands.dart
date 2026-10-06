@@ -939,6 +939,31 @@ final class PostponeBlockCommand extends ScheduleCommand {
       };
 }
 
+/// 现实熔断（§8 五轮拍板；ui-spec §3.6，2026-10-06 UI 落地）：human 专属批量
+/// 动作，命令层原子执行。mode：
+/// `clear_remaining`——今日未开始 AI 块（非 pinned）整体 melted 无痕回池；
+/// `push_2h`——今日未开始 AI 块整体 +120min（顺延计数+1），撞手动/pinned/
+/// 固定占用或越作息边界整单拒。human 块与 pinned 硬行程永不动（和平条款）。
+final class PanicClearCommand extends ScheduleCommand {
+  const PanicClearCommand({required this.mode, this.nowMin, super.expectedVersion});
+
+  final String mode;
+
+  /// 「未开始」判定基准（当日分钟数），UI 传当前时刻；缺省取命令执行时刻。
+  final int? nowMin;
+
+  @override
+  String get op => 'panic_clear';
+  @override
+  String? get targetId => null;
+  @override
+  Map<String, Object?> toJson() => {
+        'op': op,
+        'mode': mode,
+        if (nowMin != null) 'now_min': nowMin,
+      };
+}
+
 final class UpdateSettingsCommand extends ScheduleCommand {
   const UpdateSettingsCommand({required this.values});
   final Map<String, Object?> values;

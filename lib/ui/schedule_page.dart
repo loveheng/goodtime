@@ -14,6 +14,7 @@ import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 import 'block_sheet.dart';
+import 'global_action_sheet.dart';
 
 /// 今日页（ui-spec §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
 /// ×安全线徽章）+ 分级确认卡（火种突出/Routine 折叠/两态收缩）+ 时间轴
@@ -292,6 +293,11 @@ class _DayView extends StatelessWidget {
                         .bodySmall
                         ?.copyWith(color: Theme.of(context).colorScheme.primary)),
               const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.warning_amber_outlined, size: 20),
+                tooltip: '遇到突发情况？',
+                onPressed: () => showGlobalActionSheet(context, data.blocks),
+              ),
               TextButton(
                 onPressed: onPrevDay,
                 child: const Text('‹ 前一天', style: TextStyle(fontSize: 12)),
