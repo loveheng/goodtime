@@ -42,6 +42,10 @@ abstract final class SettingsKeys {
   static const quickNoteDraftImportant = 'quick_note_draft_important';
   static const quickNoteDraftDeadline = 'quick_note_draft_deadline';
 
+  /// 界面外观三档 system/light/dark（ui-spec §0，2026-10-06 拍板解锁双主题）。
+  /// 入 [all]（UI 经 update_settings 通道写），同时入 [uiOnly]——AI 越权写外观被拒。
+  static const themeMode = 'theme_mode';
+
   static const all = [
     wakeTime,
     sleepTime,
@@ -52,7 +56,12 @@ abstract final class SettingsKeys {
     weatherLocation,
     exceptions,
     fillRateLimit,
+    themeMode,
   ];
+
+  /// 仅人可写的键：AI 经 update_settings 触碰即拒（Human-AI 对称性：
+  /// 外观是人的感官偏好，AI 无权代拨；2026-10-06 拍板）。
+  static const uiOnly = [themeMode];
 
   /// propose 硬前置（§6 校验铁律）：settings 未初始化（缺作息边界）时整单硬拒。
   static bool initialized(Map<String, String> s) =>

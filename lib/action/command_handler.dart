@@ -105,6 +105,19 @@ class CommandHandler {
         code: ActionErrorCode.forbidden,
       );
     }
+    // uiOnly 键：外观/感官偏好仅人可写，AI 经 update_settings 触碰即拒
+    // （Human-AI 对称性：人的感官偏好 AI 无权代拨，2026-10-06 拍板）。
+    if (cmd is UpdateSettingsCommand && actor == CommandActor.ai) {
+      for (final key in cmd.values.keys) {
+        if (SettingsKeys.uiOnly.contains(key)) {
+          throw ActionException(
+            '越权：设置键 $key 仅限用户本人在设置页修改',
+            code: ActionErrorCode.forbidden,
+            hint: '外观偏好（theme_mode）由用户自选，AI 请勿代拨',
+          );
+        }
+      }
+    }
   }
 
   // ---- plans ----
@@ -1225,6 +1238,15 @@ class CommandHandler {
           toSet[e.key] = v;
         case SettingsKeys.userRules || SettingsKeys.weatherLocation:
           toSet[e.key] = e.value.toString();
+        case SettingsKeys.themeMode:
+          final v = e.value.toString();
+          if (v != 'system' && v != 'light' && v != 'dark') {
+            throw ActionException(
+              'theme_mode 须为 system/light/dark（外观三档，ui-spec §0.3/§0.5）',
+              code: ActionErrorCode.invalidRequest,
+            );
+          }
+          toSet[e.key] = v;
         case SettingsKeys.exceptions:
           final decoded = e.value is String
               ? jsonDecode(e.value as String)

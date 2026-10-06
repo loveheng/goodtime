@@ -78,7 +78,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('几点起床？几点睡觉？', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const Text('一切安排以此为界', style: TextStyle(color: StColors.textSecondary)),
+        Text('一切安排以此为界', style: TextStyle(color: StColors.textSecondary)),
         const SizedBox(height: 24),
         _timeCard('起床', _wake, (m) => setState(() => _wake = m)),
         const SizedBox(height: 12),
@@ -160,7 +160,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           label: '$_dailyLimit',
           onChanged: (v) => setState(() => _dailyLimit = v.round()),
         ),
-        const Text('上限是休息权的模型支撑，不是效率指标',
+        Text('上限是休息权的模型支撑，不是效率指标',
             style: TextStyle(color: StColors.textSecondary)),
       ],
     );

@@ -43,6 +43,8 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 _scheduleSection(context, settings),
                 const SizedBox(height: 16),
+                _appearanceSection(context, settings),
+                const SizedBox(height: 16),
                 _rhythmSection(context),
                 const SizedBox(height: 16),
                 _mcpSection(context),
@@ -116,6 +118,35 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Text(text, style: Theme.of(context).textTheme.titleSmall),
       );
 
+  /// 外观三档（ui-spec §0，2026-10-06 拍板解锁双主题）：跟随系统/浅色/深色。
+  /// theme_mode 为 uiOnly 键——仅人可写（AI 经 update_settings 触碰即拒）。
+  Widget _appearanceSection(
+      BuildContext context, Map<String, Object?> settings) {
+    final current = settings['theme_mode'] as String? ?? 'system';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle(context, '外观'),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'system', label: Text('跟随系统')),
+                ButtonSegment(value: 'light', label: Text('浅色')),
+                ButtonSegment(value: 'dark', label: Text('深色')),
+              ],
+              selected: {current},
+              onSelectionChanged: (s) => _handler.execute(
+                UpdateSettingsCommand(values: {'theme_mode': s.first}),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _scheduleSection(BuildContext context, Map<String, Object?> settings) {
     final wake = settings['wake_time'] as int? ?? 420;
     final sleep = settings['sleep_time'] as int? ?? 1380;
@@ -169,7 +200,7 @@ class _SettingsPageState extends State<SettingsPage> {
               builder: (context, snap) {
                 final slots = snap.data ?? const <FixedSlotRow>[];
                 if (slots.isEmpty) {
-                  return const Text('没有固定安排是完全正常的',
+                  return Text('没有固定安排是完全正常的',
                       style: TextStyle(color: StColors.textSecondary));
                 }
                 return Column(
@@ -275,7 +306,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: const Text('重新生成'),
               ),
             ),
-            const Text('桌面 AI 用此地址配对（USB 场景先 adb reverse tcp:8765 tcp:8765）',
+            Text('桌面 AI 用此地址配对（USB 场景先 adb reverse tcp:8765 tcp:8765）',
                 style: TextStyle(fontSize: 11, color: StColors.textSecondary)),
           ],
         ),

@@ -1,56 +1,85 @@
 import 'dart:ui';
 
-/// ui-spec §0 视觉令牌单一事实源（2026-10-05 拍板定稿）。
+/// ui-spec §0 视觉令牌单一事实源（2026-10-05 拍板定稿；2026-10-06 解锁双主题）。
 ///
 /// 纪律（自拾贝 tokens.dart 同款）：Padding/Margin/圆角/色彩/动效/手势阈值
 /// 一律走本文件常量，禁止在组件里写魔术数字或裸色值；ui-spec 改版先改这里。
-/// 拍板基线：Material 3 + 固定品牌色板、关闭动态取色、MVP 锁定 Light Mode。
+/// 拍板基线：Material 3 + 固定品牌色板、关闭动态取色；主题三档（跟随系统/浅/深，
+/// 2026-10-06 拍板，浅色默认基线不变）。
 
-/// 语义色彩（ui-spec §0.1）。
+/// 语义色彩（ui-spec §0.1）：浅/深两套面板，[StColors] 为**当前激活面板**。
+/// 单窗口单主题——仅 ShiguangApp 装配点经 [StColors.applyBrightness] 置位，
+/// 业务代码只读不写；全局可变面板是对 ThemeExtension 方案的取舍
+/// （51 处调用点零迁移 vs 多窗口/动态取色才需要扩展，否决记录 schedule-app §11）。
 class StColors {
   const StColors._();
 
-  /// 深度攻坚态块底（高对比主战役）。
-  static const Color deepFocusBg = Color(0xFF283593);
-  static const Color deepFocusText = Color(0xFFFFFFFF);
+  /// 深度攻坚态块底（高对比主战役）——双主题同值。
+  static Color deepFocusBg = const Color(0xFF283593);
+  static Color deepFocusText = const Color(0xFFFFFFFF);
 
   /// 微型火种态胶囊（「5 分钟启动版」）。
-  static const Color sparkStroke = Color(0xFFFFB300);
-  static const Color sparkBg = Color(0xFFFFF8E1);
+  static Color sparkStroke = const Color(0xFFFFB300);
+  static Color sparkBg = const Color(0xFFFFF8E1);
 
   /// 漫游主题态（弱底弱框，起止以 `~` 显示）。
-  static const Color roamBg = Color(0x1FE3F2FD); // E3F2FD @12%
-  static const Color roamStroke = Color(0x6690CAF9); // 90CAF9 @40%
+  static Color roamBg = const Color(0x1FE3F2FD); // E3F2FD @12%
+  static Color roamStroke = const Color(0x6690CAF9); // 90CAF9 @40%
 
   /// 庆祝勋章态（香槟金微光，界面文案「犒劳时刻」）。
-  static const Color celebrationBg = Color(0xFFFFF3D6);
-  static const Color celebrationStroke = Color(0xFFD4AF37);
+  static Color celebrationBg = const Color(0xFFFFF3D6);
+  static Color celebrationStroke = const Color(0xFFD4AF37);
 
   /// 🛡️ 能量补给带（派生渲染不入库；界面文案「留白缓冲」）。
-  static const Color supplyBandBg = Color(0xFFE8F5E9);
-  static const Color supplyBandStroke = Color(0xFF81C784);
+  static Color supplyBandBg = const Color(0xFFE8F5E9);
+  static Color supplyBandStroke = const Color(0xFF81C784);
 
   /// 🍃 自由流动区（派生；界面文案「自由支配时间」）。
-  static const Color freeFlowBg = Color(0xFFF1F8E9);
+  static Color freeFlowBg = const Color(0xFFF1F8E9);
 
   /// human/手工块（现实色，与 AI 彩色块区分；重叠双列时橙线提示放行）。
-  static const Color humanBlockBg = Color(0x6678909C); // 78909C @40%
-  static const Color overlapHint = Color(0xFFFF9800); // §3 橙色提示拍板
+  static Color humanBlockBg = const Color(0x6678909C); // 78909C @40%
+  static Color overlapHint = const Color(0xFFFF9800); // §3 橙色提示拍板
 
   /// fixed_slots 背景带 / 系统日历投影块。
-  static const Color fixedSlotBg = Color(0xFFECEFF1);
-  static const Color projectionBg = Color(0xFFF5F5F5);
+  static Color fixedSlotBg = const Color(0xFFECEFF1);
+  static Color projectionBg = const Color(0xFFF5F5F5);
 
   /// missed 中性标（拍板方案 A：原形态色降饱和 40% + 米黄左标，绝不红）。
-  static const Color missedAccent = Color(0xFFFFF3E0);
+  static Color missedAccent = const Color(0xFFFFF3E0);
 
   /// 安全线徽章（界面文案「今日底线守住啦」）。
-  static const Color safelineOff = Color(0xFFBDBDBD);
-  static const Color safelineOn = Color(0xFFD4AF37);
+  static Color safelineOff = const Color(0xFFBDBDBD);
+  static Color safelineOn = const Color(0xFFD4AF37);
 
   /// 正文/次要文字（中性灰，不用纯黑）。
-  static const Color textPrimary = Color(0xFF1A1C1E);
-  static const Color textSecondary = Color(0xFF606468);
+  static Color textPrimary = const Color(0xFF1A1C1E);
+  static Color textSecondary = const Color(0xFF606468);
+
+  /// 按亮度切换激活面板（仅 ShiguangApp 装配点调用）；深色映射表 ui-spec §0.5。
+  static void applyBrightness(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    deepFocusBg = const Color(0xFF283593);
+    deepFocusText = const Color(0xFFFFFFFF);
+    sparkStroke = const Color(0xFFFFB300);
+    sparkBg = dark ? const Color(0xFF332C10) : const Color(0xFFFFF8E1);
+    roamBg = dark ? const Color(0x1F90CAF9) : const Color(0x1FE3F2FD);
+    roamStroke = const Color(0x6690CAF9);
+    celebrationBg = dark ? const Color(0xFF3B3323) : const Color(0xFFFFF3D6);
+    celebrationStroke = const Color(0xFFD4AF37);
+    supplyBandBg = dark ? const Color(0xFF1E3324) : const Color(0xFFE8F5E9);
+    supplyBandStroke = const Color(0xFF81C784);
+    freeFlowBg = dark ? const Color(0xFF1F2E1B) : const Color(0xFFF1F8E9);
+    humanBlockBg = dark ? const Color(0x5478909C) : const Color(0x6678909C);
+    overlapHint = const Color(0xFFFF9800);
+    fixedSlotBg = dark ? const Color(0xFF26292B) : const Color(0xFFECEFF1);
+    projectionBg = dark ? const Color(0xFF2A2D2F) : const Color(0xFFF5F5F5);
+    missedAccent = dark ? const Color(0xFF3A2F1B) : const Color(0xFFFFF3E0);
+    safelineOff = dark ? const Color(0xFF616161) : const Color(0xFFBDBDBD);
+    safelineOn = const Color(0xFFD4AF37);
+    textPrimary = dark ? const Color(0xFFE3E2E0) : const Color(0xFF1A1C1E);
+    textSecondary = dark ? const Color(0xFF9CA0A5) : const Color(0xFF606468);
+  }
 }
 
 /// 尺度令牌（ui-spec §0.3 Flutter 工程审查拍板）。

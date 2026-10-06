@@ -34,6 +34,7 @@ class ScheduleQueries {
       'weather_location': SettingsKeys.stringOf(raw, SettingsKeys.weatherLocation),
       'exceptions':
           exceptionsRaw == null ? <Object?>[] : (jsonDecode(exceptionsRaw) as List<dynamic>),
+      'theme_mode': raw[SettingsKeys.themeMode] ?? 'system', // 外观三档（uiOnly 键）
     };
   }
 
