@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 # 拾光功能设计（施工蓝图）
@@ -14,7 +14,7 @@ updated: 2026-10-05
 - flutter create + dev-init（context 框架/workflow/index/toolbox）
 - 三表 SQLite + Repository + 命令层（FIFO 锁/乐观锁/CommandActor.human|ai）
 - MCP 服务框架层搬运（jsonrpc/mcp_server，instructions+十工具 schema 全量注册，prompts 先空实现）
-- UI：首启引导 3 步、快记条（title+星+可选截止）、清单三分区、日程日视图（点空槽创建/点块表单编辑/确认三键/单块+30min）
+- UI：首启引导 3 步、快记入口（FAB+键盘吸附抽屉：title+星+可选截止+草稿三字段 KV，2026-10-06 拍板迁改）、清单三分区、日程日视图（点空槽创建/点块表单编辑/确认三键/单块+30min）
 - 工具链路：list_plans/add_plan/update_plan/get_settings/get_schedule/propose_schedule/get_history（基础聚合）+ stdio-bridge 联调
 - **验收**：桌面 AI「帮我排明天」→ 提案写回 → app 确认 → 勾选 → get_history 看到聚合。全链路无 UI 也可跑（MCP 优先，Human-AI 对称性从第一天成立）
 
@@ -63,8 +63,8 @@ updated: 2026-10-05
 | 日/周/月切换 | 顶部三段：日=参数化日视图（前后翻日/回到今天）；周=只读 7 列网格、点块跳日；月=格子摘要月历（状态点阵+火种/庆祝/例外微标、点格跳日、翻月） | 2026-10-06 拍板 |
 | 手势 | 长按坍缩/左滑换乘/右滑融化 | 十四轮 |
 | 全局动作 | 现实熔断键（清空今日/下午 AI 块）、「今天状态差」降级入口 | 五/六轮 |
-| 放工守卫 | sleep 前 2h 转静默视图；**快记条不关门** | 八轮 |
-| 快记条 | title+重要星+可选截止，零门槛常驻 | 全局 |
+| 放工守卫 | sleep 前 2h 转静默视图；**快记 FAB 恒可用** | 八轮 |
+| 快记入口 | FAB+键盘吸附抽屉：title+重要星+可选截止+草稿三字段 KV（quick_note_draft_* 内部键）+琥珀点，零门槛常驻（2026-10-06 拍板迁改） | 全局 |
 
 ### 清单页（灵魂的家）
 
@@ -81,6 +81,7 @@ updated: 2026-10-05
 | 命令 | 触发方 | 说明 |
 |---|---|---|
 | QuickCapture | 人 | 快记→plan（默认 light/anywhere/愿望池） |
+| QuickNoteDraft | 人 | 快记草稿三字段静默 KV（text/星/死线整体覆写，text 空=整组清除；quick_note_draft_* 内部键不经 update_settings 白名单）；仅 UI 通道，不进 MCP 工具面（2026-10-06） |
 | UpsertPlan / UpdatePlan(patch) | 人/AI | 计划增改；AI 走 MCP add_plan/update_plan |
 | ProposeSchedule | AI | 整天原子写，全量机械校验 |
 | ConfirmBlock / RejectBlock / AdjustBlockTime | 人 | 确认三键 |

@@ -655,7 +655,7 @@ class _Timeline extends StatelessWidget {
           Expanded(
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, StScale.fabClearanceDp),
                 child: SizedBox(
                   height: _windowHeight,
                   child: GestureDetector(
@@ -1365,6 +1365,7 @@ class _WeekView extends StatelessWidget {
             ),
             Expanded(
               child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: StScale.fabClearanceDp),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
@@ -1651,7 +1652,8 @@ class _MonthView extends StatelessWidget {
               child: GridView.count(
                 crossAxisCount: 7,
                 childAspectRatio: 0.82,
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.fromLTRB(
+                    4, 4, 4, StScale.fabClearanceDp),
                 children: [
                   for (var i = 0; i < leadingBlanks; i++) const SizedBox(),
                   for (var day = 1; day <= monthLen; day++)

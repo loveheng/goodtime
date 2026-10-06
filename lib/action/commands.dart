@@ -449,6 +449,35 @@ final class QuickCaptureCommand extends ScheduleCommand {
       };
 }
 
+/// 快记草稿静默持久化（§10 快记入口 2026-10-06 拍板）：三字段整体覆写，
+/// text 为空=整组清除（保存成功/清空收起是唯一清除通道）。
+/// 仅 UI 使用、不进 MCP 工具面（human-only）；键为 quick_note_draft_* 内部键。
+final class QuickNoteDraftCommand extends ScheduleCommand {
+  const QuickNoteDraftCommand({
+    required this.text,
+    this.importance = false,
+    this.deadline,
+  });
+
+  final String text;
+  final bool importance;
+
+  /// 可选截止日 'yyyy-MM-dd'（草稿暂存，保存时随快记落 plan）
+  final String? deadline;
+
+  @override
+  String get op => 'quick_note_draft';
+  @override
+  String? get targetId => null;
+  @override
+  Map<String, Object?> toJson() => {
+        'op': op,
+        'text': text,
+        'importance': importance,
+        if (deadline != null) 'deadline': deadline,
+      };
+}
+
 /// 计划创建（§3 UpsertPlan 的创建语义；AI 走 MCP add_plan 映射到本命令）。
 final class UpsertPlanCommand extends ScheduleCommand {
   const UpsertPlanCommand({

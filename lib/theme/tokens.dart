@@ -74,6 +74,10 @@ class StScale {
   static const double insetMd = 12;
   static const double insetLg = 16;
   static const double insetXl = 20;
+
+  /// 快记 FAB 净空（ui-spec §3 层叠规则，2026-10-06 拍板）：滚动体底部预留，
+  /// 末尾内容可滚出 FAB 覆盖区（FAB 56 + 上下边距 + 呼吸）。
+  static const double fabClearanceDp = 88;
 }
 
 /// 动效时长（全 app 仅三处微动效，其余零动画）。

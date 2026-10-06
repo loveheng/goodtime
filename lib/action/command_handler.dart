@@ -51,6 +51,7 @@ class CommandHandler {
 
   Future<CommandResult> _dispatch(ScheduleCommand cmd) => switch (cmd) {
         final QuickCaptureCommand c => _quickCapture(c),
+        final QuickNoteDraftCommand c => _quickNoteDraft(c),
         final UpsertPlanCommand c => _upsertPlan(c),
         final UpdatePlanCommand c => _updatePlan(c),
         final ProposeScheduleCommand c => _propose(c),
@@ -74,6 +75,7 @@ class CommandHandler {
   void _gate(ScheduleCommand cmd, CommandActor actor) {
     final humanOnly = switch (cmd) {
       QuickCaptureCommand() ||
+      QuickNoteDraftCommand() ||
       PlaceBlockCommand() ||
       RetroLogCommand() ||
       SwapBlockCommand() ||
@@ -120,6 +122,31 @@ class CommandHandler {
       snapshot: planToJson(plan),
       note: '已收入清单（默认轻松/随手可做，被排期即升格）',
     );
+  }
+
+  // ---- 快记草稿（§10 快记入口 2026-10-06 拍板）----
+
+  /// 草稿三字段整体覆写；text 空=整组清除（保存成功/清空收起的唯一清除通道）。
+  /// 仅 UI 通道（human-only），不进 MCP 工具面；deadline 缺省时显式清旧值防残留。
+  Future<CommandResult> _quickNoteDraft(QuickNoteDraftCommand cmd) async {
+    final text = cmd.text.trim();
+    if (text.isEmpty) {
+      await _repo.settingsClear(SettingsKeys.quickNoteDraftText);
+      await _repo.settingsClear(SettingsKeys.quickNoteDraftImportant);
+      await _repo.settingsClear(SettingsKeys.quickNoteDraftDeadline);
+      return CommandResult(op: cmd.op, note: '草稿已清除');
+    }
+    await _repo.settingsSet({
+      SettingsKeys.quickNoteDraftText: text,
+      SettingsKeys.quickNoteDraftImportant: cmd.importance ? '1' : '0',
+    });
+    if (cmd.deadline == null) {
+      await _repo.settingsClear(SettingsKeys.quickNoteDraftDeadline);
+    } else {
+      await _repo.settingsSet(
+          {SettingsKeys.quickNoteDraftDeadline: cmd.deadline!});
+    }
+    return CommandResult(op: cmd.op, note: '草稿已暂存');
   }
 
   Future<CommandResult> _upsertPlan(UpsertPlanCommand cmd) async {

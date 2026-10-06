@@ -98,7 +98,7 @@ class PlansPage extends StatelessWidget {
       );
     }
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, StScale.fabClearanceDp),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

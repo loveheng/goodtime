@@ -35,6 +35,13 @@ abstract final class SettingsKeys {
   /// 填充率上限（百分比 5..100，默认 60，update_settings 可调——§6「默认可调」）
   static const fillRateLimit = 'fill_rate_limit';
 
+  /// 快记草稿内部键（§10 快记入口 2026-10-06 拍板）：UI 专属三字段静默持久化，
+  /// 刻意不入 [all] 白名单——update_settings 拒收，AI 不可触碰草稿；
+  /// 由 QuickNoteDraftCommand（human-only）直写。
+  static const quickNoteDraftText = 'quick_note_draft_text';
+  static const quickNoteDraftImportant = 'quick_note_draft_important';
+  static const quickNoteDraftDeadline = 'quick_note_draft_deadline';
+
   static const all = [
     wakeTime,
     sleepTime,

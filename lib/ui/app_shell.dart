@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'plans_page.dart';
-import 'quick_note_bar.dart';
+import 'quick_note_fab.dart';
 import 'schedule_page.dart';
 import 'settings_page.dart';
+import '../theme/tokens.dart';
 
-/// 主框架（ui-spec §1）：底部双 Tab「日程｜清单」+ 快记条两 Tab 顶部常驻 + 设置右上角进。
+/// 主框架（ui-spec §1）：底部双 Tab「日程｜清单」+ 右下角快记 FAB 两 Tab 常驻
+/// （2026-10-06 拍板，自顶部常驻快记条迁改；守卫态不撤=「快记永不关门」平移）
+/// + 设置右上角进。
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -32,14 +35,16 @@ class _AppShellState extends State<AppShell> {
         ],
       ),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: QuickNoteBar(),
+            Positioned.fill(
+              child: _tab == 0 ? const SchedulePage() : const PlansPage(),
             ),
-            const Divider(height: 1),
-            Expanded(child: _tab == 0 ? const SchedulePage() : const PlansPage()),
+            const Positioned(
+              right: StScale.insetLg,
+              bottom: StScale.insetLg,
+              child: QuickNoteFab(),
+            ),
           ],
         ),
       ),
