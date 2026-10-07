@@ -1,7 +1,7 @@
 {
-  "versionCode": 12011,
+  "versionCode": 20014,
   "versionName": "1.1.0",
   "apkUrl": "https://r2.oklhj.eu.org/updates/app-release.apk",
-  "sha256": "89096f47b0e779b4a382c936c9f185eb716c4954177a61478802bc78d4a2e203",
-  "changelog": "应用图标焕新（日出×清单卡片）；应用内自更新体系上线"
+  "sha256": "24d16ea41cbddfa669c46a015c497811febef060855b1bd1da5c5083f00fc7dd",
+  "changelog": "新增背景信息记录（七切片全链路）；清单详情改为全页展示"
 }
