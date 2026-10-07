@@ -12,10 +12,13 @@ import '../models/plan.dart';
 import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
+import 'plan_detail_page.dart';
 
 /// 清单页 M1（ui-spec §5 裁剪）：三分区单页滚动——今天（今日有块的 plan）/
 /// 当下推进中（有未来块）/ 待安排（四象限分组、空组隐藏、Q4=愿望池）。
-/// 卡片点开编辑，长按归档/删除；「待确认 N 项」角标 + 🔥 今日核心标记。
+/// 卡片点按进计划详情页（全页路由，2026-10-07 对齐 ui-spec §5 定稿；
+/// 编辑 sheet 浮层形态随背景区迁入退役）；长按归档/删除；
+/// 「待确认 N 项」角标 + 🔥 今日核心标记。
 class PlansPage extends StatelessWidget {
   const PlansPage({super.key});
 
@@ -284,7 +287,11 @@ class _PlanCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         borderRadius: BorderRadius.circular(StScale.radiusCard),
-        onTap: () => _editSheet(context),
+        // 点按=进计划详情页（ui-spec §5 全页路由；原编辑 sheet 退役，2026-10-07）
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+              builder: (_) => PlanDetailPage(planId: plan.id!)),
+        ),
         onLongPress: () => _actionSheet(context),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -382,261 +389,6 @@ class _PlanCard extends StatelessWidget {
     return StColors.safelineOff;
   }
 
-  /// spec 尾部路线图块进度（『## 路线图』+ Markdown Checklist）。
-  String? _roadmapProgress(String spec) {
-    final idx = spec.indexOf('## 路线图');
-    if (idx < 0) return null;
-    var section = spec.substring(idx);
-    final next = section.indexOf('\n## ', 1);
-    if (next >= 0) section = section.substring(0, next);
-    final done = RegExp(r'^\s*-\s+\[x\]', multiLine: true).allMatches(section).length;
-    final open = RegExp(r'^\s*-\s+\[ \]', multiLine: true).allMatches(section).length;
-    if (done + open == 0) return null;
-    return '当前进度 $done/${done + open}';
-  }
-
-  /// 子树（≤3 级缩进）：按 parentId 逐层拉取。
-  Future<List<(int, Plan)>> _subtree(String rootId) async {
-    final out = <(int, Plan)>[];
-    Future<void> walk(String parentId, int depth) async {
-      if (depth > 3) return;
-      for (final k in await _repo.listPlans(parentId: parentId)) {
-        out.add((depth, k));
-        await walk(k.id!, depth + 1);
-      }
-    }
-
-    await walk(rootId, 1);
-    return out;
-  }
-
-  /// 详情/编辑 sheet（functional-spec §2 清单页）：四字段编辑 + roadmap 进度 +
-  /// open_items 手答（人机澄清闭环）+ reward_spec + 子树缩进 + 「排期」快捷动作。
-  /// version 随每次成功写从快照回填，保证同会话连续操作不被乐观锁卡住。
-  Future<void> _editSheet(BuildContext context) {
-    final title = TextEditingController(text: plan.title);
-    final spec = TextEditingController(text: plan.spec ?? '');
-    final notes = TextEditingController(text: plan.notes ?? '');
-    final reward = TextEditingController(text: plan.rewardSpec ?? '');
-    var version = plan.version;
-    var items = List<OpenItem>.from(plan.openItems);
-    final answers = <int, TextEditingController>{};
-
-    return showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-              20, 0, 20, 20 + MediaQuery.of(sheetContext).viewInsets.bottom),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(sheetContext).size.height * 0.85),
-            child: StatefulBuilder(
-              builder: (context, setState) => SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(children: [
-                      Expanded(
-                        child: Text('编辑计划',
-                            style: Theme.of(sheetContext).textTheme.titleLarge),
-                      ),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: sheetContext,
-                            initialDate: DateTime.now(),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 30)),
-                          );
-                          if (picked == null || !sheetContext.mounted) return;
-                          final time = await showTimePicker(
-                            context: sheetContext,
-                            initialTime: const TimeOfDay(hour: 9, minute: 0),
-                          );
-                          if (time == null || !sheetContext.mounted) return;
-                          final start = time.hour * 60 + time.minute;
-                          try {
-                            await CommandHandler(_repo).execute(PlaceBlockCommand(
-                              date: isoDate(picked),
-                              startMin: start,
-                              endMin: start + (plan.estimate ?? 60),
-                              planId: plan.id,
-                            ));
-                            if (sheetContext.mounted) {
-                              ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(
-                                content: Text(
-                                    '已排入 ${isoDate(picked)} ${clockOf(start)}，可在日程页调整'),
-                                duration: const Duration(seconds: 2),
-                              ));
-                              Navigator.of(sheetContext).pop();
-                            }
-                          } on ActionException catch (e) {
-                            if (sheetContext.mounted) {
-                              ScaffoldMessenger.of(sheetContext).showSnackBar(
-                                  SnackBar(
-                                      content: Text(e.message),
-                                      duration: const Duration(seconds: 3)));
-                            }
-                          }
-                        },
-                        icon: const Icon(Icons.event_available, size: 18),
-                        label: const Text('排期'),
-                      ),
-                    ]),
-                if (_roadmapProgress(spec.text) != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text('▶ ${_roadmapProgress(spec.text)!}',
-                        style: TextStyle(
-                            fontSize: 12, color: Theme.of(sheetContext).colorScheme.primary)),
-                  ),
-                TextField(
-                  controller: title,
-                  decoration: const InputDecoration(labelText: '标题', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: spec,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                      labelText: '精确描述（spec）', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: notes,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                      labelText: '备注（首行写「马上开始」的第一步）',
-                      border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: reward,
-                  decoration: const InputDecoration(
-                      labelText: '犒赏（打完这一仗怎么奖励自己）',
-                      border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                for (var i = 0; i < items.length; i++)
-                  if (items[i].answer == null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('？${items[i].question}',
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: StColors.textSecondary)),
-                          Row(children: [
-                            Expanded(
-                              child: TextField(
-                                controller: answers.putIfAbsent(i,
-                                    () => TextEditingController()),
-                                decoration: const InputDecoration(
-                                    isDense: true,
-                                    hintText: '写下答案，敲定它',
-                                    border: OutlineInputBorder()),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () async {
-                                final answer = answers[i]!.text.trim();
-                                if (answer.isEmpty) return;
-                                final updated = [
-                                  for (var j = 0; j < items.length; j++)
-                                    j == i
-                                        ? OpenItem(
-                                            question: items[j].question,
-                                            answer: answer)
-                                        : items[j]
-                                ];
-                                final r = await CommandHandler(_repo).execute(
-                                    UpdatePlanCommand(
-                                        id: plan.id!,
-                                        openItems: updated,
-                                        expectedVersion: version));
-                                version = (r.snapshot?['version'] as int?) ?? version + 1;
-                                setState(() {
-                                  items = updated;
-                                  answers.remove(i)?.dispose();
-                                });
-                              },
-                              child: const Text('敲定'),
-                            ),
-                          ]),
-                        ],
-                      ),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text('✓ ${items[i].question} → ${items[i].answer}',
-                          style: Theme.of(sheetContext)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: StColors.textSecondary)),
-                    ),
-                FutureBuilder<List<(int, Plan)>>(
-                  future: _subtree(plan.id!),
-                  builder: (context, snap) {
-                    final tree = snap.data ?? const <(int, Plan)>[];
-                    if (tree.isEmpty) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text('子计划',
-                              style: Theme.of(sheetContext)
-                                  .textTheme
-                                  .labelMedium
-                                  ?.copyWith(color: StColors.textSecondary)),
-                          for (final (depth, p) in tree)
-                            Padding(
-                              padding: EdgeInsets.only(left: depth * 16.0),
-                              child: Text('└ ${p.title}',
-                                  style: Theme.of(sheetContext).textTheme.bodySmall),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    final r = await CommandHandler(_repo).execute(
-                      UpdatePlanCommand(
-                        id: plan.id!,
-                        title: title.text.trim().isEmpty ? null : title.text.trim(),
-                        spec: spec.text.trim().isEmpty ? null : spec.text.trim(),
-                        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
-                        rewardSpec:
-                            reward.text.trim().isEmpty ? null : reward.text.trim(),
-                        expectedVersion: version,
-                      ),
-                    );
-                    version = (r.snapshot?['version'] as int?) ?? version + 1;
-                    if (sheetContext.mounted) Navigator.of(sheetContext).pop();
-                  },
-                  child: const Text('保存'),
-                ),
-              ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _actionSheet(BuildContext context) {
     return showModalBottomSheet<void>(
       context: context,
@@ -658,35 +410,9 @@ class _PlanCard extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('删除'),
-              onTap: () async {
+              onTap: () {
                 Navigator.of(sheetContext).pop();
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (dialogContext) => AlertDialog(
-                    title: const Text('删除这条计划？'),
-                    content: Text('「${plan.title}」将从清单移除，无法恢复。'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(false),
-                        child: const Text('取消'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(true),
-                        child: const Text('删除'),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirmed == true) {
-                  try {
-                    await CommandHandler(_repo).execute(DeletePlanCommand(plan.id!));
-                  } on ActionException catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(e.message)));
-                    }
-                  }
-                }
+                _confirmDelete(context);
               },
             ),
             ListTile(
@@ -698,5 +424,35 @@ class _PlanCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// 删除二次确认（词汇表「删除」，ui-spec §0.4 清单长按组）。
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除这条计划？'),
+        content: Text('「${plan.title}」将从清单移除，无法恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await CommandHandler(_repo).execute(DeletePlanCommand(plan.id!));
+    } on ActionException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 }

@@ -1,9 +1,10 @@
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
-/// 存储层：三表台账（schedule-app.md §4）——plans（清单条目=本体 Soul）+
-/// fixed_slots（固定占用=约束）+ schedule_blocks（日程块实例=肉身 Avatar）。
-/// Schema 唯一出处为设计 SSOT §4；v1 三表一次成形，后续演进走
+/// 存储层：台账库——plans（清单条目=本体 Soul）+ fixed_slots（固定占用=约束）+
+/// schedule_blocks（日程块实例=肉身 Avatar）+ backgrounds（软背景，v3 增，
+/// background-context-draft.md §2）+ app_settings KV。
+/// Schema 唯一出处为设计 SSOT §4 + 背景草案 §2；后续演进走
 /// onUpgrade 分段幂等迁移（模式照抄拾贝 db.dart，schedule-app.md §12 领料）。
 class Db {
   static Database? _db;
@@ -18,13 +19,18 @@ class Db {
     final dir = await getDatabasesPath();
     final db = await openDatabase(
       _pathOverride ?? p.join(dir, 'shiguang.db'),
-      version: 2,
+      version: 3,
       onCreate: (db, version) => _createAll(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         // 分段幂等迁移区（拾贝模式）：每段「oldVersion < N」+ 幂等 _ensure* 补齐。
         if (oldVersion < 2) {
           // v1→v2：补齐 app_settings（settings KV 与三表同库）
           await _ensureSettingsTable(db);
+        }
+        if (oldVersion < 3) {
+          // v2→v3：backgrounds 软背景表单表先行（施工时序调整，schedule-app §11
+          // 留痕；artifacts 拍板落地时另批迁移）
+          await _ensureBackgroundsTable(db);
         }
       },
       onOpen: (db) async {
@@ -97,6 +103,26 @@ class Db {
       'CREATE INDEX IF NOT EXISTS idx_plans_parent ON plans(parent_id)',
     );
     await db.execute('''
+      CREATE TABLE IF NOT EXISTS backgrounds (
+        id TEXT NOT NULL PRIMARY KEY,                   -- uuid
+        scope TEXT NOT NULL,                            -- global/plan——建档定死不迁移（改挂=删了重录）
+        plan_id TEXT REFERENCES plans(id),              -- scope=plan 时必填；NO ACTION 护栏（无 ON DELETE），
+                                                        -- 删除处置=delete_plan 命令层同事务级联销毁（§2 否决 DDL CASCADE）
+        content TEXT NOT NULL,                          -- 给人与 AI 读的归纳描述（机读/展示分离）
+        raw_source_text TEXT,                           -- 原话永存（溯源/撤销重构）；建档填一次，永不变（§3 手编契约）
+        tags TEXT,                                      -- JSON 字符串数组：#健康 式自由标签，不锁闭枚举
+        applicable_dates TEXT,                          -- JSON 单日 ISO 日期数组（一律日历日）；null=长期有效
+        source TEXT NOT NULL,                           -- user/ai_derived（provenance，出生来源不可变）
+        captured_by TEXT NOT NULL DEFAULT 'me',         -- 多人预留钉子（主草案 §3.4）
+        created_at INTEGER NOT NULL,                    -- 毫秒时间戳
+        updated_at INTEGER NOT NULL,                    -- 毫秒时间戳
+        version INTEGER NOT NULL DEFAULT 0              -- 乐观锁：任何成功写入 +1，CAS 校验用
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_backgrounds_plan ON backgrounds(plan_id)',
+    );
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS app_settings (
         key TEXT PRIMARY KEY,       -- 设置键注册表：lib/data/settings.dart SettingsKeys
         value TEXT NOT NULL,        -- 统一字符串存储，类型编解码在 SettingsKeys/命令层
@@ -115,5 +141,28 @@ class Db {
         updated_at INTEGER NOT NULL
       )
     ''');
+  }
+
+  /// 幂等补齐 backgrounds（v2→v3，2026-10-07）：软背景层（background-context-draft.md §2）。
+  static Future<void> _ensureBackgroundsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS backgrounds (
+        id TEXT NOT NULL PRIMARY KEY,
+        scope TEXT NOT NULL,
+        plan_id TEXT REFERENCES plans(id),
+        content TEXT NOT NULL,
+        raw_source_text TEXT,
+        tags TEXT,
+        applicable_dates TEXT,
+        source TEXT NOT NULL,
+        captured_by TEXT NOT NULL DEFAULT 'me',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        version INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_backgrounds_plan ON backgrounds(plan_id)',
+    );
   }
 }

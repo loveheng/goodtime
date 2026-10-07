@@ -175,31 +175,34 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   // ④ 关于你：身份画像 + 我的偏好（可跳但强烈推荐）。
   // 这两项注入 AI 排程上下文，是排程贴合度的地基；human 通道写入，不受 uiOnly 限制。
+  // 内容包可滚动：小屏/键盘弹出挤压竖向空间时不溢出（测试视口 800×600 即溢出）。
   Widget _stepProfile() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('关于你', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Text('这两项是 AI 排程的地基，建议填一下；可稍后在「设置」页随时修改。',
-            style: TextStyle(color: StColors.textSecondary)),
-        const SizedBox(height: 24),
-        const Text('身份画像（系统提示词）', style: TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        _multiLineField(
-          hint: '例如：自由职业者，家有两岁宝宝，上午精力最好、晚上 9 点后不处理工作；'
-              '硬约束是周三下午要陪诊。',
-          onChanged: (v) => setState(() => _identityPrompt = v),
-        ),
-        const SizedBox(height: 20),
-        const Text('我的偏好（自然语言）', style: TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        _multiLineField(
-          hint: '例如：周五晚上不排深度工作；午饭后留 30 分钟散步；'
-              'deadline 前两天不排新事务。',
-          onChanged: (v) => setState(() => _userRules = v),
-        ),
-      ],
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('关于你', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text('这两项是 AI 排程的地基，建议填一下；可稍后在「设置」页随时修改。',
+              style: TextStyle(color: StColors.textSecondary)),
+          const SizedBox(height: 24),
+          const Text('身份画像（系统提示词）', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          _multiLineField(
+            hint: '例如：自由职业者，家有两岁宝宝，上午精力最好、晚上 9 点后不处理工作；'
+                '硬约束是周三下午要陪诊。',
+            onChanged: (v) => setState(() => _identityPrompt = v),
+          ),
+          const SizedBox(height: 20),
+          const Text('我的偏好（自然语言）', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          _multiLineField(
+            hint: '例如：周五晚上不排深度工作；午饭后留 30 分钟散步；'
+                'deadline 前两天不排新事务。',
+            onChanged: (v) => setState(() => _userRules = v),
+          ),
+        ],
+      ),
     );
   }
 

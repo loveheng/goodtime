@@ -53,4 +53,17 @@ abstract final class ScheduleRules {
   /// plan.importance=true）沉浸的绝对分钟数，spark 计入、完成百分比彻底抛弃。
   static const String deepNetMetricNote =
       'deep net = Σ done minutes of important-quadrant plans (spark counts)';
+
+  /// 全局背景注入预算（background-context-draft.md §2，2026-10-07 拍板）：
+  /// scope=global 条目 ≤8 条、content 总字数 ≤400。度量口径=命令层 Dart
+  /// String.length 单点（UTF-16 码元；中文场景码元≈码点，确定性优先）、
+  /// **只计 content**——raw_source_text（溯源存证）与 tags 不进分子，堵
+  /// 「往 raw 塞长文绕预算」暗门。终态双指标：任一超限即 budget_exceeded
+  /// 整体拒绝（仅拦 ai actor，human 放行——校验刻度不对称）。
+  static const int globalBackgroundsMax = 8;
+  static const int globalBackgroundCharsMax = 400;
+
+  /// applicable_dates 长窗劝改线（§2）：日期窗超过 14 天说明不是瞬态信息，
+  /// AI 应建议改为长期背景（去掉日期窗）——劝改非拦截，防数组膨胀。
+  static const int backgroundDateWindowAdviseDays = 14;
 }

@@ -714,9 +714,26 @@ class _SettingsPageState extends State<SettingsPage> {
               contentPadding: EdgeInsets.zero,
               title: const Text('访问令牌'),
               subtitle: Text(mcp.token ?? '…'),
-              trailing: TextButton(
-                onPressed: () => mcp.regenerateToken(),
-                child: const Text('重新生成'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 18),
+                    tooltip: '复制',
+                    onPressed: mcp.token == null
+                        ? null
+                        : () {
+                            Clipboard.setData(ClipboardData(text: mcp.token!));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已复制'), duration: Duration(seconds: 1)),
+                            );
+                          },
+                  ),
+                  TextButton(
+                    onPressed: () => mcp.regenerateToken(),
+                    child: const Text('重新生成'),
+                  ),
+                ],
               ),
             ),
             Text('桌面 AI 用此地址配对（USB 场景先 adb reverse tcp:8765 tcp:8765）',

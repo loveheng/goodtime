@@ -38,10 +38,10 @@ description: shiguang（Flutter Android 日程台账 + 内嵌 MCP 服务端）�
 
 ## 模块结构（现状）
 
-- `lib/data/db.dart` —— 三表台账 schema v2（plans/fixed_slots/schedule_blocks + app_settings KV）+ 分段幂等迁移 + 外键兜底（v2=2026-10-05）
+- `lib/data/db.dart` —— 台账库 schema v3（plans/fixed_slots/schedule_blocks + backgrounds 软背景 v3 增 + app_settings KV）+ 分段幂等迁移 + 外键兜底（v3=2026-10-07，backgrounds 单表先行）
 - `lib/data/repository.dart` —— 三表 Repository：FIFO 写锁 / 字段级 patch+乐观锁 CAS / replaceFixedSlots 原子替换 / fixedSlotsForDate 溢出解析 / blocksInRange 范围查询 / settings KV / revision 通知代次
 - `lib/data/settings.dart` —— app_settings 键注册表（SettingsKeys，propose 硬前置判据）
-- `lib/models/` —— plan / fixed_slot / schedule_block 实体（fromMap/toMap/copyWith）
+- `lib/models/` —— plan / fixed_slot / schedule_block / background 实体（fromMap/toMap/copyWith；background 手编契约收口在 copyWith/patch 白名单）
 - `lib/action/commands.dart` —— 命令协议：CommandActor(human\|ai) / ActionErrorCode / sealed 命令 + fromJson / 快照 JSON 唯一口径
 - `lib/action/command_handler.dart` —— **唯一写入口**（14 写命令 + propose 机械校验全量（填充率/呼吸律/deep 禁排）+ 越权门；模式照抄拾贝 item_action_handler）
 - `lib/action/queries.dart` —— 读入口（get_settings / get_schedule 服务端供作息日 / get_history 基础聚合）

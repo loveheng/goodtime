@@ -1,3 +1,4 @@
+import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
@@ -50,6 +51,12 @@ abstract final class ActionErrorCode {
 
   /// propose_schedule 机械校验未过（逐条原因 + available_free_windows）。
   static const scheduleRejected = 'schedule_rejected';
+
+  /// scope=global 背景注入预算超限（background-context-draft.md §2，终态双指标：
+  /// 条数>8 或 content 总字数>400）。仅拦 ai actor；data 附当前全局背景全量摘要
+  /// ——AI 无需重读即可提出具体归并方案（version_conflict/schedule_rejected 同款
+  /// 返回契约风格）。
+  static const budgetExceeded = 'budget_exceeded';
 }
 
 /// 动作被拒绝（领域校验不过 / 目标不存在 / 主体越权）。
@@ -165,6 +172,20 @@ Map<String, Object?> slotToJson(FixedSlot s) => {
       'weekdays': s.weekdays,
       'start_min': s.startMin,
       'end_min': s.endMin,
+    };
+
+/// backgrounds 快照 JSON（MCP 唯一序列化口径）。
+Map<String, Object?> backgroundToJson(Background b) => {
+      'id': b.id,
+      'scope': b.scope,
+      'plan_id': b.planId,
+      'content': b.content,
+      'raw_source_text': b.rawSourceText,
+      'tags': b.tags,
+      'applicable_dates': b.applicableDates,
+      'source': b.source,
+      'captured_by': b.capturedBy,
+      'version': b.version,
     };
 
 // ───────────────────────────── 命令本体 ─────────────────────────────
@@ -365,6 +386,38 @@ sealed class ScheduleCommand {
           for (var i = 0; i < rawSlots.length; i++)
             FixedSlot.fromMap(_map(rawSlots[i], 'slots[$i]', op)),
         ]);
+      case 'upsert_background':
+        final scope = _reqStr(json, 'scope', op);
+        if (scope != Background.scopeGlobal && scope != Background.scopePlan) {
+          throw ActionException(
+            'upsert_background scope 非法：$scope',
+            code: ActionErrorCode.invalidRequest,
+            hint: 'global=常驻画像叙事 / plan=行程背景（须带 plan_id）',
+          );
+        }
+        return UpsertBackgroundCommand(
+          id: _str(json['id']),
+          scope: scope,
+          planId: _str(json['plan_id']),
+          content: _reqStr(json, 'content', op),
+          rawSourceText: _str(json['raw_source_text']),
+          tags: _strList(json['tags'], 'tags', op),
+          applicableDates: _strList(json['applicable_dates'], 'applicable_dates', op),
+          expectedVersion: ev,
+        );
+      case 'merge_backgrounds':
+        final rawOps = json['ops'];
+        if (rawOps is! List || rawOps.isEmpty) {
+          throw ActionException(
+            'merge_backgrounds 需要非空 ops 数组',
+            code: ActionErrorCode.invalidRequest,
+            hint: '每项：{kind: delete, id} 或 {kind: upsert, id?, scope?, plan_id?, content, tags?, applicable_dates?, raw_source_text?}',
+          );
+        }
+        return MergeBackgroundsCommand(ops: [
+          for (var i = 0; i < rawOps.length; i++)
+            BackgroundMergeOp.fromJson(_map(rawOps[i], 'ops[$i]', op), 'ops[$i]', op),
+        ]);
       default:
         throw ActionException(
           '未知命令：$op',
@@ -395,6 +448,8 @@ sealed class ScheduleCommand {
     'tick_block',
     'update_settings',
     'update_fixed_slots',
+    'upsert_background',
+    'merge_backgrounds',
   ];
 }
 
@@ -1009,6 +1064,153 @@ final class UpdateFixedSlotsCommand extends ScheduleCommand {
       };
 }
 
+/// 背景信息写（background-context-draft.md §2/§3，人/AI 双通道）：id 缺省=建档；
+/// id 给定且存在=编辑（手编契约：scope/plan_id 不可变——载荷与现值不符即拒、
+/// raw_source_text 永不变——编辑路径一律忽略传入原话）。source 不作为载荷字段，
+/// 由 actor 派生（human→user / ai→ai_derived，溯源不可伪造）。
+/// scope=global 受注入预算终态双指标约束（budget_exceeded 仅拦 ai，human 放行）。
+final class UpsertBackgroundCommand extends ScheduleCommand {
+  const UpsertBackgroundCommand({
+    this.id,
+    required this.scope,
+    this.planId,
+    required this.content,
+    this.rawSourceText,
+    this.tags,
+    this.applicableDates,
+    super.expectedVersion,
+  });
+
+  final String? id;
+  final String scope; // global | plan（建档定死，改挂=删旧增新走 merge）
+  final String? planId; // scope=plan 必填
+  final String content;
+
+  /// 原话溯源，仅建档时写入一次；编辑路径忽略
+  final String? rawSourceText;
+  final List<String>? tags; // #健康 式自由标签，不锁枚举
+
+  /// 瞬态作用日期窗（单日 ISO 数组）；null=长期；空数组由模型归一 null
+  final List<String>? applicableDates;
+
+  @override
+  String get op => 'upsert_background';
+  @override
+  String? get targetId => id;
+  @override
+  Map<String, Object?> toJson() => {
+        'op': op,
+        if (id != null) 'id': id,
+        'scope': scope,
+        if (planId != null) 'plan_id': planId,
+        'content': content,
+        if (rawSourceText != null) 'raw_source_text': rawSourceText,
+        if (tags != null) 'tags': tags,
+        if (applicableDates != null) 'applicable_dates': applicableDates,
+        if (expectedVersion != null) 'expected_version': expectedVersion,
+      };
+}
+
+/// 归并批处理单项（背景草案 §2）：delete={id} / upsert={id?, scope?, plan_id?,
+/// content, tags?, applicable_dates?, raw_source_text?}。upsert 带 id 且行存在=
+/// 编辑（契约字段不可变同上）；否则=建档（id 可自带，幂等重试友好）。
+class BackgroundMergeOp {
+  const BackgroundMergeOp.delete(this.id)
+      : kind = 'delete',
+        scope = null,
+        planId = null,
+        content = null,
+        rawSourceText = null,
+        tags = null,
+        applicableDates = null;
+
+  const BackgroundMergeOp.upsert({
+    this.id,
+    this.scope,
+    this.planId,
+    required this.content,
+    this.rawSourceText,
+    this.tags,
+    this.applicableDates,
+  }) : kind = 'upsert';
+
+  final String kind; // delete | upsert
+  final String? id; // delete 必填；upsert 目标行（可空=建档）
+  final String? scope; // 建档必填；编辑路径与现值不符即拒
+  final String? planId;
+  final String? content; // upsert 必填（归并后的归纳描述）
+  final String? rawSourceText; // 仅建档生效
+  final List<String>? tags;
+  final List<String>? applicableDates;
+
+  factory BackgroundMergeOp.fromJson(Map<String, Object?> json, String key, String op) {
+    final kind = json['kind'];
+    if (kind == 'delete') {
+      final id = json['id'];
+      if (id is! String || id.isEmpty) {
+        throw ActionException(
+          '$op 的 $key（delete）需要非空 id',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      return BackgroundMergeOp.delete(id);
+    }
+    if (kind == 'upsert') {
+      final content = _str(json['content']);
+      if (content == null) {
+        throw ActionException(
+          '$op 的 $key（upsert）需要非空 content（归并后的归纳描述）',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      return BackgroundMergeOp.upsert(
+        id: _str(json['id']),
+        scope: _str(json['scope']),
+        planId: _str(json['plan_id']),
+        content: content,
+        rawSourceText: _str(json['raw_source_text']),
+        tags: _strList(json['tags'], '$key.tags', op),
+        applicableDates: _strList(json['applicable_dates'], '$key.applicable_dates', op),
+      );
+    }
+    throw ActionException(
+      '$op 的 $key kind 非法：$kind（delete/upsert）',
+      code: ActionErrorCode.invalidRequest,
+    );
+  }
+}
+
+/// 背景归并原子批处理（背景草案 §2 预算治理）：ops 数组（删 A / 删 B / 插 C）
+/// 单事务执行、终态校验全过才落库、否则整批拒——防「先插 C 再被拦」死锁与
+/// 「先删 A」有损中间态（模式先例=update_fixed_slots 整批原子替换 /
+/// propose_schedule 按天整单原子写）。human/AI 双通道（app 内手动归并同命令）；
+/// 预算终态校验仍仅拦 ai（校验刻度不对称）。
+final class MergeBackgroundsCommand extends ScheduleCommand {
+  const MergeBackgroundsCommand({required this.ops});
+  final List<BackgroundMergeOp> ops;
+  @override
+  String get op => 'merge_backgrounds';
+  @override
+  String? get targetId => null;
+  @override
+  Map<String, Object?> toJson() => {
+        'op': op,
+        'ops': [
+          for (final o in ops)
+            {
+              'kind': o.kind,
+              if (o.id != null) 'id': o.id,
+              if (o.scope != null) 'scope': o.scope,
+              if (o.planId != null) 'plan_id': o.planId,
+              if (o.content != null) 'content': o.content,
+              if (o.rawSourceText != null) 'raw_source_text': o.rawSourceText,
+              if (o.tags != null) 'tags': o.tags,
+              if (o.applicableDates != null) 'applicable_dates': o.applicableDates,
+            }
+        ],
+      };
+}
+
 // ───────────────────────────── 载荷解析助手 ─────────────────────────────
 
 String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
@@ -1033,4 +1235,25 @@ Map<String, Object?> _map(Object? v, String key, String op) {
     );
   }
   return v.cast<String, Object?>();
+}
+
+/// JSON 字符串数组解析（tags/applicable_dates 载荷）：给定了就必须是字符串数组，
+/// 元素类型不对整组拒——写入口严进（读侧的容错过滤是另一道，不适用于此）。
+List<String>? _strList(Object? v, String key, String op) {
+  if (v == null) return null;
+  if (v is! List) {
+    throw ActionException(
+      '$op 的 $key 必须是字符串数组',
+      code: ActionErrorCode.invalidRequest,
+    );
+  }
+  for (final e in v) {
+    if (e is! String) {
+      throw ActionException(
+        '$op 的 $key 元素须为字符串（got: $e）',
+        code: ActionErrorCode.invalidRequest,
+      );
+    }
+  }
+  return v.cast<String>();
 }

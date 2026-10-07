@@ -2,8 +2,8 @@
 dev-loop: memory
 format: v1
 epic: m1
-total-merged: 2
-last-merge: 2026-10-06
+total-merged: 3
+last-merge: 2026-10-07
 ---
 
 - [挂载] docs/design/functional-spec.md
@@ -39,7 +39,8 @@ last-merge: 2026-10-06
 - [2026-10-06] 设计草案起草（未定稿）：事实挂载(artifacts JSON)+Fact Capsule UI+用户/好友体系(本地roster+服务器用户/好友图)+多事实源重叠解析(重复/冲突/互补)+外部盲中继(E2E内容)。**已实质越过 §13 四大铁律**：破「无同步/无账号/服务端零联系人」三条，守「零代发+内容隐私(E2E)」。全文（含 §13 修正账 + 10 项待定清单）见 `docs/design/fact-user-relay-draft.md`；待用户逐条拍板后并入 SSOT（§13 修正需正式授权）。
 - [2026-10-06] 背景信息记录草案（未定稿）：`docs/design/background-context-draft.md`。核心区分「事实(硬约束) vs 背景(软上下文)」——背景为叙事性行程上下文，仅影响 AI 软提案权重不生成硬墙，契合 §13 反压迫条款；含数据模型/捕获UX/AI消费/与facts边界/隐私同步。与主草案并列为「硬事实+软背景」完整零散信息层。待校准「背景」界定是否准确。
 - [2026-10-06] 设置页编辑器簇切片落地（uncommitted）：settings_page 升级——一周节奏 fixed_slots 增删改（编辑 sheet：名称/ISO 星期 1–7 多选/起止，整单 UpdateFixedSlotsCommand 原子替换）/例外日 exceptions 增删改（起止日期+标签，JSON 落 settings.exceptions）/排程偏好（最小块粒度+单日排量上限+填充率上限+weather_location+user_rules，字段级 UpdateSettingsCommand）；命令层与十工具本就具备（M2 已通），本次纯 UI 收口。坑9：长 ListView 懒构建深位控件须先滚后点。
-- [2026-10-07] 事实挂载评审收敛（多轮对话）：契约定稿——5 类 category + source_kind 三级可靠性 + state/origin + time_anchors（moment/span/rule 三类锚，支持跨日）+ constraints 三数组（required_items/rules/notices）+ badge + attachments 预留列（恒空）；独立 artifacts 表 v3 + upsert_facts 辅助工具（suggest_user_setting 先例）；三刀路由（时空锚点/行动升格/规则补全 + background 兜底）；摄入三通道（桌面对话主通道/快记粘贴旁路/系统分享仅文本 ACTION_SEND+挂载 sheet+未归属池；图片本期不做挂 Q11）；随行凭证 UI（三入口+四层槽位，不新增 Tab，计划详情「随行凭证」区=聚合主场）。多人/盲中继强制解耦待单独拍板（§13 转向不搭车）。`fact-user-relay-draft.md` 全面重写（§0 收敛记录 + §1/§2 重写）+ background 草案补 frontmatter + README 索引补登两草案；docs-lint 过。待用户对 §0 七项正式拍板后并入 SSOT 排施工（依赖序见草案 §8）。
+- [2026-10-07] 事实挂载评审收敛（多轮对话）：契约定稿——5 类 category + source_kind 三级可靠性 + state/origin + time_anchors（moment/span/rule 三类锚，支持跨日）+ constraints 三数组（required_items/rules/notices）+ badge + attachments 预留列（恒空）；独立 artifacts 表 v3 + upsert_facts 辅助工具（suggest_user_setting 先例）；三刀路由（时空锚点/行动升格/规则补全 + background 兜底）；摄入三通道（桌面对话主通道/快记粘贴旁路/系统分享仅文本 ACTION_SEND+挂载 sheet+未归属池；图片本期不做挂 Q11）；随行凭证 UI（三入口+四层槽位，不新增 Tab，计划详情「随行凭证」区=聚合主场）。多人/盲中继强制解耦待单独拍板（§13 转向不搭车）。`fact-user-relay-draft.md` 全面重写（§0 收敛记录 + §1/§2 重写）+ background 草案补 frontmatter + README 索引补登两草案；docs-lint 过。待用户对 §0 七项正式拍板后并入 SSOT 排施工（依赖序见草案 §8）。同轮补充：用户确认产品路线=**本地先行、多人后推**——预留原则=形状钉子现在进表（captured_by DEFAULT 'me' 入 artifacts/backgrounds）、机器字段延后进预留清单（主草案 §3.4，逐项可空列迁移+回填零破坏）；外部评审背稿核实后背景草案同轮定稿（Q1–Q5 决议、backgrounds 9+1 字段模型、碰撞即澄清+注入预算双纪律、三通道全局路由）。再补三轮外部建议收敛：Q6=日期角标 `[起–止]`+超期沉「过去的背景」折叠组（修正自原地置灰案）；全局预算=命令层机械拦截（budget_exceeded 仅拦 ai actor、拒绝体携 8 条现场供归并询问、human 放行——校验不对称）；提炼纪律=捕获原子化、治理归并化（原子判据=可独立删除不损义）。四轮工程暗坑卡死：预算=终态双指标统一式（条数>8 或 字数>400）+归并走原子批处理命令（单事务终态校验，先例 update_fixed_slots/propose_schedule）；applicable_dates=TEXT JSON 单日数组+长窗(>14天)劝改+双通道装配（排程物理过滤/治理全量带[已过期]标——机械集合运算非召回层）；外键 NO ACTION 护栏+delete_plan 命令层处置（背景级联销毁/artifacts detach 未归属池+note 交代去向，否决 DDL CASCADE；block_id 软引用不设 FK——凭证比块长寿）；手编契约=raw 永不变、source 出生来源不可变（否决翻转）。五轮：全链路推演收编金样本 #4 附录「事实与背景链路推演」（待施工样本，A1–A8：四通道输入/落库载荷/预算拦截/排程反哺/三层显示/生命周期三连/走查脚本 8 行；§10 表补两行待施工占位）——拍板前是设计推演不作为验收依据，施工后 A7 升正式走查。六轮（多计划并发评估）：背景草案 §4 补「多计划分区装配」（分组禁平铺+日级态势句不带背景+硬切领地软定松紧）与「祖先链继承」（≤3 级——bg_knee 挂 p1 根、块在 c4/c6，字面只注入涉事 plan 会漏根背景）与纵深三道/不做使用追踪/不加第二预算；主草案 §1.6 凭证摘要同款分组注记；金样本附录 A4bis 多计划同日对照（商务+家庭分区载荷）。七轮（施工钉子）：预算度量口径=命令层 Dart String.length 单点/只计 content（raw/tags 不进分子）/常量入 rules.dart+工具描述写明；applicable_dates=正则+tryParse 双检挡非法日历日+空数组归一 null+去重排序+读侧 [DEGRADE]+**一律日历日严禁作息日过滤**（§1.3 同款钉子）；payload 首字段 "v":1 契约版本；badge 超 12 字符命令层截断；特异性优先=背景专属软政策（inherit_note 静态注记+playbook，范围细化覆写泛化默认、互斥仍走纪律一、覆写理由须注明、不外溢 artifacts）。
+- [2026-10-07] devlog 第3轮归并（15 条核对）：坑1–9、四提交链、六切片（金样本#4/遗留区冷藏池/熔断 sheet/清单详情/设置编辑器/蓝本校准）均已由上文进度行承载；唯一补遗——蓝本校准另一半：ui-spec §4 词汇表入「排期/当前进度/敲定/子计划/犒赏」五行。背景施工已切绑独立 epic background-context-draft（挂载 background-context-draft.md）。
 
 ## 口径决策（实现层拍板留痕，回 SSOT 前有效）
 

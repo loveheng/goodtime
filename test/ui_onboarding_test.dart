@@ -9,7 +9,7 @@ void main() {
     await setUpUiTest();
   });
 
-  testWidgets('首启引导：三步可走完，settings 正确播种', (tester) async {
+  testWidgets('首启引导：四步可走完，settings 正确播种', (tester) async {
     await tester.pumpWidget(const ShiguangApp());
     await pumpFlush(tester);
     expect(find.text('几点起床？几点睡觉？'), findsOneWidget);
@@ -18,6 +18,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.text('跳过'));
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('下一步'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('关于你'), findsOneWidget, reason: '引导④（2026-10-06 增）');
     await tester.tap(find.text('开始使用'));
 
     await waitFor(tester, () async {
@@ -27,5 +30,7 @@ void main() {
     final s = await real(tester, () => repo.settingsAll());
     expect(s['sleep_time'], '1380');
     expect(s['daily_new_blocks_limit'], '8');
+    expect(s.containsKey('user_rules'), isFalse, reason: '引导④空值不写');
+    expect(s.containsKey('identity_prompt'), isFalse, reason: '引导④空值不写');
   });
 }

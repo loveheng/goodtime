@@ -25,6 +25,7 @@ description: shiguang（Flutter Android 日程台账 + MCP 服务端）的「功
 | MCP 桥 | stdio-bridge / e2e-check（M1 待建） | `mcp-bridge/`（待建） | schedule-app.md §6 |
 | 测试 | 单元/组件测试 | `test/`（`find test -name "*.dart"`） | — |
 | 跨仓复用源 | 拾贝领料（MCP 框架/命令层模式/前台服务/测试模板） | `/home/zzh/app/goodshare`（仓库外只读） | schedule-app.md §12 复用清单 |
+| 背景信息记录 | 软背景层 backgrounds（表 v3/命令层预算与原子归并/双通道装配/计划详情「背景」区；2026-10-07 七切片落地） | `lib/data/db.dart`・`lib/action/`・`lib/mcp/tools.dart`・`lib/ui/plans_page.dart` | `docs/design/background-context-draft.md`（定稿契约；schedule-app §11 留痕行） |
 
 跨域隐式契约：ui-spec §0.4 文案词汇表 ↔ BlockRenderer/各页字符串（界面文案零黑话，先入表再上屏）。
 
@@ -32,6 +33,7 @@ description: shiguang（Flutter Android 日程台账 + MCP 服务端）的「功
 
 - **产品与架构设计**：火种（黄金火种/is_day_spark）、金样本、减震器、水流模型、熔断、Clean Slate、例外日、护航、深潜净值
 - **功能蓝图**：行走骨架、M1–M4、确认三键、快记条
+- **背景信息记录**：背景（backgrounds/软上下文）、注入预算、过去的背景、applicable_dates、日期角标
 
 ## 维护约定
 

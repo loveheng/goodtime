@@ -164,10 +164,12 @@ void main() {
     await env.server.stop();
   });
 
-  test('tools/list 注册十工具，prompts 先空实现', () async {
+  test('tools/list 注册十三工具，prompts 先空实现', () async {
     final env = await spinUp();
     final tools = await rpc(env.client, env.base, 1, 'tools/list');
-    expect(((resultOf(tools.body)['tools'] as List).length), 10);
+    expect(((resultOf(tools.body)['tools'] as List).length), 13,
+        reason: '工具面 tripwire：增减工具必须显式过本测（suggest_user_setting 2026-10 增；'
+            'upsert_background/merge_backgrounds 背景双工具 2026-10-07 增）');
     final prompts = await rpc(env.client, env.base, 2, 'prompts/list');
     expect(resultOf(prompts.body)['prompts'], isEmpty);
     env.client.close();

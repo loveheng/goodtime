@@ -4,16 +4,14 @@ import '../action/command_handler.dart';
 import '../action/commands.dart';
 import '../action/queries.dart';
 import '../data/repository.dart';
+import '../models/background.dart';
 import '../service/weather.dart';
 import '../util/schedule_day.dart';
 import '../data/settings.dart';
 import 'jsonrpc.dart';
 
-/// MCP 工具面（schedule-app.md §6，十个排程工具 MVP 定格不增不减）：
-/// list_plans / add_plan / update_plan / get_settings / update_settings /
-/// update_fixed_slots / propose_schedule / adjust_blocks / get_schedule / get_history；
-/// 另含一个 AI 建言通道 suggest_user_setting（非排程工具，仅把「建议用户改设置」
-/// 推送给 app，由用户在设置页手动决断；§11 拍板）。
+/// MCP 工具面（schedule-app.md §6 原十排程工具 + suggest_user_setting 建言通道 +
+/// 背景双工具 upsert_background/merge_backgrounds，背景草案 §2/§4，2026-10-07）。
 ///
 /// 本层只做三件事，**不做任何业务判断**（防呆全在命令层，模式照抄拾贝 tools.dart）：
 /// ① 把大模型输出的 JSON 反序列化成 [ScheduleCommand]（与 UI 组装的同一类对象，
@@ -27,7 +25,9 @@ List<Map<String, Object?>> toolSchemas() => [
         'name': 'list_plans',
         'description':
             '列出清单（愿望池/推进中/待安排的统一视图）。默认只返回未归档计划——'
-                '归档与冷数据不拉，防上下文膨胀；需要时用 include_archived 显式放开。',
+                '归档与冷数据不拉，防上下文膨胀；需要时用 include_archived 显式放开。'
+                '每个计划快照携带其直属背景（backgrounds，含作用日期窗）——分解/澄清时'
+                '先读，别让「妈妈膝盖不好」这类约束从你眼前溜走。',
         'inputSchema': {
           'type': 'object',
           'properties': {
@@ -269,6 +269,78 @@ List<Map<String, Object?>> toolSchemas() => [
           },
         },
       },
+      {
+        'name': 'upsert_background',
+        'description':
+            '写入用户背景信息（软上下文）：叙事性、定性的行程背景——「陪父母看诊顺带旅游」'
+                '「妈妈膝盖不好少走路」，与硬事实（车票/预约）相对：无刚性时空边界，只影响你的'
+                '提案权重与提案理由（理由区须显式引用哪条背景），绝不生成硬约束。'
+                'id 省略=建档；给定且存在=编辑（仅 content/tags/applicable_dates 可改；'
+                'scope/plan_id 不可变，raw_source_text 永不变——传入新原话被忽略，不要重试覆盖）。'
+                'scope=global 常驻画像叙事（过敏原/常住地/体力常态）受注入预算终态双指标：'
+                '条数≤8 且 content 总字数≤400（只计 content，raw/tags 不计）——超限返回 '
+                'budget_exceeded 且错误体附当前全量现场，你应向用户发起具体归并询问后走 '
+                'merge_backgrounds，不要原样重试；scope=plan 行程背景挂计划，无预算。'
+                'applicable_dates=瞬态背景作用日期窗：单日 ISO 日期字符串数组（一律日历日，如 '
+                '["2026-10-08","2026-10-09"]），缺省=长期有效，空数组按长期处理；窗口超过 14 天'
+                '请改为长期背景（瞬态窗本就该短）。写完必须向用户显式回显（「已记录背景：xxx——'
+                '不对就说我改」）。三通道路由：人设语气→identity_prompt（走建言）、硬性常驻规则→'
+                'user_rules（同样建言）、画像叙事→本工具。',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'string', 'description': '背景 uuid（省略=建档；给定且存在=编辑）'},
+            'scope': {
+              'type': 'string',
+              'enum': ['global', 'plan'],
+              'description': 'global=常驻画像叙事（受预算终态双指标） / plan=行程背景（无预算）'
+            },
+            'plan_id': {'type': 'string', 'description': 'scope=plan 必填（行程背景挂在计划上）'},
+            'content': {'type': 'string', 'description': '给人与 AI 读的归纳描述（一条记录=一个可独立成立、可独立删除的语义；预算只计本字段字数）'},
+            'raw_source_text': {'type': 'string', 'description': '建档原话逐字（仅建档写入一次；编辑路径忽略）'},
+            'tags': {'type': 'array', 'items': {'type': 'string'}, 'description': '自由标签（#健康 式，不锁枚举）'},
+            'applicable_dates': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description': '瞬态作用日期窗：单日 ISO 日期数组（一律日历日）；缺省=长期；超 14 天改长期',
+            },
+          },
+          'required': ['scope', 'content'],
+        },
+      },
+      {
+        'name': 'merge_backgrounds',
+        'description':
+            '背景治理：归并/清理一批原子执行（ops 数组单事务，终态校验全过才落库，'
+                '否则整批拒且原样回滚）。budget_exceeded 后用此工具执行你的归并方案：'
+                '先向用户发起具体归并询问（「『常住深圳』建议与『珠三角周末游』合并，可以吗？」），'
+                '确认后再发 ops。删除不存在 id 或终态仍超预算都会整批拒（错误体附当前现场），'
+                '以现场为准重发，不要盲目重试。',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'ops': {
+              'type': 'array',
+              'description': '原子批：如 删 A / 删 B / 增 C',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'kind': {'type': 'string', 'enum': ['delete', 'upsert']},
+                  'id': {'type': 'string', 'description': 'delete 必填；upsert 给 id 且行存在=编辑、否则=建档'},
+                  'scope': {'type': 'string', 'enum': ['global', 'plan'], 'description': '建档必填'},
+                  'plan_id': {'type': 'string', 'description': '建档 scope=plan 必填'},
+                  'content': {'type': 'string', 'description': 'upsert 必填（归并后的归纳描述）'},
+                  'raw_source_text': {'type': 'string', 'description': '仅建档生效'},
+                  'tags': {'type': 'array', 'items': {'type': 'string'}},
+                  'applicable_dates': {'type': 'array', 'items': {'type': 'string'}},
+                },
+                'required': ['kind'],
+              },
+            },
+          },
+          'required': ['ops'],
+        },
+      },
     ];
 
 Future<List<Map<String, Object?>>> callTool(
@@ -287,7 +359,19 @@ Future<List<Map<String, Object?>>> callTool(
       return [
         _text(jsonEncode({
           'count': plans.length,
-          'plans': [for (final p in plans) planToJson(p)],
+          'plans': [
+            for (final p in plans)
+              {
+                ...planToJson(p),
+                // plan 快照携 plan 背景（背景草案 §4 搭载模式）：仅本计划直属、
+                // 日期窗原样随行——祖先继承与当日过滤在 get_schedule 排程装配
+                'backgrounds': [
+                  for (final b in await repo.listBackgrounds(
+                      scope: Background.scopePlan, planId: p.id!))
+                    backgroundToJson(b),
+                ],
+              },
+          ],
         })),
       ];
 
@@ -310,11 +394,15 @@ Future<List<Map<String, Object?>>> callTool(
       final fixedSlots = await repo.listFixedSlots();
       final wake = settings['wake_time'] as int? ?? 0;
       final today = isoDate(scheduleDayOf(DateTime.now(), wake));
+      // 全局背景治理装配搭载（背景草案 §4 治理/对话通道：全量带 [已过期] 标 +
+      // 预算态——AI 能自测才不会反复撞墙；排程通道的物理过滤在 get_schedule 另行装配）
+      final backgrounds = await queries.globalBackgroundsPayload();
       return [
         _text(jsonEncode({
           ...settings,
           'today': today,
           'fixed_slots': [for (final s in fixedSlots) slotToJson(s)],
+          'global_backgrounds': backgrounds,
         })),
       ];
 
@@ -391,6 +479,20 @@ Future<List<Map<String, Object?>>> callTool(
       });
       await repo.settingsSet({SettingsKeys.aiSettingSuggestions: jsonEncode(list)});
       return [_text(jsonEncode({'ok': true, 'key': key}))];
+
+    case 'upsert_background':
+      final r = await _guarded(() => handler.execute(
+            ScheduleCommand.fromJson({'op': 'upsert_background', ...args}),
+            actor: CommandActor.ai,
+          ));
+      return [_text(jsonEncode(r.toJson()))];
+
+    case 'merge_backgrounds':
+      final r = await _guarded(() => handler.execute(
+            ScheduleCommand.fromJson({'op': 'merge_backgrounds', ...args}),
+            actor: CommandActor.ai,
+          ));
+      return [_text(jsonEncode(r.toJson()))];
 
     default:
       throw McpRpcError(errInvalidParams, 'Unknown tool: $name');

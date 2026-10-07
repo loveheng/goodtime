@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
@@ -173,6 +174,90 @@ class Repository extends ChangeNotifier {
     final db = await _database();
     final n = await db.delete('plans', where: 'id = ?', whereArgs: [id]);
     if (n == 0) throw StateError('plan 不存在: $id');
+    notifyListeners();
+  }
+
+  // ---------- backgrounds ----------
+
+  /// patch 白名单（手编契约 §3）：raw_source_text 永不变、source 出生不可变、
+  /// scope/plan_id 建档定死不迁移——契约字段不在白名单内，patch 通道根本改不到。
+  static const _backgroundPatchColumns = {'content', 'tags', 'applicable_dates'};
+
+  Future<Background> addBackground(Background bg) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final b = Background(
+      id: bg.id ?? newId(),
+      scope: bg.scope,
+      planId: bg.planId,
+      content: bg.content,
+      rawSourceText: bg.rawSourceText,
+      tags: bg.tags,
+      applicableDates: bg.applicableDates,
+      source: bg.source,
+      capturedBy: bg.capturedBy,
+      createdAt: bg.createdAt ?? now,
+      updatedAt: now,
+      version: 0,
+    );
+    final db = await _database();
+    await db.insert('backgrounds', b.toMap());
+    notifyListeners();
+    return b;
+  }
+
+  Future<Background?> backgroundById(String id) async {
+    final db = await _database();
+    final rows = await db.query('backgrounds', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : Background.fromMap(rows.first);
+  }
+
+  /// 背景列表：scope/plan 过滤（global=常驻画像、plan=行程背景），created_at DESC。
+  /// 祖先链继承与 applicable_dates 日期窗集合判断归 queries 装配层（§4 双通道装配），
+  /// 仓库只保台账行原样。
+  Future<List<Background>> listBackgrounds({String? scope, String? planId}) async {
+    final db = await _database();
+    final where = <String>[];
+    final args = <Object?>[];
+    if (scope != null) {
+      where.add('scope = ?');
+      args.add(scope);
+    }
+    if (planId != null) {
+      where.add('plan_id = ?');
+      args.add(planId);
+    }
+    final rows = await db.query(
+      'backgrounds',
+      where: where.isEmpty ? null : where.join(' AND '),
+      whereArgs: where.isEmpty ? null : args,
+      orderBy: 'created_at DESC',
+    );
+    return [for (final r in rows) Background.fromMap(r)];
+  }
+
+  /// 字段级 patch + 乐观锁，语义同 [patchPlan]（§2 度量口径：预算终态校验归命令层）。
+  Future<bool> patchBackground(String id, Map<String, Object?> patch, {int? expectedVersion}) async {
+    final values = _whitelist(patch, _backgroundPatchColumns);
+    if (values.isEmpty) return true;
+    final db = await _database();
+    final set = [for (final k in values.keys) '$k = ?', 'version = version + 1', 'updated_at = ?'].join(', ');
+    final where = expectedVersion == null ? 'id = ?' : 'id = ? AND version = ?';
+    final args = <Object?>[
+      ...values.values,
+      DateTime.now().millisecondsSinceEpoch,
+      id,
+      ?expectedVersion,
+    ];
+    final n = await db.rawUpdate('UPDATE backgrounds SET $set WHERE $where', args);
+    if (n > 0) notifyListeners();
+    return n > 0;
+  }
+
+  /// 物理删除（§6 单设备真删，无墓碑；命令层 AI 提炼回显后的删除通道同此口）。
+  Future<void> deleteBackground(String id) async {
+    final db = await _database();
+    final n = await db.delete('backgrounds', where: 'id = ?', whereArgs: [id]);
+    if (n == 0) throw StateError('background 不存在: $id');
     notifyListeners();
   }
 
@@ -356,7 +441,7 @@ class Repository extends ChangeNotifier {
     return n > 0;
   }
 
-  /// 全量导出（§11 数据出口「导出 JSON 全量」）：四个存储面一次 JSON 化，
+  /// 全量导出（§11 数据出口「导出 JSON 全量」）：五个存储面一次 JSON 化，
   /// 备份/迁移用途；设置页一键触发。
   Future<Map<String, Object?>> exportAll() async {
     final db = await _database();
@@ -365,6 +450,7 @@ class Repository extends ChangeNotifier {
       'plans': await db.query('plans'),
       'fixed_slots': await db.query('fixed_slots'),
       'schedule_blocks': await db.query('schedule_blocks'),
+      'backgrounds': await db.query('backgrounds'),
       'app_settings': await db.query('app_settings'),
     };
   }

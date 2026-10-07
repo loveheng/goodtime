@@ -1,11 +1,11 @@
 ---
-status: draft
+status: active
 updated: 2026-10-07
 ---
 
 # 事实挂载 · 用户/好友体系 · 外部盲中继 — 设计草案
 
-> **状态**：草案（DRAFT，未定稿，并入 SSOT 需正式拍板）。2026-10-06 起草；**2026-10-07 评审收敛**——§1（数据层+摄入管道）与 §2（事实看板 UI）按评审结论全面重写，收敛记录见 §0。
+> **状态**：**定稿已拍板**（2026-10-07 用户拍板：§0 七项+四洞察全部通过；同轮裁决 D2=未归属池宿主挂载 sheet 常驻组；schema 校准 v4——背景侧已占 v3）。拍板留痕=schedule-app §11「事实挂载（artifacts）」「事实摄入与凭证 UI（upsert_facts）」两行；**施工未开工**。多人轨（§3–§6）与 §13 修正（Q9）仍另批不搭车。2026-10-06 起草；2026-10-07 评审收敛（§1/§2 全面重写，收敛记录见 §0）。
 > **目的**：把「零散事实结构化挂载」「摄入与 AI 结构化管道」「事实看板 UI」与「多人协同/盲中继（多人轨）」合并起草，供评审。
 > **标记**：✅ = 已收敛（含 2026-10-07 评审收敛；并入 SSOT 前仍需正式拍板）；❓ = 待定（讨论中，尚未拍板）。
 > **关联**：全局 SSOT = `schedule-app.md`（§13 四大铁律现需修正，见 §6）；软背景配套 = `background-context-draft.md`（事实=硬 / 背景=软的分流判据在其 §5）；本体定性 §4（plans=Soul/blocks=Avatar）本草案不修改。
@@ -19,12 +19,12 @@ updated: 2026-10-07
 | # | 结论 | 要点 |
 |---|---|---|
 | 1 | **桌面 AI 是唯一解析器** | 端侧正则/端侧解析否决——双解析器=第二真相；分工铁律「App=台账+裁判，AI=推理」 |
-| 2 | **独立 `artifacts` 表（schema v3）** | plans/blocks 挂 JSON 列两案否决（见 §1.1）；plan_id/block_id 双可空 + 时间可查询 |
+| 2 | **独立 `artifacts` 表（schema v4；背景侧已占 v3）** | plans/blocks 挂 JSON 列两案否决（见 §1.1）；plan_id/block_id 双可空 + 时间可查询 |
 | 3 | **工具面增补 `upsert_facts`** | 非排程辅助通道，先例=`suggest_user_setting`；读侧零新工具（get_schedule 搭载） |
 | 4 | **契约定稿** | 5 类 category + `source_kind` 三级可靠性 + `state/origin` + `time_anchors`（moment/span/rule 三类锚）+ `constraints` 三数组 + `badge` + `attachments` 预留列（恒空，见 §1.2/§1.3） |
 | 5 | **展示页不新增 Tab** | 三入口 + 一个全屏凭证 sheet；计划详情「随行凭证」区=聚合主场（§2） |
 | 6 | **分享挂载段（仅文本）** | `ACTION_SEND text/plain` 接入 + 挂载 sheet + 未归属池 + raw→structured 提炼闭环；**图片本期不做**（attachments 列预留接口） |
-| 7 | **多人/盲中继强制解耦** | §3–§6 多人轨与事实 MVP 分轨推进；§13 地基转向（§6）需用户单独拍板，绝不搭车 |
+| 7 | **多人/盲中继强制解耦** | §3–§6 多人轨与事实 MVP 分轨推进；§13 地基转向（§6）需用户单独拍板，绝不搭车；**多人轨为规划中的后续阶段**（用户 2026-10-07 确认：本地先行、多人后推），预留策略见 §3.4 |
 
 四个关键设计洞察（评审中确立）：
 
@@ -33,24 +33,28 @@ updated: 2026-10-07
 - **归属权在分享瞬间交给人，解析权始终留给 AI**——分享者手里正拿着上下文，最知道属于哪趟行程（§1.7）。
 - **四类信息各有归宿**：锚点类管时空、规则类管补全、行动类升格任务、叙事类归背景（§1.6 三刀路由）。
 
+**拍板留痕（2026-10-07）**：七项与四洞察全部通过；同轮裁决 **D2=未归属池 UI 宿主=挂载 sheet 常驻组**（§1.7/§2.1/§8-6 已同步）；§0-2/§1.1/§8-2 schema 校准为 **v4**（背景侧已占 v3，另批迁移）。
+
 ---
 
 ## §1 事实挂载（Facts / Artifacts）：数据层与摄入管道
 
 **✅ 原则**：零散事实性信息（车票/机票/门票、酒店预订、场馆通知、场地政策、口头一句话）**不能作为普通备注**，必须结构化入 `artifacts` 表；不为每类票务单独建表（拖垮轻量架构）。
 
-### 1.1 存储裁决：独立 artifacts 表（schema v3，✅）
+### 1.1 存储裁决：独立 artifacts 表（schema v4，✅）
 
 | 方案 | 裁决理由 |
 |---|---|
 | plans 加 JSON 列 | ❌ 临场查询要全表扫+逐行解析 JSON，无法按时间检索 |
 | blocks 加 JSON 列 | ❌ 买票先于排程（块尚不存在）；酒店确认单横跨多日无对应块；块 melted/archived 后凭证挂靠悬空——**凭证必须比块长寿**（改签/退票后事实仍在） |
-| **独立 `artifacts` 表** | ✅ 时间检索、比块长寿、跨块挂载三全；v2→v3 分段幂等迁移模式现成（`db.dart` 拾贝模式） |
+| **独立 `artifacts` 表** | ✅ 时间检索、比块长寿、跨块挂载三全；v3→v4 分段幂等迁移模式现成（`db.dart` 拾贝模式；背景侧已占 v3） |
 
-表形态要点：`artifacts(id, category, source_kind, state, origin, title, badge, payload TEXT, attachments TEXT, plan_id?, block_id?, created_at, updated_at, version)`。
+表形态要点：`artifacts(id, category, source_kind, state, origin, title, badge, payload TEXT, attachments TEXT, captured_by, plan_id?, block_id?, created_at, updated_at, version)`。
 
-- `payload` = §1.2 契约 JSON（单一真相）；`attachments` = §1.2 预留列，MVP 恒存空数组。
+- 元数据列（category/state/origin/title/badge/captured_by）= payload 对应字段的提取投影（过滤/排序用），命令层与 payload 同源写入，payload 为单一真相。
+- `payload` = §1.2 契约 JSON（单一真相），**首字段固定 `"v": 1`**（契约内嵌版本，反序列化按 v 分支——attachments 启用等契约演进时旧数据零猜测）；`attachments` = §1.2 预留列，MVP 恒存空数组。
 - 时间检索：单次行程凭证量级仅十几条，v3 可不建提取冗余列（`json_extract` 或全表过滤足够）；若后续需要再以 v4 迁移补列——迁移模式现成，避免预铺。
+- **外键与删除处置（仓库口径：外键 NO ACTION 做护栏，删除处置归命令层）**：`plan_id REFERENCES plans(id)` 不带 ON DELETE；`block_id` **软引用不设外键**——凭证比块长寿（日切对过期 proposed 块物理删除、melted 状态迁移，都不得牵连凭证），block_id 悬空由 §1.4 一致性提示兜底。`delete_plan` 命令同事务处置两新表：**背景级联销毁**（语境随本体消亡，见背景草案 §2）/ **artifacts detach 至「未归属池」**（plan_id 置 null——凭证=现实存证，删计划≠删现实），结果 note 交代去向「N 条凭证已移入未归属」。
 - 导出 JSON（SSOT §11「数据出口=全量」）须带全 artifacts，文档向用户明示凭证含证件/订单等敏感信息。
 
 ### 1.2 统一 JSON 契约（定稿 ✅）
@@ -96,11 +100,11 @@ updated: 2026-10-07
 
 - **枚举收敛**：`category` = `transit | ticket | hotel | venue | verbal`（场馆通知与场地政策合并为 `venue`——通知=带时间锚部分落 time_anchors，政策=长期规则落 constraints）；`source_kind` = `booking`（官方预订凭证）| `announcement`（官方公告/政策）| `verbal`（口头转述）；`state` = `raw | structured`；`origin` = `shared | quicknote | ai | manual`。
 - **机读/展示分离**：凡是引擎要用的字段一律数字/日期（`min` 与 blocks 同口径 0..1439），凡是给人看的一律 label 串；「建议到站 08:15」由 `advance_arrival_minutes` 推导，不存第二份。
-- **`badge`**：时间轴微标透出的**单值**（`05车12F`），由 AI 显式指定且仅 booking 类设置——推导 `hero_metrics[0]` 会猜错语义（预约段与预约码谁排第一是语义问题）。
+- **`badge`**：时间轴微标透出的**单值**（`05车12F`），由 AI 显式指定且仅 booking 类设置——推导 `hero_metrics[0]` 会猜错语义（预约段与预约码谁排第一是语义问题）。命令层**超 12 字符截断**（微标渲染于最小 44dp 高的块卡，UI 空间硬约束——截断优于拒绝），工具描述同步约束。
 - **`raw_text` 永存原文**，防解析失真；解析置信度低的槽位**宁可留空不猜**——空槽位 UI 逐层隐藏（§2.2），零成本兜底。
 - **`constraints` 三数组语义**：`required_items`（要求：需要做/需要带）/ `rules`（禁止：不可以做的事）/ `notices`（提示：中性注意事项）。机读规则参数同挂此处（`forbidden_weekdays` 周几禁排 / `daily_deadline_min` 每日止检止入场）。
 - **`attachments` 预留（✅ 接口先立、逻辑不写）**：未来形态 `[{"type": "image", "path": "...", "w": 0, "h": 0}]`；v3 建列恒空、UI 见空忽略、工具面 MVP 不暴露此入参（AI 无图可写），将来图片走 human 通道写入，零迁移演进。
-- **延后不预置**：`entity_key`/`merge_state`/`conflict_group`/`captured_by`/`subject_ids` 属多人轨（§4/§3.4），本地单源用不上，字段不进 v3。
+- **多人预留（✅ 2026-10-07 用户确认：本地先行、多人后推）**：`captured_by`（DEFAULT 'me'）作为身份形状钉子**现在进表**——roster/用户体系落地后回填真实身份；`entity_key`/`merge_state`/`conflict_group`/`subject_ids` 等机器类字段延后不预置（每项=一个可空列迁移+回填，零破坏，见 §3.4 预留清单）。
 
 ### 1.3 时间锚三类（time_anchors，✅）
 
@@ -114,6 +118,7 @@ updated: 2026-10-07
 
 - span 支持跨日：`{"kind": "span", "date": "2026-10-17", "end_date": "2026-10-19"}`（`end_date` 缺省=单日）；moment 支持无 `min`（纯日期锚，如入住日）。
 - rule 类的机读参数挂 `constraints`（`forbidden_weekdays` / `daily_deadline_min`），纯文本规则留 `rules`/`notices` 数组。
+- **一律日历日**：anchors 的 `date` 与 propose 的 `date` 参数同口径（YYYY-MM-DD）；**严禁拿作息日（wake_time 切割）做日期窗过滤与临场计算**——作息日是日切/复盘口径，日期窗是排程意图口径，混用即第二真相（背景草案 §2 applicable_dates 同款钉子）。
 
 ### 1.4 升格语义与一致性（✅）
 
@@ -162,7 +167,7 @@ flowchart TD
 
 **图片边界（诚实声明）**：MVP 只接 text/plain——intent-filter 不声明 image 类型，截图在系统分享面板里根本不出现「拾光」目标，从源头杜绝「接进来却读不了」的半成品体验。将来接入候选=端侧 OCR 取字（机械动作，不违反零端侧 LLM——取字是机械的，**解释**仍只归桌面 AI）→ 文本进既有管道；接入深度与时机见 §7-Q11。
 
-**AI 消费（防上下文膨胀纪律）**：`get_schedule` 返回体搭载「当日+次日」凭证摘要（category/title/badge/最早 deadline_min，≈100 token，照天气投影搭载模式——propose 前必读使硬约束自动到达 AI 视线）；`list_plans` 快照带 state=raw 计数+摘要。凭证全文只进 UI，不进 AI 上下文。
+**AI 消费（防上下文膨胀纪律）**：`get_schedule` 返回体搭载「当日+次日」凭证摘要（category/title/badge/最早 deadline_min，≈100 token，照天气投影搭载模式——propose 前必读使硬约束自动到达 AI 视线）；`list_plans` 快照带 state=raw 计数+摘要。多计划同日时，凭证摘要与背景同款**按计划分组注入**（背景草案 §4 分区装配）。凭证全文只进 UI，不进 AI 上下文。
 
 ### 1.7 生命周期与人机分工（✅）
 
@@ -173,8 +178,8 @@ flowchart TD
   → ③ AI 提炼：下一轮桌面 AI 会话消化 raw → 回填同一条 artifact 槽位（id 不变、原文永存，state=structured）
 ```
 
-- 挂载 sheet：预填原文 → 计划搜索/最近/行程例外日置顶 → 确认，两次点击内完成，不过度打断分享原任务。
-- **未归属池**：plan_id=null 的凭证派生为「未归属 N 条」折叠组（随行凭证区内）；AI 下一轮主动提议归属（「这条 D8724 短信看起来属于云南行，已挂到筹备计划」），人在 app 内长按凭证卡可改挂（human 通道，人=终审）。
+- 挂载 sheet：预填原文 → 计划搜索/最近/行程例外日置顶 → 确认，两次点击内完成，不过度打断分享原任务；顶部常驻「未归属 N 条」折叠组（未归属池宿主，见下条）。
+- **未归属池**：plan_id=null 的凭证派生为「未归属 N 条」折叠组，**宿主=分享挂载 sheet 常驻组**（2026-10-07 D2 拍板——计划详情凭证区按 plan 组织，无宿主条目不进计划页；分享场景顺手归属，AI 对话主动提议归属为主回收通道）；AI 下一轮主动提议归属（「这条 D8724 短信看起来属于云南行，已挂到筹备计划」），人在 app 内长按凭证卡可改挂（human 通道，人=终审）。
 - **AI 消化 SOP**（playbook `facts.md`）：`list_plans` 见「N 条原文待提炼」→ 读 raw_text 解析 → `upsert_facts` 回填槽位 → 归属建议。将来 MCP prompts 实装时同源收编（SSOT 实现差异 6 的顺带兑现）。
 
 人机分工对照（与对话路径的差异）：
@@ -196,7 +201,7 @@ flowchart TD
 
 | 入口 | 形态 | 分期 |
 |---|---|---|
-| ① 计划详情「随行凭证」区 | 计划详情页新增一节（与 spec/路线图/notes/open_items/子树/犒赏并列），列出该 plan（含**子树派生聚合**）名下全部凭证——**一趟旅行的根计划详情页天然就是「行程凭证总览页」**，即「灵活页面」本体，零新导航。每条=紧凑卡（类别图标+title+badge+日期）；event_date 早于今日的派生折叠进「过去的凭证」组；plan_id=null 的进「未归属」组 | MVP |
+| ① 计划详情「随行凭证」区 | 计划详情页新增一节（与 spec/路线图/notes/open_items/子树/犒赏并列），列出该 plan（含**子树派生聚合**）名下全部凭证——**一趟旅行的根计划详情页天然就是「行程凭证总览页」**，即「灵活页面」本体，零新导航。每条=紧凑卡（类别图标+title+badge+日期）；全部锚点最晚日历日早于今日的派生折叠进「过去的凭证」组（span 取 end_date）；plan_id=null 条目不进计划页（宿主=挂载 sheet 常驻组，见 §1.7） | MVP |
 | ② 时间轴 🎫 微标 → 块浮层 | BlockRenderer 来源角标体系（📋/📌）加 🎫，微标文本=`badge` 字段；点块开浮层见通关卡 | MVP |
 | ③ 临场通关条 | 今日页顶部派生条：开始前 2h 内的凭证自动吸附（artifacts 按锚点范围查询，**派生不入库**，与补给带同纪律） | 分期二 |
 
@@ -243,6 +248,8 @@ flowchart TD
 | 溯源折叠 | 「查看原文」 |
 | verbal 角标 | 「口头信息 · 待核实」 |
 | 过期分组 | 「过去的凭证」 |
+| backgrounds 过期折叠组（背景草案 §3/Q6） | 「过去的背景」 |
+| applicable_dates 呈现（背景草案 §3/Q6） | 日期角标 `[10.08–10.10]` |
 
 ---
 
@@ -280,18 +287,24 @@ GET  /v1/friends                             好友列表（pending/accepted 状
 - **封闭朋友圈**：协作仅限本地已知朋友 + 用户显式打开的 plan token；App 不向用户推送随机陌生人的好友/plan 邀请。
 - 即：**服务器提供邀请/撮合能力，客户端守边界**（与「不接受另外人的邀请」一致）。
 
-### 3.4 artifacts 扩展字段（✅ 方向，多人轨落地时随 v4+ 迁移）
+### 3.4 多人轨预留清单（✅ 方向；预留原则 2026-10-07 用户确认）
 
-```
-captured_by    → roster.id / user_id   # 谁录入（来源 provenance）
-subject_ids    → List<id>              # 事实归属谁（取代 passengers[] 内侧耦合）
-entity_key     → String?               # 去重稳定键
-merge_state    → {canonical|duplicate_of|conflict|superseded}
-conflict_group → String?               # 冲突聚类 id
-created_by / shared_scope 复用前期多人提案
-```
+**预留原则：形状现在钉，机器后补且零破坏。**
 
-> 2026-10-07 注：以上字段**不进 v3**——本地单源用不上，随多人轨（§4/§5）拍板后以增量迁移补列。
+- **现在就钉的「形状」**（定义数据语义、成本低）：UUID 主键（已有）、CommandHandler 唯一写入口（已有——未来同步只是多一个写入源走同一管道）、字段级 patch+乐观锁 CAS（已有）、origin/source 溯源字段（已有）、导出 JSON 全量（已有，备份/恢复=同步的地基）、**captured_by（DEFAULT 'me'，2026-10-07 新增进 artifacts 与 backgrounds 两表）**。
+- **延后补的「机器」**：每项 = 一个可空列迁移 + 回填，分段幂等迁移模式现成（`db.dart` 拾贝模式），对存量数据零破坏：
+
+| 字段 | 补进时机 | 回填/迁移路径 |
+|---|---|---|
+| `entity_key` | 多人轨 v4+ | 对存量行跑派生规则回填 |
+| `merge_state` / `conflict_group` | 多人轨 v4+ | 存量行默认 canonical |
+| `subject_ids` | 多人轨 v4+ | 缺省=本人 |
+| `privacy_level` | 中继轨 | 存量默认 local_only |
+| `is_deleted`（墓碑） | 中继轨 | 开同步时以「基线快照+此后墓碑」衔接，本地 MVP 真删即可 |
+| `ai_visible` | 中继轨（共享场景） | 存量默认可见 |
+
+- `created_by` / `shared_scope` 复用前期多人提案口径，随 roster 一并落地。
+- 本地 MVP 的硬删除与未来增量同步的衔接：新设备/新通道首次同步取基线快照，此后变更走墓碑——无需现在预支软删复杂度。
 
 ---
 
@@ -372,7 +385,7 @@ GET  /v1/mailbox/{plan_id}/msg?since= 拉取增量
 | 零代发 | ✅ **保**（服务器只中继，不代用户发） |
 | 隐私本地化（内容） | ✅ **保**（事实明文仍 E2E） |
 
-> **结论**：从「4 铁律全守」修正为「守 零代发 + 内容隐私，放开 同步 / 账号 / 服务端联系人」。这是产品地基级转向（单机本地台账 → client-server 多用户产品），**需用户明确拍板后才并入 SSOT**（见 §7-Q9）。**2026-10-07 注：该转向与事实 MVP 已强制解耦——事实本地版不含任何服务器组件，不触碰 §13。**
+> **结论**：从「4 铁律全守」修正为「守 零代发 + 内容隐私，放开 同步 / 账号 / 服务端联系人」。这是产品地基级转向（单机本地台账 → client-server 多用户产品），**需用户明确拍板后才并入 SSOT**（见 §7-Q9）。**2026-10-07 注：该转向与事实 MVP 已强制解耦——事实本地版不含任何服务器组件，不触碰 §13。多人轨为规划中的后续阶段（用户 2026-10-07 确认方向），本节转为该阶段的拍板前置清单。**
 
 ---
 
@@ -400,16 +413,16 @@ GET  /v1/mailbox/{plan_id}/msg?since= 拉取增量
 
 ## §8 草案落点与分期路线（2026-10-07 更新）
 
-**拍板前置**：用户对 §0 七项正式拍板 → 事实部分并入 `schedule-app.md`（§11 台账新增两行：artifacts 表 v3 + 工具面增补 `upsert_facts`，附 `suggest_user_setting` 先例）；§3–§6 多人轨与 §13 修正（Q9）**另批**。
+**拍板留痕（2026-10-07）**：用户对 §0 七项正式拍板通过（+D2 未归属池宿主=挂载 sheet 常驻组）→ 事实部分已并入 `schedule-app.md`（§11 台账两行：artifacts 表 v4 + 工具面增补 `upsert_facts`，附 `suggest_user_setting` 先例）；§3–§6 多人轨与 §13 修正（Q9）**另批**。
 
 **施工依赖序**（拍板后）：
 
 1. 文档四件套：本草案定稿并入 SSOT ／ `schedule-app.md` §11 台账 ／ `ui-spec.md`（§0.4 词汇先行 + §5 计划详情分区 + §6 角标）／ `golden-samples.md` #4 增补走查幕
-2. `db.dart` v3：artifacts 表（含 attachments 预留列）+ 导出 JSON 带全
-3. 命令层：`UpsertFacts`（human/ai 双 actor；分享写入与 AI 提炼同命令双通道；改挂=同命令改 plan_id）
+2. `db.dart` **v4**：artifacts 单表另批迁移（背景侧已先行 v3 单表，见 `background-context-draft.md` §2；artifacts 含 attachments 预留列 + captured_by 钉子）+ 导出 JSON 带全
+3. 命令层：`UpsertFacts`（human/ai 双 actor；分享写入与 AI 提炼同命令双通道；改挂=同命令改 plan_id）+ `UpsertBackground`（同批；全局预算 `budget_exceeded` **终态校验**——条数>8 或 总字数>400，仅拦 ai actor、拒绝体携全量现场供归并询问，human 放行——校验刻度不对称；归并=**原子批处理命令**（ops 数组单事务终态校验，先例 update_fixed_slots / propose_schedule））+ `delete_plan` 扩展处置两新表（背景级联销毁 / artifacts detach 未归属池+note 交代去向）
 4. 工具面：`upsert_facts` schema + `get_schedule` 搭载凭证摘要（照天气投影模式）
 5. playbook：`facts.md`（三刀路由 + 消化 raw SOP + 改签 SOP + verbal 三去向）
-6. UI：ACTION_SEND text/plain 接入 + 挂载 sheet → 计划详情「随行凭证」区 → 块浮层通关卡 → 🎫 时间轴微标
+6. UI：ACTION_SEND text/plain 接入 + 挂载 sheet（含「未归属 N 条」常驻组=D2）→ 计划详情「随行凭证」区 → 块浮层通关卡 → 🎫 时间轴微标
 7. 分期二：临场通关条（派生）
 8. V1.5：硬红线机械校验 / OCR 图片接入（Q11）/ 去重（多人轨）
 

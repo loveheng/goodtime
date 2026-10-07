@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang/data/db.dart';
 import 'package:shiguang/data/repository.dart';
+import 'package:shiguang/models/background.dart';
 import 'package:shiguang/models/fixed_slot.dart';
 import 'package:shiguang/models/plan.dart';
 import 'package:shiguang/models/schedule_block.dart';
@@ -18,8 +19,9 @@ void main() {
   late Repository repo;
   setUp(() async {
     repo = Repository();
-    // 清空上例残留（内存库按测试文件共享）；先删引用方再删被引用方
+    // 清空上例残留（内存库按测试文件共享）；先删引用方再删被引用方（FK NO ACTION）
     final db = await Db.instance();
+    await db.delete('backgrounds');
     await db.delete('schedule_blocks');
     await db.delete('fixed_slots');
     await db.delete('plans');
@@ -184,6 +186,146 @@ void main() {
       final resolved = await repo.fixedSlotsForDate(newYear);
       expect(resolved.onDate.map((s) => s.name), ['睡眠']);
       expect(resolved.spillover.map((s) => s.name), ['睡眠'], reason: '跨年夜间睡眠段仍被解析');
+    });
+  });
+
+  group('backgrounds', () {
+    test('入库生成 uuid 与默认值：version 0/captured_by me/无日期窗=长期', () async {
+      final p = await repo.addPlan(Plan(title: '云南七天'));
+      final b = await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: '妈妈膝盖不好，少长台阶陡坡',
+        rawSourceText: '妈妈膝盖不好，少走陡坡',
+        tags: const ['#健康', '#体力'],
+        source: Background.sourceAiDerived,
+      ));
+      expect(b.id, matches(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')));
+      expect(b.version, 0);
+      expect(b.capturedBy, 'me');
+      expect(b.applicableDates, isNull);
+      final back = await repo.backgroundById(b.id!);
+      expect(back!.content, '妈妈膝盖不好，少长台阶陡坡');
+      expect(back.rawSourceText, '妈妈膝盖不好，少走陡坡', reason: '原话永存');
+      expect(back.tags, ['#健康', '#体力']);
+      expect(back.source, Background.sourceAiDerived);
+    });
+
+    test('applicable_dates 写入口规范化：去重+排序、空数组归一 null', () async {
+      final b = await repo.addBackground(Background(
+        scope: Background.scopeGlobal,
+        content: '连雨周，户外改室内',
+        source: Background.sourceUser,
+        applicableDates: const ['2026-10-09', '2026-10-08', '2026-10-09'],
+      ));
+      expect(b.applicableDates, ['2026-10-08', '2026-10-09'], reason: '集合判断需稳定序');
+      expect(await repo.backgroundById(b.id!).then((v) => v!.applicableDates), ['2026-10-08', '2026-10-09']);
+      final empty = await repo.addBackground(Background(
+        scope: Background.scopeGlobal,
+        content: '空窗陷阱态',
+        source: Background.sourceUser,
+        applicableDates: const [],
+      ));
+      expect(empty.applicableDates, isNull, reason: '空数组归一 null（语义=长期）');
+      expect(await repo.backgroundById(empty.id!).then((v) => v!.applicableDates), isNull);
+    });
+
+    test('读侧防御：畸形元素过滤留合法项（2026-02-30 被回写比对挡下）', () async {
+      final p = await repo.addPlan(Plan(title: 'x'));
+      final b = await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: '脚扭伤',
+        source: Background.sourceUser,
+      ));
+      // 直接改库模拟外部破坏——写入口有双检，正常路径产不出畸形
+      final db = await Db.instance();
+      await db.update(
+        'backgrounds',
+        {'applicable_dates': '["2026-02-30","2026-10-08","bogus"]'},
+        where: 'id = ?',
+        whereArgs: [b.id],
+      );
+      final back = await repo.backgroundById(b.id!);
+      expect(back!.applicableDates, ['2026-10-08']);
+    });
+
+    test('patch 白名单：content 可改，raw/source/scope 契约字段改不到', () async {
+      final b = await repo.addBackground(Background(
+        scope: Background.scopeGlobal,
+        content: '常住深圳',
+        source: Background.sourceUser,
+      ));
+      expect(await repo.patchBackground(b.id!, {'content': '常住深圳，周末爱短途游'}, expectedVersion: 0), isTrue);
+      final back = await repo.backgroundById(b.id!);
+      expect(back!.content, '常住深圳，周末爱短途游');
+      expect(back.version, 1);
+      expect(() => repo.patchBackground(b.id!, {'raw_source_text': '篡改原话'}), throwsArgumentError);
+      expect(() => repo.patchBackground(b.id!, {'source': Background.sourceAiDerived}), throwsArgumentError);
+      expect(() => repo.patchBackground(b.id!, {'scope': Background.scopePlan}), throwsArgumentError);
+    });
+
+    test('乐观锁 CAS：版本不符不写', () async {
+      final b = await repo.addBackground(Background(
+        scope: Background.scopeGlobal,
+        content: 'a',
+        source: Background.sourceUser,
+      ));
+      expect(await repo.patchBackground(b.id!, {'content': 'b'}, expectedVersion: 0), isTrue);
+      expect(await repo.patchBackground(b.id!, {'content': 'c'}, expectedVersion: 0), isFalse);
+      expect((await repo.backgroundById(b.id!))!.content, 'b');
+    });
+
+    test('list 过滤：global/plan 两 scope 互不串', () async {
+      final p = await repo.addPlan(Plan(title: 'x'));
+      await repo.addBackground(Background(scope: Background.scopeGlobal, content: 'g1', source: Background.sourceUser));
+      await repo.addBackground(Background(scope: Background.scopeGlobal, content: 'g2', source: Background.sourceUser));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: 'p1',
+        source: Background.sourceUser,
+      ));
+      expect((await repo.listBackgrounds(scope: Background.scopeGlobal)).length, 2);
+      expect(
+        (await repo.listBackgrounds(scope: Background.scopePlan, planId: p.id)).map((b) => b.content),
+        ['p1'],
+      );
+    });
+
+    test('外键护栏：plan 名下有背景时 deletePlan 硬失败（处置归命令层级联销毁）', () async {
+      final p = await repo.addPlan(Plan(title: '有背景'));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: 'x',
+        source: Background.sourceUser,
+      ));
+      await expectLater(repo.deletePlan(p.id!), throwsA(anything));
+      expect(await repo.planById(p.id!), isNotNull, reason: 'NO ACTION 护栏：未处置引用让删除硬失败');
+    });
+
+    test('deleteBackground 物理删除；不存在抛', () async {
+      final b = await repo.addBackground(Background(
+        scope: Background.scopeGlobal,
+        content: 'x',
+        source: Background.sourceUser,
+      ));
+      await repo.deleteBackground(b.id!);
+      expect(await repo.backgroundById(b.id!), isNull);
+      expect(() => repo.deleteBackground('nope'), throwsStateError);
+    });
+
+    test('导出 JSON 带全：backgrounds 面随 exportAll 落盘', () async {
+      await repo.addBackground(Background(
+        scope: Background.scopeGlobal,
+        content: '海鲜严重过敏',
+        tags: const ['#健康'],
+        source: Background.sourceUser,
+      ));
+      final dump = await repo.exportAll();
+      expect(dump['backgrounds'], isA<List<Map<String, Object?>>>());
+      expect((dump['backgrounds'] as List).length, 1);
     });
   });
 }

@@ -43,7 +43,7 @@ Future<void> setUpUiTest() async {
   databaseFactory = databaseFactoryFfi;
   Db.overridePath(inMemoryDatabasePath);
   final db = await Db.instance();
-  for (final t in ['schedule_blocks', 'fixed_slots', 'plans', 'app_settings']) {
+  for (final t in ['backgrounds', 'schedule_blocks', 'fixed_slots', 'plans', 'app_settings']) {
     await db.delete(t);
   }
   await AppServices.init();

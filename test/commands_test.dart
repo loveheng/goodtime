@@ -4,6 +4,7 @@ import 'package:shiguang/action/commands.dart';
 import 'package:shiguang/action/queries.dart';
 import 'package:shiguang/data/db.dart';
 import 'package:shiguang/data/repository.dart';
+import 'package:shiguang/models/background.dart';
 import 'package:shiguang/models/fixed_slot.dart';
 import 'package:shiguang/models/plan.dart';
 import 'package:shiguang/models/schedule_block.dart';
@@ -27,6 +28,7 @@ void main() {
     handler = CommandHandler(repo);
     queries = ScheduleQueries(repo);
     final db = await Db.instance();
+    await db.delete('backgrounds');
     await db.delete('schedule_blocks');
     await db.delete('fixed_slots');
     await db.delete('plans');
@@ -414,6 +416,355 @@ void main() {
       final h = await queries.getHistory(now: DateTime(2026, 10, 6, 12), days: 7);
       expect((h['days'] as List).length, 7);
       expect((h['totals'] as Map)['done_count'], 0);
+    });
+  });
+
+  group('背景命令（background-context-draft.md §2/§3）', () {
+    UpsertBackgroundCommand bg({
+      String? id,
+      String scope = Background.scopeGlobal,
+      String? planId,
+      String content = 'x',
+      String? raw,
+      List<String>? tags,
+      List<String>? dates,
+      int? expectedVersion,
+    }) =>
+        UpsertBackgroundCommand(
+          id: id,
+          scope: scope,
+          planId: planId,
+          content: content,
+          rawSourceText: raw,
+          tags: tags,
+          applicableDates: dates,
+          expectedVersion: expectedVersion,
+        );
+
+    /// 连建 [n] 条全局背景（human/ai 由调用方指定）
+    Future<List<String>> seedGlobals(int n, CommandActor actor, {String content = 'x'}) async {
+      final ids = <String>[];
+      for (var i = 0; i < n; i++) {
+        final r = await handler.execute(
+          UpsertBackgroundCommand(scope: Background.scopeGlobal, content: '$content$i'),
+          actor: actor,
+        );
+        ids.add(r.targetId!);
+      }
+      return ids;
+    }
+
+    test('ai 建满 8 条 OK，第 9 条 budget_exceeded 且 data 携全量现场、不落库', () async {
+      await seedGlobals(8, CommandActor.ai);
+      await expectLater(
+        handler.execute(bg(content: '第9条'), actor: CommandActor.ai),
+        throwsA(isA<ActionException>()
+            .having((e) => e.code, 'code', ActionErrorCode.budgetExceeded)
+            .having((e) => (e.data!['current'] as List).length, 'current 现场条数', 8)
+            .having((e) => e.hint, 'hint 含归并指引', contains('归并'))),
+      );
+      expect((await repo.listBackgrounds(scope: Background.scopeGlobal)).length, 8,
+          reason: '拒绝=不落库（机械拦截非 AI 自觉）');
+    });
+
+    test('human 第 9 条放行（校验刻度不对称），仅温和提示', () async {
+      await seedGlobals(8, CommandActor.human);
+      final r = await handler.execute(bg(content: '人硬要加'), actor: CommandActor.human);
+      expect(r.snapshot, isNotNull);
+      expect(r.note, contains('建议在方便时归并'));
+      expect((await repo.listBackgrounds(scope: Background.scopeGlobal)).length, 9);
+    });
+
+    test('终态统一式：8 条内改写一条超长 content 同样撞字数红线（同一规则无两套逻辑）', () async {
+      final ids = await seedGlobals(8, CommandActor.ai, content: 'x'); // 总字数 ≈ 16
+      await expectLater(
+        handler.execute(
+          bg(id: ids.first, content: 'y' * 390, expectedVersion: 0),
+          actor: CommandActor.ai,
+        ),
+        throwsCode(ActionErrorCode.budgetExceeded),
+      );
+    });
+
+    test('ai 建 plan 级背景不受预算约束（预算只卡 global）', () async {
+      final p = await repo.addPlan(Plan(title: '云南七天'));
+      for (var i = 0; i < 12; i++) {
+        await handler.execute(
+          UpsertBackgroundCommand(scope: Background.scopePlan, planId: p.id, content: 'bg$i'),
+          actor: CommandActor.ai,
+        );
+      }
+      expect((await repo.listBackgrounds(scope: Background.scopePlan, planId: p.id)).length, 12);
+    });
+
+    test('applicable_dates：非法日历日/格式拒，合法归一去重排序，空数组归 null', () async {
+      await expectLater(
+        handler.execute(bg(dates: ['2026-02-30']), actor: CommandActor.ai),
+        throwsCode(ActionErrorCode.invalidRequest),
+      );
+      await expectLater(
+        handler.execute(bg(dates: ['bogus']), actor: CommandActor.ai),
+        throwsCode(ActionErrorCode.invalidRequest),
+      );
+      final r = await handler.execute(
+        bg(dates: const ['2026-10-09', '2026-10-08', '2026-10-09']),
+        actor: CommandActor.ai,
+      );
+      expect(r.snapshot!['applicable_dates'], ['2026-10-08', '2026-10-09']);
+      final e = await handler.execute(bg(dates: const []), actor: CommandActor.ai);
+      expect(e.snapshot!['applicable_dates'], isNull, reason: '「永不生效」是陷阱态，语义=长期');
+    });
+
+    test('scope/plan_id 配对校验：plan 缺 id、plan 不存在、global 带 id 全拒', () async {
+      await expectLater(
+        handler.execute(bg(scope: Background.scopePlan), actor: CommandActor.ai),
+        throwsCode(ActionErrorCode.invalidRequest),
+      );
+      await expectLater(
+        handler.execute(bg(scope: Background.scopePlan, planId: 'nope'), actor: CommandActor.ai),
+        throwsCode(ActionErrorCode.notFound),
+      );
+      await expectLater(
+        handler.execute(bg(planId: 'stray'), actor: CommandActor.ai),
+        throwsCode(ActionErrorCode.invalidRequest),
+      );
+    });
+
+    test('手编契约：source 由 actor 派生、编辑路径 raw 永不变、scope 不可变', () async {
+      final ai = await handler.execute(bg(raw: '妈妈膝盖不好，少走陡坡', content: '膝盖不好少爬坡'), actor: CommandActor.ai);
+      expect(ai.snapshot!['source'], 'ai_derived');
+      final hu = await handler.execute(bg(content: '常住深圳'), actor: CommandActor.human);
+      expect(hu.snapshot!['source'], 'user');
+
+      final u = await handler.execute(
+        bg(id: ai.targetId, content: '膝盖不好，少长台阶陡坡', raw: '试图覆盖原话', expectedVersion: 0),
+        actor: CommandActor.ai,
+      );
+      expect(u.snapshot!['raw_source_text'], '妈妈膝盖不好，少走陡坡', reason: 'raw 永不变');
+      expect(u.note, contains('永不变'));
+      expect(u.snapshot!['content'], '膝盖不好，少长台阶陡坡');
+
+      final p = await repo.addPlan(Plan(title: '另一趟'));
+      await expectLater(
+        handler.execute(bg(id: ai.targetId, scope: Background.scopePlan, planId: p.id, content: '改挂'),
+            actor: CommandActor.ai),
+        throwsCode(ActionErrorCode.invalidRequest),
+      );
+    });
+
+    test('CAS：陈旧 expected_version → version_conflict 带 latest 快照', () async {
+      final first = await handler.execute(bg(content: 'a'), actor: CommandActor.ai);
+      await handler.execute(bg(id: first.targetId, content: 'b', expectedVersion: 0), actor: CommandActor.ai);
+      await expectLater(
+        handler.execute(bg(id: first.targetId, content: 'c', expectedVersion: 0), actor: CommandActor.ai),
+        throwsA(isA<ActionException>()
+            .having((e) => e.code, 'code', ActionErrorCode.versionConflict)
+            .having((e) => (e.data!['latest'] as Map)['content'], 'latest.content', 'b')),
+      );
+    });
+
+    test('merge 原子批：删2增1终态达标落库；终态仍超=整批拒且原行原样（回滚证明）', () async {
+      final ids = await seedGlobals(8, CommandActor.ai);
+      final r = await handler.execute(
+        MergeBackgroundsCommand(ops: [
+          BackgroundMergeOp.delete(ids[0]),
+          BackgroundMergeOp.delete(ids[1]),
+          const BackgroundMergeOp.upsert(content: '合并后的新条目', scope: Background.scopeGlobal),
+        ]),
+        actor: CommandActor.ai,
+      );
+      expect(r.data!['created'], hasLength(1));
+      final after = await repo.listBackgrounds(scope: Background.scopeGlobal);
+      expect(after.length, 7);
+      expect(after.map((b) => b.id), isNot(containsAll([ids[0], ids[1]])));
+
+      // 回滚证明：终态仍超 → budget_exceeded，且已执行到一半的 delete 被回滚
+      final beforeRollback = await repo.listBackgrounds(scope: Background.scopeGlobal);
+      await expectLater(
+        handler.execute(
+          MergeBackgroundsCommand(ops: [
+            BackgroundMergeOp.delete(beforeRollback.first.id!),
+            BackgroundMergeOp.upsert(content: 'z' * 400, scope: Background.scopeGlobal),
+          ]),
+          actor: CommandActor.ai,
+        ),
+        throwsCode(ActionErrorCode.budgetExceeded),
+      );
+      final afterRollback = await repo.listBackgrounds(scope: Background.scopeGlobal);
+      expect(afterRollback.length, 7, reason: '整批拒=事务回滚，删掉的行回来了');
+      expect(afterRollback.map((b) => b.id), contains(beforeRollback.first.id));
+    });
+
+    test('merge delete 不存在的 id → 整批拒 notFound', () async {
+      final ids = await seedGlobals(2, CommandActor.ai);
+      await expectLater(
+        handler.execute(
+          MergeBackgroundsCommand(ops: [
+            const BackgroundMergeOp.delete('nope'),
+            BackgroundMergeOp.delete(ids[1]),
+          ]),
+          actor: CommandActor.ai,
+        ),
+        throwsCode(ActionErrorCode.notFound),
+      );
+      expect((await repo.listBackgrounds(scope: Background.scopeGlobal)).length, 2,
+          reason: '整批拒，未落库');
+    });
+
+    test('human merge 超预算放行（终态校验仅拦 ai）', () async {
+      await seedGlobals(8, CommandActor.human);
+      final r = await handler.execute(
+        const MergeBackgroundsCommand(ops: [
+          BackgroundMergeOp.upsert(content: '人手归并新增', scope: Background.scopeGlobal),
+        ]),
+        actor: CommandActor.human,
+      );
+      expect(r.note, contains('建议在方便时归并'));
+      expect((await repo.listBackgrounds(scope: Background.scopeGlobal)).length, 9);
+    });
+
+    test('delete_plan 级联销毁名下背景；被块引用时整单拒且背景保留（回滚）', () async {
+      final p = await repo.addPlan(Plan(title: '废弃行程'));
+      for (var i = 0; i < 2; i++) {
+        await handler.execute(
+          UpsertBackgroundCommand(scope: Background.scopePlan, planId: p.id, content: 'bg$i'),
+          actor: CommandActor.human,
+        );
+      }
+      final r = await handler.execute(DeletePlanCommand(p.id!));
+      expect(r.note, contains('2 条背景'));
+      expect((await repo.listBackgrounds(scope: Background.scopePlan, planId: p.id)).length, 0);
+
+      // 块引用硬失败：外键护栏仍在，事务回滚=背景原样保留
+      final p2 = await repo.addPlan(Plan(title: '被引用行程'));
+      await repo.addBlock(ScheduleBlock(
+        date: '2026-10-07', startMin: 540, endMin: 600,
+        planId: p2.id, source: ScheduleBlock.sourceHuman,
+      ));
+      await handler.execute(
+        UpsertBackgroundCommand(scope: Background.scopePlan, planId: p2.id, content: '还在'),
+        actor: CommandActor.human,
+      );
+      await expectLater(
+        handler.execute(DeletePlanCommand(p2.id!)),
+        throwsCode(ActionErrorCode.invalidRequest),
+      );
+      expect((await repo.listBackgrounds(scope: Background.scopePlan, planId: p2.id)).length, 1,
+          reason: '删除是全有或全无');
+    });
+  });
+
+  group('背景排程装配（background-context-draft.md §4）', () {
+    test('物理过滤：当日∈窗注入、不在窗不进上下文、无窗恒注入', () async {
+      await seedSettings();
+      final p = await repo.addPlan(Plan(title: '玉龙雪山一日'));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: '妈妈膝盖不好少爬坡',
+        source: Background.sourceUser,
+        applicableDates: const ['2026-10-20'],
+      ));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: '脚扭伤',
+        source: Background.sourceUser,
+        applicableDates: const ['2026-10-19'], // 前一日，当日不在窗
+      ));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: '体力有限以观景为主',
+        source: Background.sourceUser,
+      ));
+      await repo.addBlock(ScheduleBlock(
+        date: '2026-10-20', startMin: 540, endMin: 600,
+        planId: p.id, source: ScheduleBlock.sourceHuman,
+      ));
+      final s = await queries.getSchedule(now: DateTime(2026, 10, 20, 12), days: 1);
+      final day = (s['days'] as List).single as Map;
+      final section = ((day['backgrounds'] as Map)['plans'] as Map)[p.id!] as Map;
+      final contents = [for (final e in (section['items'] as List)) e['content']];
+      expect(contents, containsAll(['妈妈膝盖不好少爬坡', '体力有限以观景为主']));
+      expect(contents, isNot(contains('脚扭伤')), reason: '物理过滤：不在窗的背景根本不进排程上下文');
+    });
+
+    test('祖先链 ≤3 级：根计划背景到达子计划的块（from_plan+inherit_note），自身条目不带溯源', () async {
+      await seedSettings();
+      final root = await repo.addPlan(Plan(title: '云南七天'));
+      final child = await repo.addPlan(Plan(title: '玉龙雪山一日', parentId: root.id));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan, planId: root.id,
+        content: '妈妈膝盖不好，少长台阶陡坡', source: Background.sourceUser,
+      ));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan, planId: child.id,
+        content: '索道上行后以观景台为主', source: Background.sourceUser,
+      ));
+      await repo.addBlock(ScheduleBlock(
+        date: '2026-10-20', startMin: 540, endMin: 600,
+        planId: child.id, source: ScheduleBlock.sourceHuman,
+      ));
+      final s = await queries.getSchedule(now: DateTime(2026, 10, 20, 12), days: 1);
+      final section = ((s['days'] as List).single as Map)['backgrounds']['plans'][child.id!] as Map;
+      expect(section['inherit_note'], '祖先背景为泛化默认；当前计划背景为具体细化，局部差异以当前计划为准',
+          reason: '特异性优先静态注记（祖先实际参与才携带）');
+      final items = (section['items'] as List).cast<Map>();
+      final knee = items.singleWhere((e) => e['content'] == '妈妈膝盖不好，少长台阶陡坡');
+      expect(knee['from_plan'], '云南七天');
+      final own = items.singleWhere((e) => e['content'] == '索道上行后以观景台为主');
+      expect(own.containsKey('from_plan'), isFalse, reason: '自身条目无溯源标');
+    });
+
+    test('分区禁平铺：两计划同日各出段带 scope_note，global 段唯一穿透', () async {
+      await seedSettings();
+      final pA = await repo.addPlan(Plan(title: '上海商务展会'));
+      final pB = await repo.addPlan(Plan(title: '带父母游西湖'));
+      await repo.addBackground(Background(
+        scope: Background.scopeGlobal, content: '海鲜严重过敏', source: Background.sourceUser,
+      ));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan, planId: pA.id,
+        content: '效率第一全天紧凑', source: Background.sourceUser,
+      ));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan, planId: pB.id,
+        content: '节奏极慢保证午睡', source: Background.sourceUser,
+      ));
+      for (final p in [pA, pB]) {
+        await repo.addBlock(ScheduleBlock(
+          date: '2026-10-24', startMin: 540, endMin: 600,
+          planId: p.id, source: ScheduleBlock.sourceHuman,
+        ));
+      }
+      final s = await queries.getSchedule(now: DateTime(2026, 10, 24, 12), days: 1);
+      final bg = (s['days'] as List).single['backgrounds'] as Map;
+      expect([for (final e in (bg['global'] as List)) e['content']], ['海鲜严重过敏'],
+          reason: 'global 唯一穿透权');
+      final plans = bg['plans'] as Map;
+      expect(plans, hasLength(2));
+      final secA = plans[pA.id!] as Map;
+      final secB = plans[pB.id!] as Map;
+      expect(secA['scope_note'], '仅约束该计划下的活动块');
+      expect(secB['scope_note'], '仅约束该计划下的活动块');
+      expect([for (final e in (secA['items'] as List)) e['content']], ['效率第一全天紧凑'],
+          reason: '禁平铺：pA 段绝不吃到 pB 的慢节奏');
+      expect([for (final e in (secB['items'] as List)) e['content']], ['节奏极慢保证午睡']);
+    });
+
+    test('无背景计划不出段；背景段与态势数据分区（free_minutes 不混背景）', () async {
+      await seedSettings();
+      final plain = await repo.addPlan(Plan(title: '无背景行程'));
+      await repo.addBlock(ScheduleBlock(
+        date: '2026-10-24', startMin: 540, endMin: 600,
+        planId: plain.id, source: ScheduleBlock.sourceHuman,
+      ));
+      final s = await queries.getSchedule(now: DateTime(2026, 10, 24, 12), days: 1);
+      final day = (s['days'] as List).single as Map;
+      final bg = day['backgrounds'] as Map;
+      expect((bg['plans'] as Map), isEmpty, reason: '无背景计划不出段（省 token）');
+      expect(day.containsKey('free_minutes'), isTrue, reason: '态势句独立分区');
     });
   });
 }

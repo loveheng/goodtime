@@ -6,6 +6,7 @@ import 'package:shiguang/data/repository.dart';
 import 'package:shiguang/data/settings.dart';
 import 'package:shiguang/mcp/jsonrpc.dart';
 import 'package:shiguang/mcp/tools.dart';
+import 'package:shiguang/models/background.dart';
 import 'package:shiguang/models/fixed_slot.dart';
 import 'package:shiguang/models/plan.dart';
 import 'package:shiguang/models/schedule_block.dart';
@@ -23,6 +24,7 @@ void main() {
   setUp(() async {
     repo = Repository();
     final db = await Db.instance();
+    await db.delete('backgrounds');
     await db.delete('schedule_blocks');
     await db.delete('fixed_slots');
     await db.delete('plans');
@@ -38,7 +40,7 @@ void main() {
 
   Future<void> seedSettings() => repo.settingsSet({'wake_time': '420', 'sleep_time': '1380'});
 
-  test('工具面注册（§6 十个排程工具 + 一个建言通道）', () {
+  test('工具面注册（§6 十个排程工具 + 建言通道 + 背景双工具）', () {
     final names = [for (final t in toolSchemas()) t['name']];
     expect(names, [
       'list_plans',
@@ -52,6 +54,8 @@ void main() {
       'get_schedule',
       'get_history',
       'suggest_user_setting',
+      'upsert_background',
+      'merge_backgrounds',
     ]);
   });
 
@@ -217,5 +221,96 @@ void main() {
       call('no_such_tool'),
       throwsA(isA<McpRpcError>().having((e) => e.message, 'message', 'Unknown tool: no_such_tool')),
     );
+  });
+
+  group('背景双工具（background-context-draft.md §2/§4）', () {
+    Future<List<String>> seedGlobals(int n) async {
+      final ids = <String>[];
+      for (var i = 0; i < n; i++) {
+        final r = await call('upsert_background', {'scope': 'global', 'content': 'bg$i'}) as Map;
+        ids.add(r['id'] as String);
+      }
+      return ids;
+    }
+
+    test('upsert_background：建档回快照，source=ai_derived；编辑契约经工具面生效', () async {
+      final r = await call('upsert_background', {
+        'scope': 'global',
+        'content': '海鲜严重过敏',
+        'raw_source_text': '我对海鲜过敏，别排海鲜',
+        'tags': ['#健康'],
+      }) as Map;
+      expect(r['ok'], true);
+      expect(r['snapshot']['source'], 'ai_derived', reason: 'ai actor 派生溯源');
+      expect(r['snapshot']['captured_by'], 'me');
+      final u = await call('upsert_background', {
+        'id': r['id'],
+        'scope': 'global',
+        'content': '海鲜严重过敏（含虾蟹）',
+        'raw_source_text': '试图覆盖原话',
+        'expected_version': 0,
+      }) as Map;
+      expect(u['snapshot']['raw_source_text'], '我对海鲜过敏，别排海鲜', reason: 'raw 永不变');
+      expect(u['snapshot']['content'], '海鲜严重过敏（含虾蟹）');
+    });
+
+    test('budget_exceeded 经 MCP 错误体透传：code + 全量现场', () async {
+      await seedGlobals(8);
+      await expectLater(
+        call('upsert_background', {'scope': 'global', 'content': '第9条'}),
+        throwsA(isA<McpRpcError>()
+            .having((e) => (e.data as Map)['code'], 'code', 'budget_exceeded')
+            .having((e) => ((e.data as Map)['current'] as List).length, 'current', 8)
+            .having((e) => (e.data as Map)['hint'], 'hint', contains('归并'))),
+      );
+    });
+
+    test('merge_backgrounds：删2增1原子归并，get_settings 携治理载荷（expired 标+预算态）', () async {
+      final ids = await seedGlobals(2);
+      final r = await call('merge_backgrounds', {
+        'ops': [
+          {'kind': 'delete', 'id': ids[0]},
+          {'kind': 'delete', 'id': ids[1]},
+          {'kind': 'upsert', 'scope': 'global', 'content': 'AB 合并'},
+        ],
+      }) as Map;
+      expect((r['data']['created'] as List), hasLength(1));
+
+      // 过期窗条目：整窗在过去 → expired=true；无窗 → 恒 false
+      await call('upsert_background', {
+        'scope': 'global',
+        'content': '脚扭伤少走路',
+        'applicable_dates': ['2026-01-01'],
+      });
+      await call('upsert_background', {'scope': 'global', 'content': '常住深圳'});
+
+      final s = await call('get_settings') as Map;
+      final gb = s['global_backgrounds'] as Map;
+      expect((gb['budget'] as Map)['entries'], 3);
+      expect((gb['budget'] as Map)['limit_entries'], 8);
+      final entries = (gb['entries'] as List).cast<Map>();
+      expect(entries.singleWhere((e) => e['content'] == 'AB 合并')['expired'], false);
+      expect(entries.singleWhere((e) => e['content'] == '脚扭伤少走路')['expired'], true,
+          reason: '治理/对话通道全量带标：AI 可发起顺手清理建议');
+      expect(entries.singleWhere((e) => e['content'] == '常住深圳')['expired'], false);
+    });
+
+    test('list_plans 快照携 plan 背景（搭载模式；祖先继承与当日过滤在排程装配）', () async {
+      final p = await repo.addPlan(Plan(title: '云南七天'));
+      await repo.addBackground(Background(
+        scope: Background.scopePlan,
+        planId: p.id,
+        content: '妈妈膝盖不好',
+        source: Background.sourceUser,
+        applicableDates: const ['2026-10-20'],
+      ));
+      final r = await call('list_plans') as Map;
+      final plan = (r['plans'] as List).single as Map;
+      final bgs = plan['backgrounds'] as List;
+      expect(bgs, hasLength(1));
+      expect((bgs.single as Map)['content'], '妈妈膝盖不好');
+      expect((bgs.single as Map)['applicable_dates'], ['2026-10-20'],
+          reason: '快照层面日期窗原样随行（不做当日过滤）');
+    });
   });
 }

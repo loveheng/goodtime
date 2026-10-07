@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../data/repository.dart';
 import '../data/settings.dart';
+import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
@@ -37,6 +38,35 @@ class ScheduleQueries {
       'exceptions':
           exceptionsRaw == null ? <Object?>[] : (jsonDecode(exceptionsRaw) as List<dynamic>),
       'theme_mode': raw[SettingsKeys.themeMode] ?? 'system', // 外观三档（uiOnly 键）
+    };
+  }
+
+  /// 全局背景治理装配（背景草案 §4 治理/对话通道）：**全量带标**——超期条目不下发
+  /// 删除、带 expired 标记，AI 可发起「『脚扭伤』已过期，顺手清理？」建议（衔接
+  /// §2 归并询问）；与排程通道的物理过滤（get_schedule 另行装配，超期根本不进
+  /// 上下文）互为双通道。预算态随行——AI 能自测才不会反复撞墙（§2 度量口径：
+  /// String.length 单点、只计 content）。
+  Future<Map<String, Object?>> globalBackgroundsPayload({DateTime? now}) async {
+    final all = await _repo.listBackgrounds(scope: Background.scopeGlobal);
+    final today = isoDate(now ?? DateTime.now());
+    final chars = all.fold(0, (sum, b) => sum + b.content.length);
+    return {
+      'entries': [
+        for (final b in all)
+          {
+            ...backgroundToJson(b),
+            // 过期=有日期窗且整窗已在过去（无窗=长期恒不过期；读侧 fail-closed
+            // 的空窗=死窗，按过期处理与「永不进排程上下文」一致）
+            'expired': b.applicableDates != null &&
+                (b.applicableDates!.isEmpty || b.applicableDates!.last.compareTo(today) < 0),
+          },
+      ],
+      'budget': {
+        'entries': all.length,
+        'chars': chars,
+        'limit_entries': ScheduleRules.globalBackgroundsMax,
+        'limit_chars': ScheduleRules.globalBackgroundCharsMax,
+      },
     };
   }
 
@@ -89,9 +119,72 @@ class ScheduleQueries {
           'spillover': [for (final s in resolved.spillover) slotToJson(s)],
           'suspended': suspended,
         },
+        // 排程背景装配（背景草案 §4 排程通道）：物理过滤+祖先链+分区禁平铺，
+        // 与容量水位线/天气（几何机械数据）严格分区——日级态势句不携带任何背景
+        'backgrounds': await _dayBackgroundPayload(iso, planIds),
       });
     }
     return {'today': isoDate(today), 'days': out};
+  }
+
+  /// 当日 ∈ applicable_dates（背景草案 §4 排程物理过滤；无窗=恒注入）。
+  /// 一律日历日比对（施工钉子：严禁作息日过滤）；读侧 fail-closed 的空窗
+  /// contains=false → 不注入，与「永不进排程上下文」一致。
+  bool _backgroundApplies(Background b, String iso) =>
+      b.applicableDates == null || b.applicableDates!.contains(iso);
+
+  /// 单日排程背景装配（背景草案 §4）：
+  /// - **物理过滤**：逐条做 [ _backgroundApplies] 集合判断，超期/不在窗的背景
+  ///   根本不进排程上下文（省 token + 杜绝「用过期的脚扭伤排今天徒步」幻觉）；
+  /// - **分区禁平铺**：global 段 + 各涉事计划段，每段带 scope_note——pB 的块
+  ///   绝不吃到 pC 的慢节奏（global 唯一穿透权）；
+  /// - **祖先链继承 ≤3 级**：注入范围=计划自身+沿 parent_id 上溯——挂根计划的
+  ///   背景由此到达每个子计划的块；继承条目带 from_plan 溯源；
+  /// - **特异性优先**：段内存在继承条目时整段携带 inherit_note 静态常量注记
+  ///   （确定性字符串零智能；单层不携带防噪音）。
+  /// 无背景的计划不出段（省 token）；与容量/天气严格分区（机械数据不混叙事）。
+  Future<Map<String, Object?>> _dayBackgroundPayload(String iso, Set<String> planIds) async {
+    final globals = [
+      for (final b in await _repo.listBackgrounds(scope: Background.scopeGlobal))
+        if (_backgroundApplies(b, iso))
+          {'id': b.id, 'content': b.content, 'tags': b.tags},
+    ];
+    final planSections = <String, Object?>{};
+    for (final id in planIds) {
+      final plan = await _repo.planById(id);
+      if (plan == null) continue; // 孤儿引用防御（FK 兜底，理论不可达）
+      final items = <Map<String, Object?>>[];
+      var hasInherited = false;
+      // 祖先链：自身（depth 0）+ ≤3 级上溯（与粒度定律子树深度一致）
+      var cur = plan;
+      for (var depth = 0;; depth++) {
+        final bgs = await _repo.listBackgrounds(scope: Background.scopePlan, planId: cur.id!);
+        for (final b in bgs) {
+          if (!_backgroundApplies(b, iso)) continue;
+          final inherited = depth > 0;
+          hasInherited |= inherited;
+          items.add({
+            'id': b.id,
+            'content': b.content,
+            'tags': b.tags,
+            if (inherited) 'from_plan': cur.title,
+          });
+        }
+        if (depth >= 3 || cur.parentId == null) break;
+        final parent = await _repo.planById(cur.parentId!);
+        if (parent == null) break;
+        cur = parent;
+      }
+      if (items.isEmpty) continue;
+      planSections[id] = {
+        'title': plan.title,
+        'scope_note': '仅约束该计划下的活动块',
+        if (hasInherited)
+          'inherit_note': '祖先背景为泛化默认；当前计划背景为具体细化，局部差异以当前计划为准',
+        'items': items,
+      };
+    }
+    return {'global': globals, 'plans': planSections};
   }
 
   /// 近 N 个作息日的 done 聚合 + 校准指标全量（§6，2026-10-05 拍板）。

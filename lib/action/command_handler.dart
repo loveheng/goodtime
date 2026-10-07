@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../data/repository.dart';
 import '../data/settings.dart';
 import 'dart:math' show min;
+import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
@@ -30,6 +31,7 @@ import 'rules.dart';
 /// |---|---|---|
 /// | quick_capture / confirm_block / reject_block / adjust_block_time / shift_block / tick_block | ✓ | ✗（人=终审，§3） |
 /// | upsert_plan / update_plan / update_settings / update_fixed_slots | ✓ | ✓ |
+/// | upsert_background / merge_backgrounds | ✓（human 放行预算） | ✓（全局背景预算终态双指标适用，背景草案 §2） |
 /// | propose_schedule | ✗（人直接放块走 app 通道） | ✓（机械校验全量适用） |
 class CommandHandler {
   CommandHandler(this._repo);
@@ -45,11 +47,11 @@ class CommandHandler {
   Future<CommandResult> execute(ScheduleCommand cmd, {CommandActor actor = CommandActor.human}) {
     return _repo.synchronized(() {
       _gate(cmd, actor);
-      return _dispatch(cmd);
+      return _dispatch(cmd, actor);
     });
   }
 
-  Future<CommandResult> _dispatch(ScheduleCommand cmd) => switch (cmd) {
+  Future<CommandResult> _dispatch(ScheduleCommand cmd, CommandActor actor) => switch (cmd) {
         final QuickCaptureCommand c => _quickCapture(c),
         final QuickNoteDraftCommand c => _quickNoteDraft(c),
         final UpsertPlanCommand c => _upsertPlan(c),
@@ -72,6 +74,8 @@ class CommandHandler {
         final PanicClearCommand c => _panicClear(c),
         final UpdateSettingsCommand c => _updateSettings(c),
         final UpdateFixedSlotsCommand c => _updateFixedSlots(c),
+        final UpsertBackgroundCommand c => _upsertBackground(c, actor),
+        final MergeBackgroundsCommand c => _mergeBackgrounds(c, actor),
       };
 
   void _gate(ScheduleCommand cmd, CommandActor actor) {
@@ -537,11 +541,21 @@ class CommandHandler {
     );
   }
 
-  /// 删除计划（human 专属）：外键兜底——有日程块/子计划引用时转可读错误。
+  /// 删除计划（human 专属）：同事务显式级联销毁该 plan 名下全部背景（背景草案 §2
+  /// ——语境随本体消亡，物理删除不留孤儿；否决 DDL CASCADE，外键仍是「未处置引用
+  /// 让删除硬失败」的护栏，处置语义在命令层）。子计划/日程块引用仍硬失败，
+  /// 且事务整体回滚（背景原样保留，删除是全有或全无）。
   Future<CommandResult> _deletePlan(DeletePlanCommand cmd) async {
     await _requirePlan(cmd.id);
+    final purged = <String>[];
     try {
-      await _repo.deletePlan(cmd.id);
+      await _repo.transaction((txn) async {
+        final rows = await txn.query('backgrounds',
+            columns: ['id'], where: 'plan_id = ?', whereArgs: [cmd.id]);
+        await txn.delete('backgrounds', where: 'plan_id = ?', whereArgs: [cmd.id]);
+        await txn.delete('plans', where: 'id = ?', whereArgs: [cmd.id]);
+        purged.addAll([for (final r in rows) r['id'] as String]);
+      });
     } catch (e) {
       throw ActionException(
         '删除被拒：该计划被日程块或子计划引用',
@@ -549,7 +563,11 @@ class CommandHandler {
         hint: '先处理引用（块否决/子计划删除）或改用「归档」',
       );
     }
-    return CommandResult(op: cmd.op, targetId: cmd.id, note: '已删除');
+    return CommandResult(
+      op: cmd.op,
+      targetId: cmd.id,
+      note: purged.isEmpty ? '已删除' : '已删除（名下 ${purged.length} 条背景随计划一并销毁）',
+    );
   }
 
   /// 窗口 [wake, sleepAdj) 内的空闲分钟数 = 窗长 − 占用并集∩窗（§6 可用时间口径，
@@ -1351,6 +1369,392 @@ class CommandHandler {
           hint: '可选 clear_remaining / push_2h',
         );
     }
+  }
+
+  // ---- backgrounds ----
+
+  /// 背景信息写（背景草案 §2/§3，人/AI 双通道）：source 由 actor 派生（溯源不可
+  /// 伪造）；编辑路径执行手编契约（scope/plan_id 不可变、raw 永不变）；scope=global
+  /// 受注入预算终态双指标约束（仅拦 ai，human 温和提示后放行）。
+  Future<CommandResult> _upsertBackground(UpsertBackgroundCommand cmd, CommandActor actor) async {
+    if (cmd.scope == Background.scopePlan) {
+      if (cmd.planId == null) {
+        throw ActionException(
+          'scope=plan 需要 plan_id（行程背景挂在计划上）',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      await _requirePlan(cmd.planId!);
+    } else if (cmd.planId != null) {
+      throw ActionException(
+        'scope=global 不应携带 plan_id（常驻画像不挂计划）',
+        code: ActionErrorCode.invalidRequest,
+      );
+    }
+    _validateApplicableDates(cmd.op, cmd.applicableDates);
+
+    final existing = cmd.id == null ? null : await _repo.backgroundById(cmd.id!);
+    if (existing == null) {
+      final b = Background(
+        id: cmd.id,
+        scope: cmd.scope,
+        planId: cmd.planId,
+        content: cmd.content,
+        rawSourceText: cmd.rawSourceText,
+        tags: cmd.tags ?? const [],
+        applicableDates: cmd.applicableDates,
+        source: _backgroundSource(actor),
+      );
+      if (cmd.scope == Background.scopeGlobal && actor == CommandActor.ai) {
+        await _requireGlobalBudget(cmd.op, actor: actor, additions: [b]);
+      }
+      final created = await _repo.addBackground(b);
+      var note = _backgroundNote('已记录背景', created.applicableDates);
+      if (cmd.scope == Background.scopeGlobal && actor == CommandActor.human) {
+        note = await _appendBudgetWarning(note);
+      }
+      return CommandResult(
+        op: cmd.op,
+        targetId: created.id,
+        snapshot: backgroundToJson(created),
+        note: note,
+      );
+    }
+
+    // 编辑路径：手编契约——scope/plan_id 出生定死，raw 永不变（忽略传入新原话）
+    if (existing.scope != cmd.scope || existing.planId != cmd.planId) {
+      throw ActionException(
+        '背景 ${cmd.id} 已存在，scope/plan_id 不可变（现 scope=${existing.scope}）',
+        code: ActionErrorCode.invalidRequest,
+        hint: '改挂=删旧增新，走 merge_backgrounds 批命令',
+      );
+    }
+    final edited = Background(
+      id: existing.id,
+      scope: existing.scope,
+      planId: existing.planId,
+      content: cmd.content,
+      rawSourceText: existing.rawSourceText,
+      tags: cmd.tags ?? existing.tags,
+      applicableDates: cmd.applicableDates ?? existing.applicableDates,
+      source: existing.source,
+      capturedBy: existing.capturedBy,
+    );
+    if (existing.scope == Background.scopeGlobal && actor == CommandActor.ai) {
+      await _requireGlobalBudget(cmd.op,
+          actor: actor, replace: (id: existing.id!, content: cmd.content));
+    }
+    final patch = <String, Object?>{
+      'content': edited.content,
+      if (cmd.tags != null) 'tags': jsonEncode(edited.tags),
+      if (cmd.applicableDates != null)
+        'applicable_dates':
+            edited.applicableDates == null ? null : jsonEncode(edited.applicableDates),
+    };
+    final ok = await _repo.patchBackground(cmd.id!, patch, expectedVersion: cmd.expectedVersion);
+    if (!ok) throw await _backgroundConflict(cmd.op, cmd.id!);
+    final fresh = (await _repo.backgroundById(cmd.id!))!;
+    var note = '已更新背景';
+    if (cmd.rawSourceText != null &&
+        cmd.rawSourceText!.trim().isNotEmpty &&
+        cmd.rawSourceText != existing.rawSourceText) {
+      note += '；raw_source_text 永不变，传入的新原话已忽略';
+    }
+    note = _backgroundNote(note, fresh.applicableDates);
+    if (existing.scope == Background.scopeGlobal && actor == CommandActor.human) {
+      note = await _appendBudgetWarning(note);
+    }
+    return CommandResult(op: cmd.op, targetId: fresh.id, snapshot: backgroundToJson(fresh), note: note);
+  }
+
+  /// 背景归并原子批处理（背景草案 §2 预算治理）：ops 在单事务内「模拟终态 →
+  /// 终态校验 → 落库」，校验不过=整批拒（事务回滚，不留「先删 A」有损中间态，
+  /// 防「先插 C 再被拦」死锁）。编辑行走 version+1（FIFO 锁+事务已串行，
+  /// 批内不做逐行 CAS）；新建行 source 由 actor 派生。
+  Future<CommandResult> _mergeBackgrounds(MergeBackgroundsCommand cmd, CommandActor actor) async {
+    for (final o in cmd.ops) {
+      if (o.kind != 'upsert') continue;
+      if (o.content == null || o.content!.trim().isEmpty) {
+        throw ActionException(
+          'merge_backgrounds upsert 需要非空 content（归并后的归纳描述）',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      if (o.id == null && o.scope == null) {
+        throw ActionException(
+          'merge_backgrounds 建档项（无 id）需要 scope',
+          code: ActionErrorCode.invalidRequest,
+          hint: 'global=常驻画像 / plan=行程背景（须带 plan_id）',
+        );
+      }
+      _validateApplicableDates(cmd.op, o.applicableDates);
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final source = _backgroundSource(actor);
+    final createdIds = <String>[];
+    final updatedIds = <String>[];
+    var deletedCount = 0;
+
+    await _repo.transaction((txn) async {
+      final rows = await txn.query('backgrounds');
+      final all = {for (final r in rows) r['id'] as String: Background.fromMap(r)};
+      final currentGlobals = [
+        for (final b in all.values)
+          if (b.scope == Background.scopeGlobal) b,
+      ];
+
+      // 同一事务快照上模拟终态（不落库）
+      final sim = Map<String, Background>.of(all);
+      final toDelete = <String>[];
+      final toInsert = <Background>[];
+      final toUpdate = <Background>[];
+      for (final o in cmd.ops) {
+        switch (o.kind) {
+          case 'delete':
+            final hit = sim.remove(o.id);
+            if (hit == null) {
+              throw ActionException(
+                '背景不存在：${o.id}（整批拒绝，未落库）',
+                code: ActionErrorCode.notFound,
+                hint: '以拒绝体 data 携带的当前现场为准重发 ops',
+              );
+            }
+            toDelete.add(o.id!);
+          case 'upsert':
+            final existing = o.id == null ? null : sim[o.id];
+            if (existing != null) {
+              if ((o.scope != null && o.scope != existing.scope) ||
+                  (o.planId != null && o.planId != existing.planId)) {
+                throw ActionException(
+                  '背景 ${existing.id} 的 scope/plan_id 不可变（编辑载荷与现值不符）',
+                  code: ActionErrorCode.invalidRequest,
+                  hint: '改挂=删旧增新（拆成 delete + 建档 upsert）',
+                );
+              }
+              final updated = Background(
+                id: existing.id,
+                scope: existing.scope,
+                planId: existing.planId,
+                content: o.content!,
+                rawSourceText: existing.rawSourceText,
+                tags: o.tags ?? existing.tags,
+                applicableDates: o.applicableDates ?? existing.applicableDates,
+                source: existing.source,
+                capturedBy: existing.capturedBy,
+                createdAt: existing.createdAt,
+                updatedAt: existing.updatedAt,
+                version: existing.version,
+              );
+              sim[updated.id!] = updated;
+              toUpdate.add(updated);
+            } else {
+              final scope = o.scope;
+              if (scope == null) {
+                throw ActionException(
+                  '背景 ${o.id} 不存在，按建档处理需要 scope',
+                  code: ActionErrorCode.invalidRequest,
+                  hint: 'global=常驻画像 / plan=行程背景（须带 plan_id）',
+                );
+              }
+              if (scope != Background.scopeGlobal && scope != Background.scopePlan) {
+                throw ActionException(
+                  'scope 非法：$scope（global/plan）',
+                  code: ActionErrorCode.invalidRequest,
+                );
+              }
+              if (scope == Background.scopePlan) {
+                if (o.planId == null) {
+                  throw ActionException('scope=plan 需要 plan_id', code: ActionErrorCode.invalidRequest);
+                }
+                final planHit = await txn.query('plans',
+                    columns: ['id'], where: 'id = ?', whereArgs: [o.planId], limit: 1);
+                if (planHit.isEmpty) {
+                  throw ActionException(
+                    '计划不存在：${o.planId}',
+                    code: ActionErrorCode.notFound,
+                    hint: '先 list_plans 确认 id',
+                  );
+                }
+              }
+              final id = o.id ?? _repo.newId();
+              final b = Background(
+                id: id,
+                scope: scope,
+                planId: o.planId,
+                content: o.content!,
+                rawSourceText: o.rawSourceText,
+                tags: o.tags ?? const [],
+                applicableDates: o.applicableDates,
+                source: source,
+                createdAt: now,
+                updatedAt: now,
+              );
+              sim[id] = b;
+              toInsert.add(b);
+              createdIds.add(id);
+            }
+          default:
+            throw ActionException(
+              '未知 op kind：${o.kind}（delete/upsert）',
+              code: ActionErrorCode.invalidRequest,
+            );
+        }
+      }
+
+      // 终态校验（§2 统一式）：仅拦 ai actor；不过=异常令事务整体回滚
+      final finalGlobals = [
+        for (final b in sim.values)
+          if (b.scope == Background.scopeGlobal) b,
+      ];
+      final count = finalGlobals.length;
+      final chars = finalGlobals.fold(0, (sum, b) => sum + b.content.length);
+      if (actor == CommandActor.ai &&
+          (count > ScheduleRules.globalBackgroundsMax ||
+              chars > ScheduleRules.globalBackgroundCharsMax)) {
+        throw ActionException(
+          '归并后终态仍超预算：$count 条（上限 ${ScheduleRules.globalBackgroundsMax}）、'
+          '$chars 字（上限 ${ScheduleRules.globalBackgroundCharsMax}）',
+          code: ActionErrorCode.budgetExceeded,
+          hint: '把更多旧条目并进来或再删几条冗余项，使终态回到预算内后重试',
+          data: {
+            'limit': {
+              'entries': ScheduleRules.globalBackgroundsMax,
+              'chars': ScheduleRules.globalBackgroundCharsMax,
+            },
+            'final_state': {'entries': count, 'chars': chars},
+            'current': [for (final b in currentGlobals) backgroundToJson(b)],
+          },
+        );
+      }
+
+      // 落库（同事务）：先删后增，避免同 id 先插后删的死键序
+      for (final id in toDelete) {
+        await txn.delete('backgrounds', where: 'id = ?', whereArgs: [id]);
+      }
+      deletedCount = toDelete.length;
+      for (final b in toUpdate) {
+        await txn.update(
+          'backgrounds',
+          {
+            'content': b.content,
+            'tags': jsonEncode(b.tags),
+            'applicable_dates': b.applicableDates == null ? null : jsonEncode(b.applicableDates),
+            'updated_at': now,
+            'version': b.version + 1,
+          },
+          where: 'id = ?',
+          whereArgs: [b.id],
+        );
+        updatedIds.add(b.id!);
+      }
+      for (final b in toInsert) {
+        await txn.insert('backgrounds', b.toMap());
+      }
+    });
+
+    var note = '已原子归并：删 $deletedCount / 改 ${updatedIds.length} / 增 ${createdIds.length}';
+    if (actor == CommandActor.human) note = await _appendBudgetWarning(note);
+    return CommandResult(
+      op: cmd.op,
+      note: note,
+      data: {
+        'deleted_count': deletedCount,
+        'updated': updatedIds,
+        'created': createdIds,
+      },
+    );
+  }
+
+  static String _backgroundSource(CommandActor actor) =>
+      actor == CommandActor.ai ? Background.sourceAiDerived : Background.sourceUser;
+
+  /// applicable_dates 逐元素双检（施工钉子 §2，写入口校验单点）：畸形=拒绝而非
+  /// 静默丢（读侧的 fail-closed 过滤是另一道）。一律日历日，非作息日。
+  void _validateApplicableDates(String op, List<String>? dates) {
+    if (dates == null) return;
+    for (final d in dates) {
+      if (!Background.isValidIsoDate(d)) {
+        throw ActionException(
+          '$op applicable_dates 含非法日期「$d」',
+          code: ActionErrorCode.invalidRequest,
+          hint: '单日 ISO 日期字符串数组（如 ["2026-10-08","2026-10-09"]），一律日历日；'
+              '瞬态窗本就该短，超过 ${ScheduleRules.backgroundDateWindowAdviseDays} 天请改为长期背景（不带日期窗）',
+        );
+      }
+    }
+  }
+
+  /// 长窗劝改（§2）：日期窗超过阈值提示改长期——劝改非拦截。
+  String _backgroundNote(String prefix, List<String>? dates) {
+    if (dates != null && dates.length > ScheduleRules.backgroundDateWindowAdviseDays) {
+      return '$prefix；日期窗 ${dates.length} 天偏长，建议改为长期背景（去掉日期窗）';
+    }
+    return prefix;
+  }
+
+  /// scope=global 注入预算终态校验（背景草案 §2）：任何写操作落库前评估**最终状态**
+  /// ——条数超 [ScheduleRules.globalBackgroundsMax] 或 content 总字数超
+  /// [ScheduleRules.globalBackgroundCharsMax] 即拒。「5 条时插入 250 字长段」与
+  /// 「直接写第 9 条」是同一规则的退化情形，无两套逻辑。度量=String.length 单点、
+  /// 只计 content（raw/tags 不进分子，堵「往 raw 塞长文绕预算」暗门）。
+  /// data 附当前全局背景全量摘要——AI 无需重读即可提出具体归并方案。
+  Future<void> _requireGlobalBudget(
+    String op, {
+    required CommandActor actor,
+    List<Background> additions = const [],
+    ({String id, String content})? replace,
+  }) async {
+    final globals = await _repo.listBackgrounds(scope: Background.scopeGlobal);
+    var count = globals.length;
+    var chars = globals.fold(0, (sum, b) => sum + b.content.length);
+    if (replace != null) {
+      for (final b in globals) {
+        if (b.id == replace.id) {
+          chars += replace.content.length - b.content.length;
+          break;
+        }
+      }
+    }
+    count += additions.length;
+    chars += additions.fold(0, (sum, b) => sum + b.content.length);
+    if (count <= ScheduleRules.globalBackgroundsMax &&
+        chars <= ScheduleRules.globalBackgroundCharsMax) {
+      return;
+    }
+    throw ActionException(
+      '全局背景注入预算超限：终态 $count 条（上限 ${ScheduleRules.globalBackgroundsMax}）、'
+      '$chars 字（上限 ${ScheduleRules.globalBackgroundCharsMax}）',
+      code: ActionErrorCode.budgetExceeded,
+      hint: '发起归并询问后重试：给出具体归并方案（哪几条并成哪条），经用户确认后用 '
+          'merge_backgrounds 执行；或建议用户在 app 内手动处理（human 通道不受预算拦截）',
+      data: {
+        'limit': {
+          'entries': ScheduleRules.globalBackgroundsMax,
+          'chars': ScheduleRules.globalBackgroundCharsMax,
+        },
+        'final_state': {'entries': count, 'chars': chars},
+        'current': [for (final b in globals) backgroundToJson(b)],
+      },
+    );
+  }
+
+  /// human 通道温和提示（§2：人可以任性，AI 必须讲理——写后超刻度不拦、只提示）。
+  Future<String> _appendBudgetWarning(String note) async {
+    final globals = await _repo.listBackgrounds(scope: Background.scopeGlobal);
+    final chars = globals.fold(0, (sum, b) => sum + b.content.length);
+    if (globals.length <= ScheduleRules.globalBackgroundsMax &&
+        chars <= ScheduleRules.globalBackgroundCharsMax) {
+      return note;
+    }
+    return '$note；全局背景 ${globals.length} 条/$chars 字已超预算刻度'
+        '（${ScheduleRules.globalBackgroundsMax} 条/${ScheduleRules.globalBackgroundCharsMax} 字），'
+        '建议在方便时归并';
+  }
+
+  Future<ActionException> _backgroundConflict(String op, String id) async {
+    final b = await _repo.backgroundById(id);
+    return _conflict(op, b == null ? null : backgroundToJson(b));
   }
 
   // ---- settings / fixed_slots ----

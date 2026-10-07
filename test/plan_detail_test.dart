@@ -38,7 +38,7 @@ void main() {
     await tester.tap(find.text('清单'));
     await pumpFlush(tester);
 
-    // 详情 sheet：roadmap 进度 + 子树 + 待敲定问题
+    // 全页详情（ui-spec §5 路由）：roadmap 进度 + 子树 + 待敲定问题
     await tester.tap(find.text('考驾照'));
     await pumpFlush(tester);
     expect(find.text('▶ 当前进度 1/3'), findsOneWidget);
@@ -68,9 +68,7 @@ void main() {
       return blocks.any((b) => b.planId == parentId);
     });
 
-    // reward 保存（重开 sheet，reward 字段为第 4 个 TextField）
-    await pumpFlush(tester);
-    await tester.tap(find.text('考驾照'));
+    // reward 保存（全页详情直改第 4 字段→保存关页）
     await pumpFlush(tester);
     await tester.enterText(find.byType(TextField).at(3), '火锅');
     await tester.ensureVisible(find.text('保存'));
