@@ -1401,7 +1401,7 @@ class CommandHandler {
             );
           }
           toSet[e.key] = v;
-        case SettingsKeys.userRules || SettingsKeys.weatherLocation:
+        case SettingsKeys.userRules || SettingsKeys.weatherLocation || SettingsKeys.identityPrompt:
           toSet[e.key] = e.value.toString();
         case SettingsKeys.themeMode:
           final v = e.value.toString();

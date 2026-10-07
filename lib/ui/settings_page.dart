@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -11,6 +12,8 @@ import '../data/repository.dart';
 import '../data/settings.dart';
 import '../models/fixed_slot.dart';
 import '../theme/tokens.dart';
+import '../update/remote_config_store.dart';
+import '../ui/update_page.dart';
 import '../util/schedule_day.dart';
 
 /// ISO 星期中文名（1=周一 … 7=周日），索引 0 占位。
@@ -30,6 +33,37 @@ class _SettingsPageState extends State<SettingsPage> {
   Repository get _repo => AppServices.repo;
   CommandHandler get _handler => CommandHandler(_repo);
 
+  late final StreamSubscription<void> _sugSub;
+  Future<List<Map<String, Object?>>>? _sugFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _sugFuture = _readSuggestions();
+    _sugSub = AppServices.mcp.suggestionStream.listen((_) {
+      if (!mounted) return;
+      setState(() => _sugFuture = _readSuggestions());
+    });
+  }
+
+  @override
+  void dispose() {
+    _sugSub.cancel();
+    super.dispose();
+  }
+
+  Future<List<Map<String, Object?>>> _readSuggestions() async {
+    final raw = await _repo.settingsGet(SettingsKeys.aiSettingSuggestions);
+    if (raw == null || raw.isEmpty) return const [];
+    final decoded = jsonDecode(raw);
+    return decoded is List
+        ? decoded
+            .whereType<Map<Object?, Object?>>()
+            .map((e) => Map<String, Object?>.from(e))
+            .toList()
+        : const [];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,6 +80,8 @@ class _SettingsPageState extends State<SettingsPage> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                _aiSuggestionsSection(context),
+                const SizedBox(height: 16),
                 _scheduleSection(context, settings),
                 const SizedBox(height: 16),
                 _rhythmSection(context),
@@ -58,10 +94,109 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 16),
                 _mcpSection(context),
                 const SizedBox(height: 16),
+                _updateSection(context),
+                const SizedBox(height: 16),
                 _exportSection(context),
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _aiSuggestionsSection(BuildContext context) {
+    return FutureBuilder<List<Map<String, Object?>>>(
+      future: _sugFuture,
+      builder: (context, snap) {
+        final items = snap.data ?? const <Map<String, Object?>>[];
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Card(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle(context, 'AI 建议（待你决断）'),
+                const SizedBox(height: 8),
+                for (final it in items) _suggestionTile(context, it),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _suggestionTile(BuildContext context, Map<String, Object?> it) {
+    final key = it['key']?.toString() ?? '';
+    final reason = it['reason']?.toString() ?? '';
+    final suggested = it['suggested_value']?.toString();
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.lightbulb_outline),
+      title: Text('建议修改「$key」'),
+      subtitle: Text(suggested != null && suggested.isNotEmpty
+          ? '建议值：$suggested\n原因：$reason'
+          : '原因：$reason'),
+      isThreeLine: suggested != null && suggested.isNotEmpty,
+      trailing: IconButton(
+        icon: const Icon(Icons.check_circle_outline),
+        tooltip: '忽略',
+        onPressed: () async {
+          final raw = await _repo.settingsGet(SettingsKeys.aiSettingSuggestions);
+          if (raw == null) return;
+          final list = (jsonDecode(raw) as List)
+              .whereType<Map<Object?, Object?>>()
+              .map((e) => Map<String, Object?>.from(e))
+              .where((e) => e['id'] != it['id'])
+              .toList();
+          await _repo.settingsSet({SettingsKeys.aiSettingSuggestions: jsonEncode(list)});
+          if (!context.mounted) return;
+          setState(() => _sugFuture = _readSuggestions());
+        },
+      ),
+    );
+  }
+
+  /// 应用内自更新 + 配置热更入口（docs/guide/self-update.md）。
+  /// 同时展示缓存的远程公告（RemoteConfigStore 随检查更新刷新）。
+  Widget _updateSection(BuildContext context) {
+    final announcement = RemoteConfigStore.instance.current.announcement;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle(context, '应用更新'),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.system_update_alt),
+              title: const Text('检查更新'),
+              subtitle: const Text('应用内自更新 + 远程公告/MCP 指令热更'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const UpdatePage()),
+              ),
+            ),
+            if (announcement != null && announcement.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.campaign_outlined, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(announcement,
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -429,6 +564,14 @@ class _SettingsPageState extends State<SettingsPage> {
               onSaved: (v) => _handler.execute(
                   UpdateSettingsCommand(values: {SettingsKeys.userRules: v})),
             ),
+            _textField(
+              context,
+              label: '身份画像（系统提示词）：描述你是谁、处境与硬约束，随 MCP 注入 AI 排程上下文',
+              initial: settings['identity_prompt'] as String? ?? '',
+              maxLines: 4,
+              onSaved: (v) => _handler.execute(
+                  UpdateSettingsCommand(values: {SettingsKeys.identityPrompt: v})),
+            ),
           ],
         ),
       ),
@@ -447,6 +590,7 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           Expanded(
             child: TextField(
+              key: ValueKey('$label|$initial'),
               controller: ctrl,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
@@ -487,6 +631,7 @@ class _SettingsPageState extends State<SettingsPage> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           TextField(
+            key: ValueKey('$label|$initial'),
             controller: ctrl,
             maxLines: maxLines,
             decoration: InputDecoration(

@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # docs
@@ -13,6 +13,8 @@ updated: 2026-10-06
 - [functional-spec.md](design/functional-spec.md) —— 拾光功能设计施工蓝图（M1–M4 里程碑切片/页面功能清单/命令清单，零新机制，2026-10-05 冻结稿）
 - [ui-spec.md](design/ui-spec.md) —— 拾光 UI 设计规格（视觉 tokens/导航/页面布局/BlockRenderer 渲染矩阵/交互流，2026-10-05 三拍板定稿）
 - [golden-samples.md](design/golden-samples.md) —— 金样本评审循环固定输入集合（#4 云南七天=旅行模式双阶段全流程走查样本+实现差异备忘，2026-10-06）
+- [fact-user-relay-draft.md](design/fact-user-relay-draft.md) —— 事实挂载草案（artifacts 契约/摄入管道/随行凭证 UI+多人轨用户/好友/盲中继，2026-10-07 评审收敛待拍板）
+- [background-context-draft.md](design/background-context-draft.md) —— 背景信息草案（软上下文 vs 硬事实分流判据/数据模型/AI 消费，未定稿）
 
 ## playbook/
 

@@ -1,11 +1,14 @@
 import 'dart:math';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../data/repository.dart';
+import '../data/settings.dart';
 import '../mcp/mcp_server.dart';
+import '../update/remote_config_store.dart';
 import '../util/lan_ip.dart';
 import 'foreground_task_init.dart';
 
@@ -18,6 +21,11 @@ class McpController extends ChangeNotifier {
   McpController({required this.repo});
 
   final Repository repo;
+
+  /// AI 经 suggest_user_setting 推送的「建议用户改设置」广播通道（app UI 监听弹提示）。
+  final StreamController<Map<String, Object?>> _suggestionController =
+      StreamController<Map<String, Object?>>.broadcast();
+  Stream<Map<String, Object?>> get suggestionStream => _suggestionController.stream;
 
   static const defaultPort = 8765;
 
@@ -84,7 +92,29 @@ class McpController extends ChangeNotifier {
         // DEGRADE: [fg_unavailable] 前台服务不可用（VM 测试/平台未就绪）——仅 HTTP 无保活
         debugPrint('[DEGRADE][fg_unavailable] 前台服务未启动: $e');
       }
-      _server ??= McpServer(repo: repo, tokenProvider: () => _token);
+      _server ??= McpServer(
+        repo: repo,
+        tokenProvider: () => _token,
+        // AI 经 suggest_user_setting 推送建议时，广播给 app UI 弹提示
+        onSuggestion: (args) {
+          if (!_suggestionController.isClosed) _suggestionController.add(args);
+        },
+        // 系统提示词热更入口：远程下发的 mcpInstructions 可覆盖内置政策精华；
+        // 用户自填身份画像（identity_prompt）始终拼接待尊重（即配即用）。
+        instructionsProvider: () async {
+          final remote =
+              RemoteConfigStore.instance.current.mcpInstructions;
+          final base = remote != null && remote.trim().isNotEmpty
+              ? remote.trim()
+              : McpServer.builtinInstructions;
+          final prompt = await repo.settingsGet(SettingsKeys.identityPrompt);
+          if (prompt != null && prompt.trim().isNotEmpty) {
+            return '$base\n\n'
+                '【用户身份画像】（由用户在 app 内填写，描述其自身身份与处境，排程时务必尊重）\n$prompt';
+          }
+          return base;
+        },
+      );
       await _server!.start(port: defaultPort);
       // mDNS 广播（§10/§11 网络配对：消灭「Connection Refused」在用户修网络之前）。
       // UNCERTAIN: bonsoir 新集成未真机实证；不可用时静默降级走手动 IP 兜底（拍板真）。

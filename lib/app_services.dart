@@ -1,6 +1,7 @@
 import 'data/repository.dart';
 import 'service/housekeeper.dart';
 import 'service/mcp_controller.dart';
+import 'update/remote_config_store.dart';
 
 /// 应用级服务装配（轻量服务定位器）：main 与测试共用同一初始化路径。
 /// 命令层/查询层是无状态包装，用时装配（CommandHandler(repo)/ScheduleQueries(repo)）。
@@ -21,6 +22,8 @@ class AppServices {
     final mcp = McpController(repo: repo);
     _mcp = mcp;
     await mcp.restoreIfNeeded();
+    // 远程配置缓存预读（公告/MCP instructions 热更，docs/guide/self-update.md）
+    await RemoteConfigStore.instance.load();
     // 冷启动日切（幂等，每作息日至多一次）：missed/作废迁移先行，digest 随取随算
     await Housekeeper(repo).dailyCutIfNeeded();
   }

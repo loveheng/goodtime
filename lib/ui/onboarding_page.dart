@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import '../action/command_handler.dart';
 import '../action/commands.dart';
 import '../app_services.dart';
+import '../data/settings.dart';
 import '../models/fixed_slot.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
-/// 首启引导 3 步（ui-spec §2）：①作息边界（必填不可跳）→②一周节奏（可跳）
-/// →③排程偏好（可跳）。完成即写 settings+fixed_slots；未完成无法进主框架。
+/// 首启引导 4 步（ui-spec §2）：①作息边界（必填不可跳）→②一周节奏（可跳）
+/// →③排程数值偏好（可跳）→④关于你（身份画像+我的偏好，可跳但推荐）。
+/// 完成即写 settings+fixed_slots；未完成无法进主框架。
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key, required this.onDone});
 
@@ -33,6 +35,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
   int _minBlock = 30;
   int _dailyLimit = 8;
 
+  // ④ 关于你（可跳但推荐；human 通道写入，不受 uiOnly 限制）
+  String _userRules = '';
+  String _identityPrompt = '';
+
   CommandHandler get _handler => CommandHandler(AppServices.repo);
 
   @override
@@ -46,15 +52,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
             children: [
               Text('拾光', style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 4),
-              Text('第 ${_step + 1} 步，共 3 步', style: Theme.of(context).textTheme.bodySmall),
+              Text('第 ${_step + 1} 步，共 4 步', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 24),
               Expanded(child: _stepBody()),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _next,
-                child: Text(_step < 2 ? '下一步' : '开始使用'),
+                child: Text(_step < 3 ? '下一步' : '开始使用'),
               ),
-              if (_step > 0)
+              if (_step > 0 && _step < 3)
                 TextButton(
                   onPressed: () => setState(() => _step += 1),
                   child: const Text('跳过'),
@@ -69,7 +75,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
   Widget _stepBody() => switch (_step) {
         0 => _stepSchedule(),
         1 => _stepRhythm(),
-        _ => _stepPreference(),
+        2 => _stepPreference(),
+        _ => _stepProfile(),
       };
 
   // ① 作息边界：「几点起床？几点睡觉？」+「一切安排以此为界」
@@ -166,27 +173,83 @@ class _OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
+  // ④ 关于你：身份画像 + 我的偏好（可跳但强烈推荐）。
+  // 这两项注入 AI 排程上下文，是排程贴合度的地基；human 通道写入，不受 uiOnly 限制。
+  Widget _stepProfile() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('关于你', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text('这两项是 AI 排程的地基，建议填一下；可稍后在「设置」页随时修改。',
+            style: TextStyle(color: StColors.textSecondary)),
+        const SizedBox(height: 24),
+        const Text('身份画像（系统提示词）', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        _multiLineField(
+          hint: '例如：自由职业者，家有两岁宝宝，上午精力最好、晚上 9 点后不处理工作；'
+              '硬约束是周三下午要陪诊。',
+          onChanged: (v) => setState(() => _identityPrompt = v),
+        ),
+        const SizedBox(height: 20),
+        const Text('我的偏好（自然语言）', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        _multiLineField(
+          hint: '例如：周五晚上不排深度工作；午饭后留 30 分钟散步；'
+              'deadline 前两天不排新事务。',
+          onChanged: (v) => setState(() => _userRules = v),
+        ),
+      ],
+    );
+  }
+
+  Widget _multiLineField({
+    required String hint,
+    required ValueChanged<String> onChanged,
+  }) {
+    return TextField(
+      maxLines: 4,
+      decoration: InputDecoration(
+        hintText: hint,
+        border: const OutlineInputBorder(),
+        alignLabelWithHint: true,
+      ),
+      onChanged: onChanged,
+    );
+  }
+
   Future<void> _next() async {
     if (_step == 0) {
       setState(() => _step = 1);
       return;
     }
-    if (_step == 1 && _preset != null && _preset != '自由职业') {
-      await _handler.execute(
-        UpdateFixedSlotsCommand(slots: _presetSlots(_preset!)),
-      );
-    }
-    if (_step == 2) {
-      await _handler.execute(UpdateSettingsCommand(values: {
-        'wake_time': _wake,
-        'sleep_time': _sleep,
-        'min_block_minutes': _minBlock,
-        'daily_new_blocks_limit': _dailyLimit,
-      }));
-      widget.onDone();
+    if (_step == 1) {
+      if (_preset != null && _preset != '自由职业') {
+        await _handler.execute(
+          UpdateFixedSlotsCommand(slots: _presetSlots(_preset!)),
+        );
+      }
+      setState(() => _step = 2);
       return;
     }
-    setState(() => _step = 2);
+    if (_step == 2) {
+      setState(() => _step = 3);
+      return;
+    }
+    // _step == 3：关于你 —— 提交全部设置并进入主框架。
+    // 身份画像/我的偏好为空则不写（可跳）；非空走 human 通道，不受 uiOnly 限制。
+    final values = <String, Object?>{
+      SettingsKeys.wakeTime: _wake,
+      SettingsKeys.sleepTime: _sleep,
+      SettingsKeys.minBlockMinutes: _minBlock,
+      SettingsKeys.dailyNewBlocksLimit: _dailyLimit,
+    };
+    final rules = _userRules.trim();
+    if (rules.isNotEmpty) values[SettingsKeys.userRules] = rules;
+    final identity = _identityPrompt.trim();
+    if (identity.isNotEmpty) values[SettingsKeys.identityPrompt] = identity;
+    await _handler.execute(UpdateSettingsCommand(values: values));
+    widget.onDone();
   }
 
   /// 一周节奏预设（§9）：工作日白天两段固定占用；自由职业=空表合法。

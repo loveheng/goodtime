@@ -36,7 +36,10 @@ last-merge: 2026-10-06
 - [2026-10-06] 全局动作 sheet 落地（5c6c10a）：PanicClear 两模式原子批量+两段确认 UI+警示图标钮入口；**坑7（挂账）**：UI 测试中「写+notify 之后的 tester.runAsync 轮询」会无限卡死（单窗口/循环均复现），UI 断言收窄为取消路径、执行语义由命令测试覆盖，根因待查（怀疑 sqflite_ffi 完成通道与 FakeAsync 的交互）。
 - [2026-10-06] 遗留区+冷藏池切片落地（b044fa1）：PostponeBlock 新命令（missed 专用/钟点不变/pc+1/冲突拒）+settingsClearAll（单事务单 notify）；顺延后短 missed 块入时间轴的渲染在 600dp 测试视口会溢出——setSurfaceSize(800,1400) 规避，真机纵向空间充裕；深挖_pending timer_：UI 测试 pending-timer 断言与 FutureBuilder 孤儿 future 的 notify 风暴相关，收敛 notify 次数（settingsClearAll）即愈。
 - [2026-10-06] 清单详情簇切片落地（uncommitted）：plans_page 编辑 sheet 升为详情页（roadmap 进度/open_items 手答敲定/子树 ≤3 级/reward_spec/「排期」）+命令层 openItems 字段（upsert/update 双通道+fromJson 容错）+add_plan 工具面补 open_items 入参（人机澄清闭环：AI 建档可留未决问题，人在 app 内手答敲定）；蓝本校准移除长按「挂起」（数据模型无此状态）。坑8：sheet 内连续写须用 snapshot 回填 version，否则乐观锁陈旧冲突。
+- [2026-10-06] 设计草案起草（未定稿）：事实挂载(artifacts JSON)+Fact Capsule UI+用户/好友体系(本地roster+服务器用户/好友图)+多事实源重叠解析(重复/冲突/互补)+外部盲中继(E2E内容)。**已实质越过 §13 四大铁律**：破「无同步/无账号/服务端零联系人」三条，守「零代发+内容隐私(E2E)」。全文（含 §13 修正账 + 10 项待定清单）见 `docs/design/fact-user-relay-draft.md`；待用户逐条拍板后并入 SSOT（§13 修正需正式授权）。
+- [2026-10-06] 背景信息记录草案（未定稿）：`docs/design/background-context-draft.md`。核心区分「事实(硬约束) vs 背景(软上下文)」——背景为叙事性行程上下文，仅影响 AI 软提案权重不生成硬墙，契合 §13 反压迫条款；含数据模型/捕获UX/AI消费/与facts边界/隐私同步。与主草案并列为「硬事实+软背景」完整零散信息层。待校准「背景」界定是否准确。
 - [2026-10-06] 设置页编辑器簇切片落地（uncommitted）：settings_page 升级——一周节奏 fixed_slots 增删改（编辑 sheet：名称/ISO 星期 1–7 多选/起止，整单 UpdateFixedSlotsCommand 原子替换）/例外日 exceptions 增删改（起止日期+标签，JSON 落 settings.exceptions）/排程偏好（最小块粒度+单日排量上限+填充率上限+weather_location+user_rules，字段级 UpdateSettingsCommand）；命令层与十工具本就具备（M2 已通），本次纯 UI 收口。坑9：长 ListView 懒构建深位控件须先滚后点。
+- [2026-10-07] 事实挂载评审收敛（多轮对话）：契约定稿——5 类 category + source_kind 三级可靠性 + state/origin + time_anchors（moment/span/rule 三类锚，支持跨日）+ constraints 三数组（required_items/rules/notices）+ badge + attachments 预留列（恒空）；独立 artifacts 表 v3 + upsert_facts 辅助工具（suggest_user_setting 先例）；三刀路由（时空锚点/行动升格/规则补全 + background 兜底）；摄入三通道（桌面对话主通道/快记粘贴旁路/系统分享仅文本 ACTION_SEND+挂载 sheet+未归属池；图片本期不做挂 Q11）；随行凭证 UI（三入口+四层槽位，不新增 Tab，计划详情「随行凭证」区=聚合主场）。多人/盲中继强制解耦待单独拍板（§13 转向不搭车）。`fact-user-relay-draft.md` 全面重写（§0 收敛记录 + §1/§2 重写）+ background 草案补 frontmatter + README 索引补登两草案；docs-lint 过。待用户对 §0 七项正式拍板后并入 SSOT 排施工（依赖序见草案 §8）。
 
 ## 口径决策（实现层拍板留痕，回 SSOT 前有效）
 
@@ -64,4 +67,4 @@ last-merge: 2026-10-06
 
 - 2026-10-06（清单详情簇后）：flutter analyze 0 issue；flutter test 103/103（新增 test/plan_detail_test.dart）；arch-guard 6/6；docs-lint 过（golden-samples/functional-spec §2/ui-spec §4/README 索引均 2026-10-06）。
 - 2026-10-06（设置编辑器簇后）：flutter analyze 0 issue；flutter test 104/104（新增 test/ui_settings_editor_test.dart，顺带修 ui_theme_test 深位控件先滚后点）；arch-guard 6/6；docs-lint 过。
-- [断点] 下一步：设置页编辑器簇切片已完备待提交（UI 收口：一周节奏/例外日/排程偏好，命令层与工具面本就具备）；金样本 #4「云南七天」已备（docs/design/golden-samples.md，含走查脚本与实现差异表）；功能完备性对账剩余：MCP prompts 实装、bonsoir 升级；后续：提交该切片 → 用户自 build-apk --install 刷新真机包 → 人工侧验收（真机四天型走查+手势体感+金样本 #4 评审；桌面 AI 全链路 MCP token 在设置页；mDNS 发现+日历投影实证挂真机轮）
+- [断点] 下一步：设置页编辑器簇切片已提交（a6abe20）；金样本 #4「云南七天」已备（docs/design/golden-samples.md，含走查脚本与实现差异表）；功能完备性对账剩余：MCP prompts 实装、bonsoir 升级；后续：用户自 build-apk --install 刷新真机包 → 人工侧验收（真机四天型走查+手势体感+金样本 #4 评审；桌面 AI 全链路 MCP token 在设置页；mDNS 发现+日历投影实证挂真机轮）

@@ -23,17 +23,22 @@ abstract final class SettingsKeys {
   /// 晨间生理电量三档 high/normal/low（十轮拍板：手动点选、默认平稳、永不接传感器）
   static const todayEnergy = 'today_energy';
 
-  /// 显式偏好文本（「周五晚上不排深度工作」），AI 经 update_settings 维护
+  /// 显式偏好文本（「周五晚上不排深度工作」）——定性键，仅人自设，AI 不可经 MCP 改
   static const userRules = 'user_rules';
 
-  /// 可选城市字符串（手动填、零定位权限，M4 天气投影消费）
+  /// 可选城市字符串（手动填、零定位权限，M4 天气投影消费）——定性键，仅人自设
   static const weatherLocation = 'weather_location';
 
-  /// 例外日 JSON 数组 [{start,end,label}]（十三轮旅行模式，M4 消费，M1 先通存储）
+  /// 例外日 JSON 数组 [{start,end,label}]（十三轮旅行模式，M4 消费，M1 先通存储）——定性键，仅人自设
   static const exceptions = 'exceptions';
 
-  /// 填充率上限（百分比 5..100，默认 60，update_settings 可调——§6「默认可调」）
+  /// 填充率上限（百分比 5..100，默认 60，update_settings 可调——§6「默认可调」）——数值键，AI 可改
   static const fillRateLimit = 'fill_rate_limit';
+
+  /// 用户身份画像（系统提示词补充）：描述用户自身身份/处境/硬约束，
+  /// 经 MCP initialize 的 instructions 注入桌面 AI 排程上下文。定性键，仅人自设
+  /// （入 uiOnly），AI 不可经 MCP 改——由用户在设置页填，自己掌控画像口径。
+  static const identityPrompt = 'identity_prompt';
 
   /// 快记草稿内部键（§10 快记入口 2026-10-06 拍板）：UI 专属三字段静默持久化，
   /// 刻意不入 [all] 白名单——update_settings 拒收，AI 不可触碰草稿；
@@ -57,11 +62,25 @@ abstract final class SettingsKeys {
     exceptions,
     fillRateLimit,
     themeMode,
+    identityPrompt,
   ];
 
   /// 仅人可写的键：AI 经 update_settings 触碰即拒（Human-AI 对称性：
-  /// 外观是人的感官偏好，AI 无权代拨；2026-10-06 拍板）。
-  static const uiOnly = [themeMode];
+  /// 感官/定性偏好由人终审，AI 无权代拨；2026-10-06 拍板）。
+  /// 含：themeMode（外观）、todayEnergy（电量档）、userRules（自然语言偏好）、
+  /// weatherLocation（城市）、exceptions（例外日）、identityPrompt（身份画像）。
+  /// 其余数值键（wake/sleep/minBlock/dailyNewBlocks/fillRate）归 AI 可调（§6「默认可调」）。
+  static const uiOnly = [
+    themeMode,
+    userRules,
+    weatherLocation,
+    exceptions,
+    identityPrompt,
+  ];
+
+  /// AI 经 suggest_user_setting 推送的「建议用户改设置」列表（app_settings 内部键，
+  /// JSON 数组持久化；不入 all/uiOnly 白名单，AI 不可经 update_settings 读写）。
+  static const aiSettingSuggestions = 'ai_setting_suggestions';
 
   /// propose 硬前置（§6 校验铁律）：settings 未初始化（缺作息边界）时整单硬拒。
   static bool initialized(Map<String, String> s) =>

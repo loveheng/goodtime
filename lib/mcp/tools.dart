@@ -6,11 +6,14 @@ import '../action/queries.dart';
 import '../data/repository.dart';
 import '../service/weather.dart';
 import '../util/schedule_day.dart';
+import '../data/settings.dart';
 import 'jsonrpc.dart';
 
-/// MCP 工具面（schedule-app.md §6，十个，MVP 定格不增不减）：
+/// MCP 工具面（schedule-app.md §6，十个排程工具 MVP 定格不增不减）：
 /// list_plans / add_plan / update_plan / get_settings / update_settings /
-/// update_fixed_slots / propose_schedule / adjust_blocks / get_schedule / get_history。
+/// update_fixed_slots / propose_schedule / adjust_blocks / get_schedule / get_history；
+/// 另含一个 AI 建言通道 suggest_user_setting（非排程工具，仅把「建议用户改设置」
+/// 推送给 app，由用户在设置页手动决断；§11 拍板）。
 ///
 /// 本层只做三件事，**不做任何业务判断**（防呆全在命令层，模式照抄拾贝 tools.dart）：
 /// ① 把大模型输出的 JSON 反序列化成 [ScheduleCommand]（与 UI 组装的同一类对象，
@@ -120,8 +123,11 @@ List<Map<String, Object?>> toolSchemas() => [
       {
         'name': 'update_settings',
         'description':
-            '写用户设置（键注册制，只发要改的键）。典型：user_rules（用户明说的偏好如'
-                '「周五晚上不排深度工作」）、today_energy、weather_location。传 null 清空对应键。',
+            '写用户设置（可改键：wake_time/sleep_time/min_block_minutes/daily_new_blocks_limit/'
+                'fill_rate_limit/today_energy，AI 可调；today_energy 为今日电量档 high/normal/low，'
+                'AI 据今日负荷判断后置）。仅用户自设、AI 不可改的键：user_rules/weather_location/'
+                'exceptions/identity_prompt/theme_mode——若你判断这些键需要调整，请勿经此工具改动'
+                '（会被拒），请在回复中明确建议用户前往 app「设置」页手动修改。传 null 清空对应键。',
         'inputSchema': {
           'type': 'object',
           'properties': {
@@ -129,13 +135,11 @@ List<Map<String, Object?>> toolSchemas() => [
             'sleep_time': {'type': 'integer', 'description': '睡觉分钟数 0..1439（小于 wake 即跨午夜睡眠）'},
             'min_block_minutes': {'type': 'integer', 'description': '最小块粒度（分钟）'},
             'daily_new_blocks_limit': {'type': 'integer', 'description': '单日新增排量上限（块数）'},
-            'today_energy': {'type': 'string', 'enum': ['high', 'normal', 'low'], 'description': '今日生理电量三档'},
-            'user_rules': {'type': 'string', 'description': '显式偏好文本'},
-            'weather_location': {'type': 'string', 'description': '天气城市（手动填，零定位权限）'},
-            'exceptions': {
-              'type': 'array',
-              'items': {'type': 'object'},
-              'description': '例外日 [{start,end,label}]（假期与出行）',
+            'fill_rate_limit': {'type': 'integer', 'description': '填充率上限（百分比 5..100，默认 60）'},
+            'today_energy': {
+              'type': 'string',
+              'enum': ['high', 'normal', 'low'],
+              'description': '今日生理电量三档，AI 据今日负荷/状态判断后置（开放 AI 修正）'
             },
           },
         },
@@ -244,6 +248,27 @@ List<Map<String, Object?>> toolSchemas() => [
           },
         },
       },
+      {
+        'name': 'suggest_user_setting',
+        'description':
+            '当你判断某个仅用户自设的设置键（user_rules/weather_location/exceptions/'
+                'identity_prompt/theme_mode）确需调整时，用此工具把建议推送给 app，'
+                '由用户在手机端「设置」页手动决断——你无权经 update_settings 改这些键，不要尝试写入，只在此建言。',
+        'inputSchema': {
+          'type': 'object',
+          'required': ['key', 'reason'],
+          'properties': {
+            'key': {
+              'type': 'string',
+              'enum': ['user_rules', 'weather_location', 'exceptions', 'identity_prompt', 'theme_mode'],
+              'description': '建议用户修改的设置键（仅用户自设键）'
+            },
+            'reason': {'type': 'string', 'description': '建议原因（简明、具体）'},
+            'suggested_value': {'type': 'string', 'description': '建议的目标值（仅供参考，由用户决定是否采纳）'},
+            'severity': {'type': 'string', 'enum': ['low', 'normal', 'high'], 'description': '建议紧急度，默认 normal'},
+          },
+        },
+      },
     ];
 
 Future<List<Map<String, Object?>>> callTool(
@@ -337,6 +362,35 @@ Future<List<Map<String, Object?>>> callTool(
     case 'get_history':
       final days = _clampInt(args['days'], 14, 1, 90);
       return [_text(jsonEncode(await queries.getHistory(days: days)))];
+
+    case 'suggest_user_setting':
+      final key = _str(args['key']);
+      final reason = _str(args['reason']);
+      if (key == null || reason == null) {
+        throw McpRpcError(errInvalidParams, 'suggest_user_setting 需要 key 与 reason');
+      }
+      const allowed = ['user_rules', 'weather_location', 'exceptions', 'identity_prompt', 'theme_mode'];
+      if (!allowed.contains(key)) {
+        throw McpRpcError(errInvalidParams, 'key 必须为仅用户自设键之一：$allowed');
+      }
+      final raw = await repo.settingsGet(SettingsKeys.aiSettingSuggestions);
+      final list = raw == null
+          ? <Map<String, Object?>>[]
+          : (jsonDecode(raw) as List)
+              .whereType<Map<Object?, Object?>>()
+              .map((e) => Map<String, Object?>.from(e))
+              .toList();
+      list.add({
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'key': key,
+        'suggested_value': _str(args['suggested_value']),
+        'reason': reason,
+        'severity': _str(args['severity']) ?? 'normal',
+        'created_at': DateTime.now().toIso8601String(),
+        'status': 'pending',
+      });
+      await repo.settingsSet({SettingsKeys.aiSettingSuggestions: jsonEncode(list)});
+      return [_text(jsonEncode({'ok': true, 'key': key}))];
 
     default:
       throw McpRpcError(errInvalidParams, 'Unknown tool: $name');

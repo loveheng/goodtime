@@ -11,7 +11,12 @@ import 'tools.dart';
 /// v1 不做服务端主动推送：GET/DELETE 返回 405；也不签发会话 id（规范允许 MAY，
 /// 无状态更简单，桌面桥与直连客户端都不依赖会话）。
 class McpServer {
-  McpServer({required this.repo, required this.tokenProvider, this.instructionsProvider});
+  McpServer({
+    required this.repo,
+    required this.tokenProvider,
+    this.instructionsProvider,
+    this.onSuggestion,
+  });
 
   final Repository repo;
 
@@ -19,7 +24,10 @@ class McpServer {
   final String? Function() tokenProvider;
 
   /// initialize 返回的 instructions；非空时覆盖内置文案（配置热更入口）。
-  final String? Function()? instructionsProvider;
+  final Future<String?> Function()? instructionsProvider;
+
+  /// AI 经 suggest_user_setting 推送「建议用户改设置」时的回调（app 借此弹提示）。
+  final void Function(Map<String, Object?>)? onSuggestion;
 
   /// 政策精华（§7 行为层第一层）：每次 initialize 必读。
   static const _builtinInstructions =
@@ -36,7 +44,16 @@ class McpServer {
       '被拒时按逐条 reason 修正整单重试，或把块放进返回的 available_free_windows。\n'
       '5. update_plan 等 version 冲突时，直接在错误返回的 latest 快照上合并你的修改重试，不要重拉。\n'
       '6. MCP 第一定律：永远假设用户的生活处于布朗运动中。排程不是为了占满时间，'
-      '而是为了在混乱的洪流中，用最低的认知摩擦，为用户捞起一颗珍珠。';
+      '而是为了在混乱的洪流中，用最低的认知摩擦，为用户捞起一颗珍珠。\n'
+      '7. 设置修改权限边界：你可经 update_settings 改动数值类键与 today_energy（今日电量档）；'
+      '但 user_rules（显式偏好）、weather_location（城市）、exceptions（例外日）、identity_prompt'
+      '（身份画像）、theme_mode（外观）仅用户本人在 app「设置」页自设，你无权写入（会被拒）。'
+      '当你判断这些用户自设键确实需要调整时，不要在回复里含糊带过，也不要尝试写入——'
+      '请明确、具体地建议用户：「建议你在 app 设置页修改 XX（原因：…）」，由用户决断。';
+
+  /// 内置 instructions 只读出口：MCP 控制层注入用户身份画像时复用此基准文案，
+  /// 与其拼接后整体覆盖（instructionsProvider 非空时生效）。
+  static String get builtinInstructions => _builtinInstructions;
 
   HttpServer? _server;
   bool get running => _server != null;
@@ -138,7 +155,9 @@ class McpServer {
             'tools': {'listChanged': false},
           },
           'serverInfo': {'name': 'shiguang', 'version': '1.0.0'},
-          'instructions': instructionsProvider?.call() ?? _builtinInstructions,
+          'instructions': instructionsProvider == null
+              ? _builtinInstructions
+              : (await instructionsProvider!() ?? _builtinInstructions),
         };
       case 'ping':
         return <String, Object?>{};
@@ -152,6 +171,9 @@ class McpServer {
             ? p['arguments'] as Map<String, Object?>
             : <String, Object?>{};
         final content = await callTool(name, args, repo);
+        if (name == 'suggest_user_setting') {
+          onSuggestion?.call(args);
+        }
         return {'content': content, 'isError': false};
       case 'resources/list':
         return {'resources': <Map<String, Object?>>[]};

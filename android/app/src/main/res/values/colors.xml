@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自适应图标背景兜底色（采样自 assets/icon/icon_master.png 顶部天空） -->
+    <color name="ic_launcher_background">#F9E5C2</color>
+</resources>

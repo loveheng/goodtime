@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # 拾光（shiguang）——MCP 日程 app 设计
@@ -384,6 +384,7 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | 快记入口形态 | 顶部常驻输入条→**右下角 FAB + 键盘吸附抽屉**（大屏单手触达，+1 tap 换人体工学）：草稿三字段（text/星/死线）静默 KV（quick_note_draft_* 内部键不经 update_settings 白名单，AI 不可达；QuickNoteDraftCommand human-only 不进工具面）+300ms 防抖即写即存+中途收起零询问不丢内容+FAB 6dp 琥珀点（sparkStroke）+回车（TextInputAction.done）即存；**守卫态 FAB 恒可用=「快记永不关门」条款平移**；保存钮沿用既有词汇「收入清单」，不新增「保存」词；层叠细则：分级确认卡实为 Column 内联件不与 FAB 竞争 z，滚动体底部预留 FAB 净空 88dp（tokens.fabClearanceDp），全局动作/块浮层 sheet（Z=30）<快记抽屉（Z=40）模态路由天然在上（2026-10-06 用户拍板，M1.1 切片落地） |
 | 夜间模式 | **解锁 MVP 的 Light Mode 锁定**：设置页「外观」三档（跟随系统/浅色/深色，默认跟随系统），settings.theme_mode=uiOnly 键（AI 经 update_settings 触碰即拒——外观是人的感官偏好，Human-AI 对称性）；浅色基线逐值不变，深色映射逐值拍板（ui-spec §0.5，香槟金/莫兰迪情绪色不交给 Material 自动转换）；实现=全局激活面板（tokens.StColors.applyBrightness 单点置位，业务只读）否决 ThemeExtension——单窗口单主题下 51 处调用点零迁移，多窗口/动态取色出现时再扩展（2026-10-06 用户拍板） |
 | 手势扩展（点按→滑动第二期） | ①日/月视图背景横滑翻页（日 ±1 天/月 ±1 月，累计 >60dp 不设速度门槛；‹› 按钮保留为可见出口；周视图内容横向可滚 112dp×7 列——横滑归滚动、翻周走按钮；块卡片上块手势竞技场内层优先）；②清单条目左滑过 35% 卡点=归档+触觉+**必附「撤销」SnackBar**（归档 UI 暂不可逆，减震器兜底），SnackBar 浮动+FAB 净空防遮挡；**右滑挂账**待「排期」提名流落地接 V1.5。明确不滑动化：确认三键（终审仪式）、快记 FAB（入口形态拍板）、设置开关、块表单（2026-10-06 用户拍板） |
+| App 图标 | 用户提供的「日出+清单卡片」图定稿（2026-10-07 用户拍板；同日换稿：初版「日出雪原+路线」被此版替换）：裁灰底取画作（676px，圆角 r≈116px），四角以放大 1.45x+高斯模糊延展填充防灰角；自适应图标（minSdk 34 全覆盖）=前景画作铺满 108dp 画布中央 72dp（安全区 66dp 内含全部视觉要素）+背景兜底色 #F9E5C2（采样顶部暖色天空）；传统 mipmap 五档同步全出血替换；原图与母版存 `assets/icon/`（app_icon_source.png/icon_master.png），Manifest 不变仍指 @mipmap/ic_launcher |
 
 ## 12. 复用清单（自拾贝 goodshare，2026-10-05 全仓盘点校准）
 

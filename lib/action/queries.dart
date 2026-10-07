@@ -29,9 +29,11 @@ class ScheduleQueries {
       'sleep_time': SettingsKeys.intOf(raw, SettingsKeys.sleepTime),
       'min_block_minutes': SettingsKeys.intOf(raw, SettingsKeys.minBlockMinutes),
       'daily_new_blocks_limit': SettingsKeys.intOf(raw, SettingsKeys.dailyNewBlocksLimit),
+      'fill_rate_limit': SettingsKeys.intOf(raw, SettingsKeys.fillRateLimit) ?? 60, // 默认 60（§6 默认可调）
       'today_energy': raw[SettingsKeys.todayEnergy] ?? 'normal', // 默认平稳（十轮拍板）
       'user_rules': SettingsKeys.stringOf(raw, SettingsKeys.userRules),
       'weather_location': SettingsKeys.stringOf(raw, SettingsKeys.weatherLocation),
+      'identity_prompt': raw[SettingsKeys.identityPrompt],
       'exceptions':
           exceptionsRaw == null ? <Object?>[] : (jsonDecode(exceptionsRaw) as List<dynamic>),
       'theme_mode': raw[SettingsKeys.themeMode] ?? 'system', // 外观三档（uiOnly 键）

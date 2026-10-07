@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang/data/db.dart';
 import 'package:shiguang/data/repository.dart';
+import 'package:shiguang/data/settings.dart';
 import 'package:shiguang/mcp/jsonrpc.dart';
 import 'package:shiguang/mcp/tools.dart';
 import 'package:shiguang/models/fixed_slot.dart';
@@ -37,7 +38,7 @@ void main() {
 
   Future<void> seedSettings() => repo.settingsSet({'wake_time': '420', 'sleep_time': '1380'});
 
-  test('十工具 schema 全量注册（§6 定格不增不减）', () {
+  test('工具面注册（§6 十个排程工具 + 一个建言通道）', () {
     final names = [for (final t in toolSchemas()) t['name']];
     expect(names, [
       'list_plans',
@@ -50,7 +51,23 @@ void main() {
       'adjust_blocks',
       'get_schedule',
       'get_history',
+      'suggest_user_setting',
     ]);
+  });
+
+  test('suggest_user_setting：合法仅用户自设键写入建议列表，非法键被拒', () async {
+    await call('suggest_user_setting', {'key': 'user_rules', 'reason': '周五实际常加班'});
+    final raw = await repo.settingsGet(SettingsKeys.aiSettingSuggestions);
+    expect(raw, isNotNull);
+    final list = jsonDecode(raw!) as List;
+    expect(list, hasLength(1));
+    expect(list.single['key'], 'user_rules');
+    expect(list.single['status'], 'pending');
+
+    expect(
+      () => call('suggest_user_setting', {'key': 'wake_time', 'reason': 'x'}),
+      throwsA(isA<McpRpcError>()),
+    );
   });
 
   test('add_plan → list_plans：写入与读取同走命令层/仓库', () async {

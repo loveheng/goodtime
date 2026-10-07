@@ -45,3 +45,6 @@ context/CURRENT
 # Android gradle 构建产物（根项目 build 与守护进程目录）
 /android/build/
 /android/.gradle/
+
+
+.env
