@@ -115,10 +115,13 @@ EOF
 echo "清单已生成: updates/shiguang-update.json"
 
 # ---- 上传（零依赖 Node 脚本，AWS SigV4 直传 R2）----
+# --no-network-family-autoselection：Node 22 Happy Eyeballs 每次连接尝试默认 250ms 上限，
+# 本机到 Cloudflare RTT ~300ms 时 fetch 必超时；关闭竞速后按解析序直连（2026-10-07 实测）
+NODE_UP=(node --no-network-family-autoselection --dns-result-order=ipv4first)
 echo "上传 APK → s3://$R2_BUCKET/$REMOTE_PREFIX/app-release.apk"
-node scripts/upload-r2.mjs "$APK" "$REMOTE_PREFIX/app-release.apk" "application/vnd.android.package-archive"
+"${NODE_UP[@]}" scripts/upload-r2.mjs "$APK" "$REMOTE_PREFIX/app-release.apk" "application/vnd.android.package-archive"
 echo "上传清单 → s3://$R2_BUCKET/$REMOTE_PREFIX/shiguang-update.json"
-node scripts/upload-r2.mjs updates/shiguang-update.json "$REMOTE_PREFIX/shiguang-update.json" "application/json"
+"${NODE_UP[@]}" scripts/upload-r2.mjs updates/shiguang-update.json "$REMOTE_PREFIX/shiguang-update.json" "application/json"
 
 echo "OK: 发布完成"
 echo "  更新源 URL（App 更新页填写）: ${SRC_URL}"
