@@ -4,19 +4,19 @@ import '../action/command_handler.dart';
 import '../action/commands.dart';
 import '../app_services.dart';
 import '../data/repository.dart';
-import '../models/artifact.dart';
-import '../models/background.dart';
 import '../models/plan.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
-import 'fact_sheet.dart';
+import 'plan_background_page.dart';
+import 'plan_facts_page.dart';
 
-/// 计划详情页（ui-spec §5：全页路由，内容多不用浮层）：spec 尾部路线图进度 /
-/// 四字段编辑 / open_items 手答（人机澄清闭环）/ reward_spec / 子树（≤3 级）/
-/// 「背景」区（backgrounds scope=plan，背景草案 §3 入口 1）/「排期」快捷动作。
+/// 计划详情页（ui-spec §5 定稿：全页路由；2026-10-08 二批 UX 拆分拍板）：
+/// **默认查看态**——roadmap 进度 / notes 首行「马上开始」高亮框 / open_items
+/// 手答（人机澄清闭环）/ 子树（≤3 级）/「背景」「随行凭证」子页入口行 /
+/// 「排期」快捷动作；右上「编辑」进入编辑态（四字段表单+保存，保存后回查看态）。
+/// 背景/凭证两区 CRUD 整体迁出至 PlanBackgroundPage/PlanFactsPage 子页
+/// （原单页四表单+两区混排滚动过长，保存钮深埋页底）。
 /// version 随每次成功写从快照回填，保证同会话连续操作不被乐观锁卡住。
-/// 2026-10-07 全页路由提前落地：M1 的 sheet 浮层形态里背景区无扩容余地
-/// （条目多 + 过期折叠组挤 0.85 屏浮层），形态对齐 spec 定稿。
 class PlanDetailPage extends StatefulWidget {
   const PlanDetailPage({super.key, required this.planId});
 
@@ -39,6 +39,9 @@ class _PlanDetailPageState extends State<PlanDetailPage> {
   List<OpenItem> _items = const [];
   final Map<int, TextEditingController> _answers = {};
 
+  /// 查看态（默认）/编辑态（四字段表单，2026-10-08 拍板分离）。
+  bool _editing = false;
+
   @override
   void initState() {
     super.initState();
@@ -48,14 +51,15 @@ class _PlanDetailPageState extends State<PlanDetailPage> {
   Future<void> _load() async {
     final p = await _repo.planById(widget.planId);
     if (!mounted || p == null) return;
-    _plan = p;
-    _version = p.version;
-    _items = List<OpenItem>.from(p.openItems);
-    _title.text = p.title;
-    _spec.text = p.spec ?? '';
-    _notes.text = p.notes ?? '';
-    _reward.text = p.rewardSpec ?? '';
-    setState(() {});
+    setState(() {
+      _plan = p;
+      _version = p.version;
+      _items = List<OpenItem>.from(p.openItems);
+      _title.text = p.title;
+      _spec.text = p.spec ?? '';
+      _notes.text = p.notes ?? '';
+      _reward.text = p.rewardSpec ?? '';
+    });
   }
 
   @override
@@ -114,6 +118,8 @@ class _PlanDetailPageState extends State<PlanDetailPage> {
     }
   }
 
+  /// 编辑态保存（2026-10-08 拍板：保存后回查看态，不再关页——全页详情的
+  /// 背景区/凭证区子页入口才是主出口）。
   Future<void> _save() async {
     final plan = _plan;
     if (plan == null) return;
@@ -129,7 +135,11 @@ class _PlanDetailPageState extends State<PlanDetailPage> {
         ),
       );
       _version = (r.snapshot?['version'] as int?) ?? _version + 1;
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        setState(() => _editing = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('已保存'), duration: Duration(seconds: 1)));
+      }
     } on ActionException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -138,7 +148,7 @@ class _PlanDetailPageState extends State<PlanDetailPage> {
     }
   }
 
-  /// open_items 手答敲定（人机澄清闭环）：答案落库、条目转已答。
+  /// open_items 手答敲定（人机澄清闭环）：答案落库、条目转已答（查看态内联）。
   Future<void> _answer(int i) async {
     final answer = _answers[i]!.text.trim();
     if (answer.isEmpty) return;
@@ -205,797 +215,233 @@ class _PlanDetailPageState extends State<PlanDetailPage> {
     final plan = _plan;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('编辑计划'),
+        title: Text(_editing ? '编辑计划' : '计划详情'),
         actions: [
           TextButton.icon(
             onPressed: plan == null ? null : _schedule,
             icon: const Icon(Icons.event_available, size: 18),
             label: const Text('排期'),
           ),
+          TextButton(
+            onPressed: plan == null
+                ? null
+                : () => setState(() => _editing = !_editing),
+            child: Text(_editing ? '完成' : '编辑'),
+          ),
         ],
       ),
       body: plan == null
           ? const Center(child: Text('这条计划不存在了'))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          : _editing
+              ? _editBody(context)
+              : _viewBody(context, plan),
+    );
+  }
+
+  // ---- 查看态（默认）----
+
+  Widget _viewBody(BuildContext context, Plan plan) {
+    final spec = plan.spec;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (spec != null && _roadmapProgress(spec) != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('▶ ${_roadmapProgress(spec)!}',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.primary)),
+            ),
+          Text(plan.title, style: Theme.of(context).textTheme.titleLarge),
+          // Landing Gear（ui-spec §5 notes 首行启动第一步高亮框）
+          if (plan.notes != null && plan.notes!.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(StScale.radiusCard),
+              ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_roadmapProgress(_spec.text) != null)
+                  Text('马上开始',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: StColors.textSecondary)),
+                  Text(plan.notes!.trim().split('\n').first,
+                      style: Theme.of(context).textTheme.titleMedium),
+                  if (plan.notes!.trim().split('\n').length > 1)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text('▶ ${_roadmapProgress(_spec.text)!}',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.primary)),
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(plan.notes!.trim().split('\n').sublist(1).join('\n'),
+                          style: Theme.of(context).textTheme.bodySmall),
                     ),
-                  TextField(
-                    controller: _title,
-                    decoration:
-                        const InputDecoration(labelText: '标题', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _spec,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                        labelText: '精确描述（spec）', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _notes,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                        labelText: '备注（首行写「马上开始」的第一步）',
-                        border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _reward,
-                    decoration: const InputDecoration(
-                        labelText: '犒赏（打完这一仗怎么奖励自己）',
-                        border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  for (var i = 0; i < _items.length; i++)
-                    if (_items[i].answer == null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('？${_items[i].question}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: StColors.textSecondary)),
-                            Row(children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _answers.putIfAbsent(i,
-                                      () => TextEditingController()),
-                                  decoration: const InputDecoration(
-                                      isDense: true,
-                                      hintText: '写下答案，敲定它',
-                                      border: OutlineInputBorder()),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () => _answer(i),
-                                child: const Text('敲定'),
-                              ),
-                            ]),
-                          ],
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text('✓ ${_items[i].question} → ${_items[i].answer}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: StColors.textSecondary)),
-                      ),
-                  FutureBuilder<List<(int, Plan)>>(
-                    future: _subtree(plan.id!),
-                    builder: (context, snap) {
-                      final tree = snap.data ?? const <(int, Plan)>[];
-                      if (tree.isEmpty) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 4),
-                            Text('子计划',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelMedium
-                                    ?.copyWith(color: StColors.textSecondary)),
-                            for (final (depth, p) in tree)
-                              Padding(
-                                padding: EdgeInsets.only(left: depth * 16.0),
-                                child: Text('└ ${p.title}',
-                                    style: Theme.of(context).textTheme.bodySmall),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  _BackgroundSection(planId: plan.id!),
-                  _FactsSection(planId: plan.id!),
-                  FilledButton(
-                    onPressed: _save,
-                    child: const Text('保存'),
-                  ),
                 ],
               ),
             ),
-    );
-  }
-}
-
-/// 计划详情「背景」区（背景草案 §3 入口 1；文案=ui-spec §0.4 背景区文案组）：
-/// 条目卡=content＋标签小字＋日期角标（派生渲染不入库，无窗不显示）；超期沉
-/// 「过去的背景」折叠组，清理动作（逐条删/清空已过期，均二次确认）仅在组内、
-/// 主列表不加清理图标降噪。写通道=UpsertBackground/MergeBackgrounds（human），
-/// 全经命令层（arch-guard：UI 禁直连 repo 写）。
-/// 2026-10-07 自 plans_page 编辑 sheet 迁入全页详情页（spec §5 对齐）。
-class _BackgroundSection extends StatefulWidget {
-  const _BackgroundSection({required this.planId});
-
-  final String planId;
-
-  @override
-  State<_BackgroundSection> createState() => _BackgroundSectionState();
-}
-
-class _BackgroundSectionState extends State<_BackgroundSection> {
-  Repository get _repo => AppServices.repo;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: _repo,
-      builder: (context, _) => FutureBuilder<List<Background>>(
-        future: _repo.listBackgrounds(scope: Background.scopePlan, planId: widget.planId),
-        builder: (context, snap) {
-          final all = snap.data ?? const <Background>[];
-          final active = all.where((b) => !_expired(b)).toList();
-          final expired = all.where(_expired).toList();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Text('背景',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(color: StColors.textSecondary)),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => _editSheet(context, null),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('添加背景'),
-                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                ),
-              ]),
-              for (final b in active)
-                InkWell(
-                  borderRadius: BorderRadius.circular(StScale.radiusCard),
-                  onTap: () => _editSheet(context, b),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(children: [
+          ],
+          if (spec != null && spec.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(spec, style: Theme.of(context).textTheme.bodyMedium),
+          ],
+          if (plan.rewardSpec != null && plan.rewardSpec!.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('犒赏：${plan.rewardSpec}',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: StColors.textSecondary)),
+          ],
+          // open_items 手答（人机澄清闭环）——查看态内联
+          for (var i = 0; i < _items.length; i++)
+            if (_items[i].answer == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('？${_items[i].question}',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: StColors.textSecondary)),
+                    Row(children: [
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(b.content, style: Theme.of(context).textTheme.bodyMedium),
-                            if (b.tags.isNotEmpty)
-                              Text(b.tags.join(' '),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(color: StColors.textSecondary)),
-                          ],
+                        child: TextField(
+                          controller: _answers.putIfAbsent(i,
+                              () => TextEditingController()),
+                          decoration: const InputDecoration(
+                              isDense: true,
+                              hintText: '写下答案，敲定它',
+                              border: OutlineInputBorder()),
                         ),
                       ),
-                      if (b.applicableDates != null && b.applicableDates!.isNotEmpty)
-                        Text(_badge(b.applicableDates!),
-                            style: TextStyle(fontSize: 11, color: StColors.textSecondary)),
+                      TextButton(
+                        onPressed: () => _answer(i),
+                        child: const Text('敲定'),
+                      ),
                     ]),
-                  ),
+                  ],
                 ),
-              if (expired.isNotEmpty)
-                _PastBackgroundsGroup(
-                  expired: expired,
-                  badge: _badge,
-                  onEdit: (b) => _editSheet(context, b),
-                  onDelete: (targets) => _confirmDelete(context, targets),
-                ),
-              const SizedBox(height: 8),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  /// 超期=有日期窗且整窗已过（无窗=长期恒不过期；读侧 fail-closed 空窗按过期）。
-  static bool _expired(Background b) {
-    final d = b.applicableDates;
-    if (d == null) return false;
-    if (d.isEmpty) return true;
-    return d.last.compareTo(isoDate(DateTime.now())) < 0;
-  }
-
-  /// 日期角标（ui-spec §0.4）：[10.08–10.10]，首末日记起止，派生渲染不入库。
-  static String _badge(List<String> dates) {
-    String f(String iso) {
-      final d = tryParseIsoDate(iso)!;
-      return '${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
-    }
-
-    return dates.length == 1
-        ? '[${f(dates.first)}]'
-        : '[${f(dates.first)}–${f(dates.last)}]';
-  }
-
-  /// 删除/清空已过期共用确认口（二次确认；批量走 merge 批命令单事务）。
-  Future<void> _confirmDelete(BuildContext context, List<Background> targets) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(targets.length == 1 ? '删除这条背景？' : '清空这 ${targets.length} 条过去的背景？'),
-        content: const Text('删除后无法恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await CommandHandler(_repo).execute(
-        MergeBackgroundsCommand(
-            ops: [for (final t in targets) BackgroundMergeOp.delete(t.id!)]),
-      );
-    } on ActionException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
-  }
-
-  /// 背景编辑 sheet（新增/编辑共用）：内容＋标签＋作用日期窗（不选=长期，起止
-  /// 枚举逐日落库——长窗由命令层劝改 note 提示）。human 通道，source 自动=user。
-  Future<void> _editSheet(BuildContext context, Background? existing) {
-    final content = TextEditingController(text: existing?.content ?? '');
-    final tags = TextEditingController(text: existing?.tags.join(' ') ?? '');
-    DateTime? start;
-    DateTime? end;
-    final dates = existing?.applicableDates;
-    if (dates != null && dates.isNotEmpty) {
-      start = tryParseIsoDate(dates.first);
-      end = tryParseIsoDate(dates.last);
-    }
-
-    return showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-              20, 0, 20, 20 + MediaQuery.of(sheetContext).viewInsets.bottom),
-          child: StatefulBuilder(
-            builder: (context, setState) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(existing == null ? '添加背景' : '编辑背景',
-                    style: Theme.of(sheetContext).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: content,
-                  maxLines: 3,
-                  autofocus: existing == null,
-                  decoration: const InputDecoration(
-                    labelText: '背景内容',
-                    hintText: '例如：妈妈膝盖不好，少长台阶陡坡',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: tags,
-                  decoration: const InputDecoration(
-                    labelText: '标签（空格分隔）',
-                    hintText: '#健康 #体力',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text('作用日期窗（不选=长期）',
-                    style: Theme.of(sheetContext)
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('✓ ${_items[i].question} → ${_items[i].answer}',
+                    style: Theme.of(context)
                         .textTheme
                         .bodySmall
                         ?.copyWith(color: StColors.textSecondary)),
-                const SizedBox(height: 6),
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final picked = await showDatePicker(
-                          context: sheetContext,
-                          initialDate: start ?? DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now().add(const Duration(days: 365)),
-                        );
-                        if (picked != null) setState(() => start = picked);
-                      },
-                      child: Text(start == null ? '开始日期' : isoDate(start!)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: start == null
-                          ? null
-                          : () async {
-                              final picked = await showDatePicker(
-                                context: sheetContext,
-                                initialDate: end ?? start!,
-                                firstDate: start!,
-                                lastDate: DateTime.now().add(const Duration(days: 365)),
-                              );
-                              if (picked != null) setState(() => end = picked);
-                            },
-                      child: Text(start == null
-                          ? '—'
-                          : (end == null ? isoDate(start!) : isoDate(end!))),
-                    ),
-                  ),
-                  if (start != null)
-                    IconButton(
-                      onPressed: () => setState(() {
-                        start = null;
-                        end = null;
-                      }),
-                      icon: const Icon(Icons.close, size: 18),
-                      tooltip: '清除日期窗（改为长期）',
-                    ),
-                ]),
-                const SizedBox(height: 14),
-                Row(children: [
-                  if (existing != null)
-                    TextButton(
-                      onPressed: () {
-                        Navigator.of(sheetContext).pop();
-                        _confirmDelete(context, [existing]);
-                      },
-                      child: const Text('删除',
-                          style: TextStyle(color: Colors.redAccent)),
-                    ),
-                  const Spacer(),
-                  FilledButton(
-                    onPressed: () async {
-                      final text = content.text.trim();
-                      if (text.isEmpty) return;
-                      final tagList = [
-                        for (final t in tags.text.split(RegExp(r'[,,，、\s]+')))
-                          if (t.trim().isNotEmpty) t.trim(),
-                      ];
-                      List<String>? window;
-                      if (start != null) {
-                        final s = DateTime(start!.year, start!.month, start!.day);
-                        final e = end == null ? s : DateTime(end!.year, end!.month, end!.day);
-                        if (e.isBefore(s)) {
-                          ScaffoldMessenger.of(sheetContext).showSnackBar(const SnackBar(
-                              content: Text('结束日期早于开始日期'),
-                              duration: Duration(seconds: 3)));
-                          return;
-                        }
-                        window = [
-                          for (var cur = s; !cur.isAfter(e);
-                              cur = cur.add(const Duration(days: 1)))
-                            isoDate(cur),
-                        ];
-                      }
-                      try {
-                        final r = await CommandHandler(_repo).execute(
-                          UpsertBackgroundCommand(
-                            id: existing?.id,
-                            scope: Background.scopePlan,
-                            planId: widget.planId,
-                            content: text,
-                            tags: tagList,
-                            applicableDates: window,
-                            expectedVersion: existing?.version,
-                          ),
-                        );
-                        if (sheetContext.mounted) {
-                          if (r.note != null) {
-                            ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(
-                                content: Text(r.note!),
-                                duration: const Duration(seconds: 3)));
-                          }
-                          Navigator.of(sheetContext).pop();
-                        }
-                      } on ActionException catch (e) {
-                        if (sheetContext.mounted) {
-                          ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(
-                              content: Text(e.message),
-                              duration: const Duration(seconds: 3)));
-                        }
-                      }
-                    },
-                    child: const Text('保存'),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 计划详情「随行凭证」区（fact 草案 §2.1 入口 1；文案=ui-spec §0.4 凭证区组）：
-/// 子树派生聚合（一趟旅行的根计划详情页=行程凭证总览页）；raw=聚合琥珀卡
-/// 「N 条原文待提炼」（金样本 A1 口径）；全部锚点最晚日历日早于今日沉「过去的
-/// 凭证」折叠组；voided 不进卡面（读侧白名单挡掉）。写通道=AI 命令层+分享/
-/// 快记入口，本区无 human 添加钮；删除仅 human 长按（DeleteArtifact）。
-class _FactsSection extends StatefulWidget {
-  const _FactsSection({required this.planId});
-
-  final String planId;
-
-  @override
-  State<_FactsSection> createState() => _FactsSectionState();
-}
-
-class _FactsSectionState extends State<_FactsSection> {
-  Repository get _repo => AppServices.repo;
-
-  /// 子树 id 集（根+全部子孙，≤3 级，与详情页「子计划」同口径）。
-  Future<List<String>> _subtreeIds(String rootId) async {
-    final out = <String>[rootId];
-    Future<void> walk(String parentId, int depth) async {
-      if (depth > 3) return;
-      for (final k in await _repo.listPlans(parentId: parentId)) {
-        out.add(k.id!);
-        await walk(k.id!, depth + 1);
-      }
-    }
-
-    await walk(rootId, 1);
-    return out;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: _repo,
-      builder: (context, _) => FutureBuilder<List<Artifact>>(
-        future: _subtreeIds(widget.planId)
-            .then((ids) => _repo.artifactsForPlans(ids)),
-        builder: (context, snap) {
-          final all = snap.data ?? const <Artifact>[];
-          if (all.isEmpty) return const SizedBox.shrink();
-          final active = all.where((f) => !factExpired(f)).toList()
-            ..sort((a, b) => (a.createdAt ?? 0).compareTo(b.createdAt ?? 0));
-          final expired = all.where(factExpired).toList();
-          final raw =
-              active.where((f) => f.state == Artifact.stateRaw).toList();
-          final structured =
-              active.where((f) => f.state != Artifact.stateRaw).toList();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
+              ),
+          FutureBuilder<List<(int, Plan)>>(
+            future: _subtree(plan.id!),
+            builder: (context, snap) {
+              final tree = snap.data ?? const <(int, Plan)>[];
+              if (tree.isEmpty) return const SizedBox.shrink();
+              return Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: Text('随行凭证',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(color: StColors.textSecondary)),
-              ),
-              if (raw.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                _RawFactsCard(raw: raw),
-              ],
-              for (final f in structured)
-                FactCard(
-                  fact: f,
-                  onTap: () => showVoucherSheet(context, f),
-                  onLongPress: () => _confirmDelete(context, f),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('子计划',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelMedium
+                            ?.copyWith(color: StColors.textSecondary)),
+                    for (final (depth, p) in tree)
+                      Padding(
+                        padding: EdgeInsets.only(left: depth * 16.0, top: 2),
+                        child: Text('└ ${p.title}',
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                  ],
                 ),
-              if (expired.isNotEmpty) _PastFactsGroup(expired: expired),
-              const SizedBox(height: 8),
-            ],
-          );
-        },
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // 「背景」「随行凭证」子页入口（2026-10-08 拆分拍板：CRUD 整区迁出）
+          _entryRow(context,
+              icon: Icons.info_outline,
+              title: '背景',
+              subtitle: '身体状况、偏好、注意事项',
+              page: (_) => PlanBackgroundPage(planId: plan.id!)),
+          _entryRow(context,
+              icon: Icons.confirmation_number_outlined,
+              title: '随行凭证',
+              subtitle: '车票/门票/预订与须知',
+              page: (_) => PlanFactsPage(planId: plan.id!)),
+        ],
       ),
     );
   }
 
-  /// 删除二次确认（§0.4：仅 human；删凭证绝不删块——块处置归命令层）。
-  Future<void> _confirmDelete(BuildContext context, Artifact fact) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('删除「${fact.title}」？'),
-        content: const Text('删除后无法恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+  /// 子页入口行（目录形态，同设置页 _entryRow 口径）。
+  Widget _entryRow(BuildContext context,
+      {required IconData icon,
+      required String title,
+      String? subtitle,
+      required WidgetBuilder page}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(icon, size: 22),
+        title: Text(title),
+        subtitle: subtitle == null ? null : Text(subtitle),
+        trailing: Icon(Icons.chevron_right,
+            size: 20, color: StColors.textSecondary),
+        onTap: () =>
+            Navigator.of(context).push(MaterialPageRoute<void>(builder: page)),
+      ),
+    );
+  }
+
+  // ---- 编辑态（四字段表单；保存回查看态）----
+
+  Widget _editBody(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _title,
+            decoration:
+                const InputDecoration(labelText: '标题', border: OutlineInputBorder()),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _spec,
+            maxLines: 3,
+            decoration: const InputDecoration(
+                labelText: '精确描述（spec）', border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _notes,
+            maxLines: 2,
+            decoration: const InputDecoration(
+                labelText: '备注（首行写「马上开始」的第一步）',
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _reward,
+            decoration: const InputDecoration(
+                labelText: '犒赏（打完这一仗怎么奖励自己）',
+                border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 16),
           FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('删除'),
+            onPressed: _save,
+            child: const Text('保存'),
           ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      final r = await CommandHandler(_repo)
-          .execute(DeleteArtifactCommand(fact.id!), actor: CommandActor.human);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(r.note ?? '已删除'),
-                duration: const Duration(seconds: 2)));
-      }
-    } on ActionException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
-  }
-}
-
-/// raw 聚合琥珀卡（金样本 A1：凭证区「N 条原文待提炼」）：1 条直开详情，
-/// 多条开列表逐条点开（原文逐字，未解析无锚点日期）。
-class _RawFactsCard extends StatelessWidget {
-  const _RawFactsCard({required this.raw});
-
-  final List<Artifact> raw;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: StColors.voucherBg,
-      borderRadius: BorderRadius.circular(StScale.radiusCard),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(StScale.radiusCard),
-        onTap: raw.length == 1
-            ? () => showVoucherSheet(context, raw.single)
-            : () => _listSheet(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(children: [
-            const Icon(Icons.receipt_long_outlined, size: 18),
-            const SizedBox(width: 8),
-            Text(
-                raw.length == 1 ? '1 条原文待提炼' : '${raw.length} 条原文待提炼',
-                style: Theme.of(context).textTheme.bodyMedium),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _listSheet(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                child: Text('待提炼的原文',
-                    style: Theme.of(context).textTheme.titleSmall),
-              ),
-              for (final f in raw)
-                FactCard(
-                  fact: f,
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    showVoucherSheet(context, f);
-                  },
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 「过去的凭证」折叠组（ui-spec §0.4）：全部锚点最晚日历日早于今日的派生
-/// 折叠（span 取 end_date），与「过去的背景」同收纳模式；逐条点开通关卡、
-/// 长按删除（§0.4 凭证删除）。
-class _PastFactsGroup extends StatefulWidget {
-  const _PastFactsGroup({required this.expired});
-
-  final List<Artifact> expired;
-
-  @override
-  State<_PastFactsGroup> createState() => _PastFactsGroupState();
-}
-
-class _PastFactsGroupState extends State<_PastFactsGroup> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(top: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(StScale.radiusCard),
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(children: [
-                Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                  color: StColors.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text('过去的凭证 · ${widget.expired.length} 条',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(color: StColors.textSecondary)),
-              ]),
-            ),
-          ),
-          if (_expanded)
-            for (final f in widget.expired)
-              FactCard(
-                fact: f,
-                onTap: () => showVoucherSheet(context, f),
-                onLongPress: () async {
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (dialogContext) => AlertDialog(
-                      title: Text('删除「${f.title}」？'),
-                      content: const Text('删除后无法恢复。'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(false),
-                          child: const Text('取消'),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(true),
-                          child: const Text('删除'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirmed != true) return;
-                  try {
-                    final r = await CommandHandler(AppServices.repo)
-                        .execute(DeleteArtifactCommand(f.id!),
-                            actor: CommandActor.human);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(r.note ?? '已删除'),
-                              duration: const Duration(seconds: 2)));
-                    }
-                  } on ActionException catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(SnackBar(content: Text(e.message)));
-                    }
-                  }
-                },
-              ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 「过去的背景」折叠组（ui-spec §0.4）：超期条目收纳＋组内清理，与「收起的旧
-/// 想法」同收纳模式；逐条可点开编辑。
-class _PastBackgroundsGroup extends StatefulWidget {
-  const _PastBackgroundsGroup({
-    required this.expired,
-    required this.badge,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final List<Background> expired;
-  final String Function(List<String>) badge;
-  final void Function(Background) onEdit;
-  final void Function(List<Background>) onDelete;
-
-  @override
-  State<_PastBackgroundsGroup> createState() => _PastBackgroundsGroupState();
-}
-
-class _PastBackgroundsGroupState extends State<_PastBackgroundsGroup> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(top: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(StScale.radiusCard),
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(children: [
-                Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                  color: StColors.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text('过去的背景 · ${widget.expired.length} 条',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(color: StColors.textSecondary)),
-              ]),
-            ),
-          ),
-          if (_expanded) ...[
-            for (final b in widget.expired)
-              ListTile(
-                dense: true,
-                onTap: () => widget.onEdit(b),
-                title: Text(b.content, style: Theme.of(context).textTheme.bodySmall),
-                subtitle: b.applicableDates != null && b.applicableDates!.isNotEmpty
-                    ? Text(widget.badge(b.applicableDates!),
-                        style: TextStyle(fontSize: 11, color: StColors.textSecondary))
-                    : null,
-                trailing: TextButton(
-                  onPressed: () => widget.onDelete([b]),
-                  child: const Text('删除'),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => widget.onDelete(widget.expired),
-                  icon: const Icon(Icons.cleaning_services, size: 16),
-                  label: const Text('清空已过期'),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

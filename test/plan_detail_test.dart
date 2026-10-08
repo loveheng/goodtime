@@ -6,8 +6,8 @@ import 'package:shiguang/main.dart';
 import 'package:shiguang/models/plan.dart';
 import 'helpers/ui.dart';
 
-/// 清单详情簇（functional-spec §2）：roadmap 进度/open_items 手答/子树/排期/reward。
-/// 一测一文件（helpers/ui.dart 约定）。
+/// 清单详情簇（functional-spec §2；2026-10-08 查看/编辑态分离后）：roadmap 进度/
+/// open_items 手答在查看态内联，四字段编辑进「编辑」态。一测一文件约定。
 void main() {
   setUp(() async {
     await setUpUiTest();
@@ -38,7 +38,7 @@ void main() {
     await tester.tap(find.text('清单'));
     await pumpFlush(tester);
 
-    // 全页详情（ui-spec §5 路由）：roadmap 进度 + 子树 + 待敲定问题
+    // 查看态（2026-10-08 拍板默认态）：roadmap 进度 + 子树 + 待敲定问题
     await tester.tap(find.text('考驾照'));
     await pumpFlush(tester);
     expect(find.text('▶ 当前进度 1/3'), findsOneWidget);
@@ -46,8 +46,8 @@ void main() {
     expect(find.text('└ 科目一刷题'), findsOneWidget);
     expect(find.text('？每周几练车？'), findsOneWidget);
 
-    // open_items 手答 → 敲定（answer 落库、条目转为已答）
-    await tester.enterText(find.byType(TextField).at(4), '周六上午');
+    // open_items 手答 → 敲定（查看态内联，答案落库、条目转为已答）
+    await tester.enterText(find.byType(TextField).at(0), '周六上午');
     await tester.tap(find.text('敲定'));
     await pumpFlush(tester);
     await waitFor(tester, () async {
@@ -68,12 +68,12 @@ void main() {
       return blocks.any((b) => b.planId == parentId);
     });
 
-    // reward 保存（全页详情直改第 4 字段→保存关页）
+    // reward 保存（编辑态四字段表单：第 4 字段→保存→回查看态）
+    await tester.tap(find.text('编辑'));
     await pumpFlush(tester);
     await tester.enterText(find.byType(TextField).at(3), '火锅');
-    await tester.ensureVisible(find.text('保存'));
     await pumpFlush(tester);
-    await tester.tap(find.text('保存'));
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
     await pumpFlush(tester);
     await waitFor(tester, () async => (await repo.planById(parentId))?.rewardSpec == '火锅');
   });

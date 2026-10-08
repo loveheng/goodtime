@@ -6,7 +6,8 @@ import 'package:shiguang/models/plan.dart';
 import 'package:shiguang/util/schedule_day.dart';
 import 'helpers/ui.dart';
 
-/// 计划详情「背景」区流程（背景草案 §3 入口 1；文案=ui-spec §0.4；一测一文件约定）。
+/// 计划「背景」子页流程（背景草案 §3 入口 1；文案=ui-spec §0.4；一测一文件约定）。
+/// 2026-10-08 拆分后：详情页「背景」入口行 → PlanBackgroundPage 子页承载全部 CRUD。
 void main() {
   setUp(() async {
     await setUpUiTest();
@@ -40,18 +41,17 @@ void main() {
     await tester.tap(find.widgetWithText(NavigationDestination, '清单'));
     await pumpFlush(tester);
 
-    // 点卡进全页详情（ui-spec §5 路由；全页滚动比 sheet 高，深位先滚后点坑9 同款）
+    // 详情页 → 「背景」入口行进子页（2026-10-08 拍板：整区 CRUD 迁出详情页）
     await tester.tap(find.text('云南七天'));
     await pumpFlush(tester);
-    expect(find.text('背景'), findsOneWidget);
+    await tester.tap(find.text('背景'));
+    await pumpFlush(tester);
     expect(find.text('过去的背景 · 1 条'), findsOneWidget, reason: '过期条目沉折叠组');
     expect(find.text('复诊随访电话'), findsOneWidget);
     expect(find.text('[${f(d1)}–${f(d2)}]'), findsOneWidget, reason: '日期角标派生渲染');
     expect(find.text('脚扭伤少走路'), findsNothing, reason: '过期条目不占主列表');
 
     // 添加长期背景（无日期窗）：写通道=UpsertBackground（human）
-    await tester.drag(find.byType(SingleChildScrollView).last, const Offset(0, -300));
-    await pumpFlush(tester);
     await tester.tap(find.text('添加背景'));
     await pumpFlush(tester);
     expect(find.text('背景内容'), findsOneWidget);
@@ -73,7 +73,7 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('删除').first,
       120,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: find.byType(Scrollable).first,
     );
     await pumpFlush(tester);
     await tester.tap(find.text('删除').first);

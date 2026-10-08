@@ -26,7 +26,7 @@ void main() {
     // 2. 设置页切「深色」→ 主题与全局语义面板联动
     await tester.tap(find.byTooltip('设置'));
     await pumpFlush(tester);
-    // 外观段在长列表深处（ListView 懒构建，未滚入视口不在树中），先滚到位再点
+    // 外观段在列表折叠边缘（树内有/视口外），滚到完全可见再点（2026-10-08 子页化后）
     await _scrollToText(tester, '深色');
     await tester.tap(find.text('深色'));
     await pumpFlush(tester);
@@ -48,11 +48,17 @@ void main() {
   });
 }
 
-/// 在设置页长列表中向下滚动，直到目标文本进入树（应对 ListView 懒构建）。
-/// 用固定 pump（设置页有常驻帧源，pumpAndSettle 永不收敛，见项目约定）。
+/// 在设置页列表中滚动直到目标文本**完全可见**（树内≠视口内：ListView
+/// cacheExtent 会预构建视口外 ~250px 的条目，直接 tap 会落空——2026-10-08
+/// 子页化后外观段恰在折叠边缘踩中此坑）。固定 pump（设置页有常驻帧源，
+/// pumpAndSettle 永不收敛，见项目约定）。
 Future<void> _scrollToText(WidgetTester tester, String text) async {
   for (var i = 0; i < 40; i++) {
-    if (find.text(text).evaluate().isNotEmpty) return;
+    if (find.text(text).evaluate().isNotEmpty) {
+      await tester.ensureVisible(find.text(text));
+      await pumpFlush(tester);
+      return;
+    }
     await tester.fling(
         find.byType(Scrollable).first, const Offset(0, -300), 1000);
     for (var k = 0; k < 12; k++) {

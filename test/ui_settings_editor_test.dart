@@ -5,8 +5,8 @@ import 'package:shiguang/data/settings.dart';
 import 'package:shiguang/main.dart';
 import 'helpers/ui.dart';
 
-/// 设置页编辑器簇（functional-spec §2）：一周节奏增删改 / 例外日增删改 / 排程偏好编辑。
-/// 一测一文件（helpers/ui.dart 约定）。
+/// 设置页编辑器簇（functional-spec §2；2026-10-08 子页化后各编辑器独立成页）：
+/// 一周节奏增删改 / 例外日增删改 / 排程偏好编辑。一测一文件（helpers/ui.dart 约定）。
 void main() {
   setUp(() async {
     await setUpUiTest();
@@ -22,8 +22,10 @@ void main() {
     await tester.tap(find.byTooltip('设置'));
     await pumpFlush(tester);
 
-    // 一周节奏：添加「上班」周一（FixedSlotEditorSheet）
-    await tester.tap(find.text('添加').first);
+    // 一周节奏：进子页 → 添加「上班」周一（FixedSlotEditorSheet）
+    await tester.tap(find.text('一周节奏'));
+    await pumpFlush(tester);
+    await tester.tap(find.text('添加'));
     await pumpFlush(tester);
     await tester.enterText(
         find.descendant(of: find.byKey(const Key('fixedSlotEditor')),
@@ -54,8 +56,12 @@ void main() {
       return slots.any((s) => s.name == '通勤') && !slots.any((s) => s.name == '上班');
     });
 
-    // 例外日：添加（默认今天起止 + 标签）
-    await tester.tap(find.text('添加').last);
+    // 回目录 → 假期与出行子页：添加例外日（默认今天起止 + 标签）
+    await tester.pageBack();
+    await pumpFlush(tester);
+    await tester.tap(find.text('假期与出行'));
+    await pumpFlush(tester);
+    await tester.tap(find.text('添加'));
     await pumpFlush(tester);
     await tester.enterText(
         find.descendant(of: find.byKey(const Key('exceptionEditor')),
@@ -70,7 +76,11 @@ void main() {
       return list.any((w) => w.label == '云南行');
     });
 
-    // 排程偏好：最小块粒度 30（第一个「保存」= min_block 字段）
+    // 回目录 → 排程偏好子页：最小块粒度 30（第一个字段= min_block）
+    await tester.pageBack();
+    await pumpFlush(tester);
+    await tester.tap(find.text('排程偏好'));
+    await pumpFlush(tester);
     await tester.enterText(find.byType(TextField).at(0), '30');
     await pumpFlush(tester);
     await tester.tap(find.widgetWithText(TextButton, '保存').at(0));
