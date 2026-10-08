@@ -10,6 +10,7 @@ import '../models/plan.dart';
 import '../models/schedule_block.dart';
 import '../util/schedule_day.dart';
 import 'commands.dart';
+import 'fact_rules.dart';
 import 'queries.dart' show swapCandidatesFor;
 import 'rules.dart';
 
@@ -340,6 +341,23 @@ class CommandHandler {
           break;
         }
       }
+      if (rejections.any((r) => r['index'] == i)) continue;
+      // 硬红线（§9.3）：本 plan 及递归子树的 structured 凭证约束；刻度不对称——
+      // human 通道（place_block）放行，仅 AI 提案命中才拒（rejected_by_facts 逐条原因）
+      if (it.planId != null) {
+        final subs = await _subtreeArtifacts(it.planId!);
+        final v = factRuleViolations(subs,
+            blockDate: date, startMin: it.startMin, endMin: it.endMin);
+        if (v.isNotEmpty) {
+          _reject(rejections, i, '硬红线命中的事实约束：${v.first.reason}',
+              data: {
+                'rejected_by_facts': [
+                  for (final x in v)
+                    {'artifact_id': x.fact.id, 'title': x.fact.title, 'reason': x.reason},
+                ],
+              });
+        }
+      }
     }
 
     // —— M2 机械校验全量（§6，同源常量见 rules.dart）——
@@ -470,6 +488,37 @@ class CommandHandler {
       },
       note: '提案已写入 ${cmd.date}：${cmd.items.length} 块待确认（proposed）',
     );
+  }
+
+  /// 本 plan 及递归子树的 artifacts（§9.3：复用内存递归，深度 ≤3，与凭证区子树
+  /// 聚合同源；state 白名单由 factRuleViolations 内部再筛 structured）。
+  Future<List<Artifact>> _subtreeArtifacts(String rootPlanId) async {
+    final ids = <String>[rootPlanId];
+    Future<void> walk(String parentId, int depth) async {
+      if (depth > 3) return;
+      for (final k in await _repo.listPlans(parentId: parentId)) {
+        ids.add(k.id!);
+        await walk(k.id!, depth + 1);
+      }
+    }
+
+    await walk(rootPlanId, 1);
+    return _repo.artifactsForPlans(ids);
+  }
+
+  /// §9.2 Q-A：kind=rule 的凭证建档必须显式给出生效窗，漏填即拒（杜绝永久生效误杀红线）。
+  void _validateRuleScope(Map<String, Object?> payload) {
+    final anchors = payload['time_anchors'];
+    if (anchors is! List) return;
+    final hasRule = anchors.any((a) => a is Map && a['kind'] == 'rule');
+    if (!hasRule) return;
+    if (!FactRules.ruleScopeComplete(payload['rule_scope'] as Map<String, Object?>?)) {
+      throw ActionException(
+        'kind=rule 的凭证建档必须显式给出 rule_scope.valid_from 与 valid_to（§9.2 Q-A）',
+        code: ActionErrorCode.invalidRequest,
+        hint: '单日规则两者相等；plans 无日期字段，缺省继承行程窗已作废，缺失即拒避免红线永久生效误杀',
+      );
+    }
   }
 
   /// 逐项静态校验：起止合法 + 作息边界（AI 必须讲理 §3；human 放行通道见 adjust_block_time）。
@@ -649,6 +698,7 @@ class CommandHandler {
           'hero_metrics': ?heroMetrics,
           'time_anchors': ?cmd.timeAnchors,
           'constraints': ?cmd.constraints,
+          'rule_scope': ?cmd.ruleScope,
           'location': ?cmd.location,
           'copyable_code': ?cmd.copyableCode,
           'contact_phone': ?cmd.contactPhone,
@@ -657,6 +707,7 @@ class CommandHandler {
         planId: cmd.planId,
         blockId: cmd.blockId,
       );
+      _validateRuleScope(payload); // §9.2 Q-A：kind=rule 必须显式给出生效窗
       final created = await _repo.addArtifact(Artifact(
         category: cmd.category!,
         sourceKind: cmd.sourceKind!,
@@ -704,6 +755,7 @@ class CommandHandler {
         'hero_metrics': ?heroMetrics,
         'time_anchors': ?cmd.timeAnchors,
         'constraints': ?cmd.constraints,
+        'rule_scope': ?cmd.ruleScope,
         'location': ?cmd.location,
         'copyable_code': ?cmd.copyableCode,
         'contact_phone': ?cmd.contactPhone,
@@ -712,6 +764,7 @@ class CommandHandler {
       planId: cmd.planId ?? existing.planId,
       blockId: cmd.blockId ?? existing.blockId,
     );
+    _validateRuleScope(mergedPayload); // §9.2 Q-A：kind=rule 必须显式给出生效窗
     // 出生确认（§1.2 唯一例外）：raw 占位行首次转 structured 时允许定
     // category/source_kind 终值（单事务同写列）；structured 后二值恒不可变
     // （枚举已在入口校验，此处只判出生状态）。非出生编辑缺省=沿用现值。
@@ -942,6 +995,27 @@ class CommandHandler {
       throw ActionException(staticError, code: ActionErrorCode.invalidRequest);
     }
     if (cmd.planId != null) await _requirePlan(cmd.planId!);
+    // 硬红线（§9.3）：本 plan 及递归子树的 structured 凭证约束（human 通道放行，
+    // 故仅 AI 调用 _adjustAdd 触发——校验刻度不对称）
+    final subs = cmd.planId != null
+        ? await _subtreeArtifacts(cmd.planId!)
+        : const <Artifact>[];
+    final violations = factRuleViolations(subs,
+        blockDate: tryParseIsoDate(cmd.date!)!,
+        startMin: cmd.startMin!,
+        endMin: cmd.endMin!);
+    if (violations.isNotEmpty) {
+      throw ActionException(
+        '硬红线命中的事实约束：${violations.first.reason}',
+        code: ActionErrorCode.scheduleRejected,
+        data: {
+          'rejected_by_facts': [
+            for (final x in violations)
+              {'artifact_id': x.fact.id, 'title': x.fact.title, 'reason': x.reason},
+          ],
+        },
+      );
+    }
     await _checkWalls(cmd.date!, item);
     final now = DateTime.now().millisecondsSinceEpoch;
     final b = await _repo.addBlock(ScheduleBlock(
@@ -2230,8 +2304,12 @@ class CommandHandler {
 
   int _normEnd(int end) => end > 1440 ? end - 1440 : end;
 
-  void _reject(List<Map<String, Object?>> acc, int index, String reason, {String? hint}) =>
-      acc.add({'index': index, 'reason': reason, 'hint': ?hint});
+  void _reject(List<Map<String, Object?>> acc, int index, String reason,
+      {String? hint, Map<String, Object?>? data}) {
+    final m = {'index': index, 'reason': reason, 'hint': ?hint};
+    if (data != null) m['data'] = data; // 硬红线 rejected_by_facts 等附加结构
+    acc.add(m);
+  }
 
   Future<Plan> _requirePlan(String id) async {
     final p = await _repo.planById(id);

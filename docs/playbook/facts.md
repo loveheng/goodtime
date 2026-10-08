@@ -13,7 +13,7 @@ updated: 2026-10-08
 
 | # | 判据 | 去向 |
 |---|---|---|
-| ① | 有刚性时空边界（发车 09:00 / 入住 10-17 / 周一闭馆） | `upsert_facts` time_anchors |
+| ① | 有刚性时空边界（发车 09:00 / 入住 10-17 / 周一闭馆） | `upsert_facts` time_anchors（moment.role 受控枚举：departure/deadline/checkin/checkout=行动类触发临场条，arrival/reference=信息类仅展示） |
 | ② | 需要用户**做一次专门行动**（提前一天去银行换外币） | add_plan / 路线图步骤 / 等待锚点（10 分钟唤醒块） |
 | ③ | 到场遵守/携带/注意即可（凭身份证进站 / 禁三脚架） | `upsert_facts` constraints 三数组 |
 | ④ | 兜底：叙事性软上下文 | `upsert_background`（捕获纪律见 dump.md） |
@@ -26,7 +26,7 @@ updated: 2026-10-08
 系统分享/快记进来的原文已由 app 入册（state=raw、一字不解析），`list_plans` 返回体 `raw_facts` 就是你的待提炼队列：
 
 1. 逐条读 `raw_text`，过三刀路由判定性质；
-2. 是事实 → `upsert_facts` **回填同 id**（state=structured，逐槽位填：title 摘要化 / time_anchors 机读 / badge 仅 booking 类显式给 / hero_metrics ≤3 组 / constraints 三数组）；
+2. 是事实 → `upsert_facts` **回填同 id**（state=structured，逐槽位填：title 摘要化 / time_anchors 机读 / badge 仅 booking 类显式给 / hero_metrics ≤3 组 / constraints 三数组）；**rule 类锚（周一闭馆/每日截止）必须显式给 `rule_scope{valid_from,valid_to}`**（单日规则两者相等），缺则命令层 `invalid_request` 拒——杜绝红线永久生效误杀；星期约束 100% 落 `constraints.forbidden_weekdays`（不另写一遍 `days_of_week`）；
 3. 是计划意图（快记粘的是想法不是凭证）→ add_plan 建真计划，并**归档原快记畸形 plan**（见快记收尾）；
 4. **低置信槽位宁可缺省不猜**——空槽位 UI 逐层隐藏，编造时刻=造第二真相；拿不准就问用户；
 5. 归属：plan_id=null（未归属池）的按上下文主动提议归属（「这条 D8724 短信看起来属于云南行，已挂到筹备计划」），用户否决即改挂或退回未归属；改挂=upsert_facts 传 plan_id；
@@ -48,3 +48,9 @@ updated: 2026-10-08
 - propose 前必读 get_schedule：`facts` 摘要（category/title/badge/最早 deadline_min，随视窗逐日搭载）=硬约束已到你眼前——**提案必须避开锚点时刻**，赶路缓冲按 `advance_arrival_minutes` 自带（缓冲块不 pinned）；
 - 理由区显式引用数据源（「09:00 前收束是因为 D8724 08:45 止检——来自你的车票凭证，不是我排的」）；
 - rule 锚（周一闭馆/每日 16:00 停止入场）主动规避；verbal 永不做硬红线，只在理由区注明「据口头信息，建议核实」。
+- **硬红线是机械的、非你臆断**（V1.5，§9.3）：propose/adjust 时 app 会比对关联计划及递归子树的 rule 凭证——命中即 `schedule_rejected`，拒绝体带回 `rejected_by_facts` 逐条原因（含 artifact_id/title/reason）。你看到拒绝先读原因、不要再编一套「避开」理由；human 手动放块绝不阻断，只在块卡右上亮琥珀「规则提醒：…」角标（用户意志高于一切）。
+
+## 临场通关条与硬红线（V1.5 / 分期二 行为口径）
+
+- **临场通关条（分期二，§9.1/§9.4）**：app 按「本地物理时钟」在 `[T_trigger, T_dismiss]` 窗口内把凭证顶到今日页（系统 Banner 下、遗留区上）。触发=行动类 role；公式分层时相推进：`T_target = T_action − advance_arrival_minutes`（仅 departure/checkin 减，deadline 已含提前量不重复扣），`T_trigger = T_target − 120min`，`T_dismiss = T_action + 30min`（仅 departure/checkout 到点后收折，deadline/checkin 到点即收）。你只需把 moment 锚的 `role` 填对、把 `advance_arrival_minutes` 写在 constraints——呈现交给 app。
+- **硬红线（V1.5，§9.2/§9.3）**：rule 凭证必带 `rule_scope` 生效窗（`valid_from→valid_to`，超窗自动失活、不入库改 state）；星期判据来自 `constraints.forbidden_weekdays`（与生效窗共存）。app 校验范围=本计划及递归子树，跨午夜块按开始日归属星期。你提案时照常读 get_schedule 搭载规避即可，真正拦截由 app 做。

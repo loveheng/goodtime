@@ -360,9 +360,12 @@ List<Map<String, Object?>> toolSchemas() => [
                 '（字段级 merge 只覆盖传入槽位：'
                 '提炼回填 state=structured / 改挂 plan_id / 作废 state=voided——退票/取消'
                 '须先获用户同意；raw_text 传入不同原文时自动追加双段只增不清，不要重发'
-                '相同原文）。time_anchors 三类锚：moment（时刻：发车/止检，date+min）、'
+                '相同原文）。time_anchors 三类锚：moment（时刻：date+min，role 必填受控枚举）、'
                 'span（区段：乘车/入住，date+start_min+end_min，跨日加 end_date）、'
-                'rule（长期规则：周一闭馆）。badge 仅 booking 类显式给出（「05车12F」式'
+                'rule（长期规则：周一闭馆——kind=rule 必须同时给 rule_scope{valid_from,valid_to}，'
+                '缺则命令层 invalid_request 拒，§9.2 Q-A）。moment.role 受控枚举（§9.1）：'
+                '行动类 departure/deadline/checkin/checkout 参与临场通关条触发；信息类 arrival/'
+                'reference 仅展示不触发（存量中文 role 读侧容错按 reference）。badge 仅 booking 类显式给出（「05车12F」式'
                 '单值微标，超 12 字符自动截断）；hero_metrics ≤3 组 {k,v}（超 3 自动截前 3）；'
                 '低置信槽位宁可缺省不猜。三刀路由：有刚性时空边界→本工具；需用户做一次'
                 '行动→add_plan 或等待锚点；到场遵守/携带/注意→constraints 三数组'
@@ -409,7 +412,12 @@ List<Map<String, Object?>> toolSchemas() => [
               'items': {
                 'type': 'object',
                 'properties': {
-                  'role': {'type': 'string', 'description': '锚角色（发车/停止检票/入住）'},
+                  'role': {
+                    'type': 'string',
+                    'enum': ['departure', 'deadline', 'checkin', 'checkout', 'arrival', 'reference'],
+                    'description': '受控枚举（§9.1）：行动类 departure/deadline/checkin/checkout 参与'
+                        '临场通关条触发；信息类 arrival/reference 仅展示不触发。存量中文 role 读侧容错按 reference'
+                  },
                   'kind': {'type': 'string', 'enum': ['moment', 'span', 'rule']},
                   'date': {'type': 'string', 'description': 'YYYY-MM-DD 合法日历日'},
                   'min': {'type': 'integer', 'description': 'moment 时刻分钟 0..1439'},
@@ -417,13 +425,26 @@ List<Map<String, Object?>> toolSchemas() => [
                   'end_min': {'type': 'integer', 'description': 'span 结束分钟'},
                   'end_date': {'type': 'string', 'description': 'span 跨日结束日（缺省=单日）'},
                 },
-                'required': ['kind'],
+                'required': ['kind', 'role'],
               },
               'description': '时空锚数组：事实存锚点不存区段，驱动块生成/止检红线/一致性比对'
             },
+            'rule_scope': {
+              'type': 'object',
+              'description': 'rule 类锚生效窗（§9.2 Q-A）：kind=rule 的凭证必须显式给 valid_from/'
+                  'valid_to（YYYY-MM-DD，单日规则两者相等），缺失命令层 invalid_request 拒；'
+                  '派生生效判定不入库，超窗自动失活',
+              'properties': {
+                'valid_from': {'type': 'string', 'description': '生效起日 YYYY-MM-DD'},
+                'valid_to': {'type': 'string', 'description': '生效止日 YYYY-MM-DD（单日规则=valid_from）'}
+              },
+              'required': ['valid_from', 'valid_to']
+            },
             'constraints': {
               'type': 'object',
-              'description': '三数组 required_items（要求带/做）/rules（禁止）/notices（提示）+机读参数 advance_arrival_minutes/forbidden_weekdays/daily_deadline_min',
+              'description': '三数组 required_items（要求带/做）/rules（禁止）/notices（提示）+机读参数'
+                  ' advance_arrival_minutes（临场条提前量，departure/checkin 生效）/'
+                  ' forbidden_weekdays（[1..7]，与 rule_scope 共存，红线星期判据）/daily_deadline_min（每日该分钟后停止受理）',
             },
             'location': {'type': 'string', 'description': '地点（检票口/场馆地址；UI 转 geo: 导航）'},
             'copyable_code': {'type': 'string', 'description': '订单号/预约码（UI 一键复制）'},
@@ -433,7 +454,7 @@ List<Map<String, Object?>> toolSchemas() => [
             'block_id': {'type': 'string', 'description': '升格生成的关联块 id（一致性比对/🎫 微标数据源）'},
             'expected_version': {'type': 'integer', 'description': '你看到的 version（编辑乐观锁，冲突回 latest）'},
           },
-          'required': ['category', 'source_kind'],
+          'required': [],
         },
       },
     ];

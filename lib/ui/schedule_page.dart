@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../action/command_handler.dart';
 import '../action/commands.dart';
+import '../action/fact_rules.dart';
 import '../action/queries.dart';
 import '../action/rules.dart';
 import '../app_services.dart';
@@ -16,7 +17,9 @@ import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 import '../widgets/now_next_card.dart';
+import 'action_pass_bar.dart';
 import 'block_sheet.dart';
+import 'fact_sheet.dart';
 import 'global_action_sheet.dart';
 import 'mcp_settings_page.dart';
 
@@ -382,6 +385,18 @@ class _DayView extends StatelessWidget {
         _Dashboard(data: data),
         // MCP 未连接卡（§9 空态表回归，2026-10-08）：今日可见，一键进 MCP 服务页
         if (data.isToday && !AppServices.mcp.running) const _McpOfflineCard(),
+        // 临场通关条（§9.4 分期二）：系统 Banner 下、遗留区上；本地物理时钟判定
+        if (data.isToday)
+          FutureBuilder<List<ActionPass>>(
+            key: ValueKey(data.today),
+            future: dailyActionPasses(AppServices.repo),
+            builder: (context, snap) => snap.hasData && snap.data!.isNotEmpty
+                ? ActionPassBar(
+                    passes: snap.data!,
+                    onTap: (p) => showVoucherSheet(context, p.fact),
+                  )
+                : const SizedBox.shrink(),
+          ),
         // 昨日遗留区（§3.2）：守卫态与 Clean Slate 保护期整区淡出，非今日不渲染
         if (!windDown && !data.cleanSlate && data.isToday && data.leftovers.isNotEmpty)
           _LeftoverSection(data: data),

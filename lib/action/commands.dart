@@ -451,6 +451,8 @@ sealed class ScheduleCommand {
           timeAnchors: _objList(json['time_anchors'], 'time_anchors', op),
           constraints:
               json['constraints'] == null ? null : _map(json['constraints'], 'constraints', op),
+          ruleScope:
+              json['rule_scope'] == null ? null : _map(json['rule_scope'], 'rule_scope', op),
           location: _str(json['location']),
           copyableCode: _str(json['copyable_code']),
           contactPhone: _str(json['contact_phone']),
@@ -1306,6 +1308,7 @@ final class UpsertFactsCommand extends ScheduleCommand {
     this.heroMetrics,
     this.timeAnchors,
     this.constraints,
+    this.ruleScope,
     this.location,
     this.copyableCode,
     this.contactPhone,
@@ -1326,6 +1329,7 @@ final class UpsertFactsCommand extends ScheduleCommand {
   final List<Map<String, Object?>>? heroMetrics; // ≤3 截前 3
   final List<Map<String, Object?>>? timeAnchors; // moment/span/rule 三类锚
   final Map<String, Object?>? constraints; // 三数组+机读参数
+  final Map<String, Object?>? ruleScope; // rule 类锚生效窗（§9.2 Q-A，建档必填）
   final String? location;
   final String? copyableCode;
   final String? contactPhone;
@@ -1352,6 +1356,7 @@ final class UpsertFactsCommand extends ScheduleCommand {
         if (heroMetrics != null) 'hero_metrics': heroMetrics,
         if (timeAnchors != null) 'time_anchors': timeAnchors,
         if (constraints != null) 'constraints': constraints,
+        if (ruleScope != null) 'rule_scope': ruleScope,
         if (location != null) 'location': location,
         if (copyableCode != null) 'copyable_code': copyableCode,
         if (contactPhone != null) 'contact_phone': contactPhone,

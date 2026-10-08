@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../action/command_handler.dart';
 import '../action/commands.dart';
+import '../action/fact_rules.dart';
 import '../app_services.dart';
 import '../models/artifact.dart';
 import '../models/plan.dart';
@@ -84,6 +85,66 @@ class _BlockSheetState extends State<_BlockSheet> {
 
   CommandHandler get _handler => CommandHandler(AppServices.repo);
   ScheduleBlock get _b => widget.block;
+
+  /// 硬红线 human 通道角标（§9.3）：本 plan 及递归子树 structured 凭证约束命中时，亮琥珀
+  /// 提醒「规则提醒：周一闭馆」——human 手动放块绝不阻断（用户意志高于一切），仅提示。
+  Widget _ruleWarning(BuildContext context) {
+    if (_b.planId == null) return const SizedBox.shrink();
+    return FutureBuilder<List<FactViolation>>(
+      key: ValueKey(_b.id),
+      future: _ruleViolations(),
+      builder: (ctx, snap) {
+        if (!snap.hasData || snap.data!.isEmpty) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final v in snap.data!)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: StColors.sparkStroke.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(StScale.radiusCapsule),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 12, color: scheme.primary),
+                      const SizedBox(width: 4),
+                      Text('规则提醒：${v.reason.split('：').last}',
+                          style: const TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<FactViolation>> _ruleViolations() async {
+    final root = _b.planId;
+    if (root == null) return const [];
+    final ids = <String>[root];
+    Future<void> walk(String pid, int d) async {
+      if (d > 3) return;
+      for (final k in await AppServices.repo.listPlans(parentId: pid)) {
+        ids.add(k.id!);
+        await walk(k.id!, d + 1);
+      }
+    }
+
+    await walk(root, 1);
+    final facts = await AppServices.repo.artifactsForPlans(ids);
+    return factRuleViolations(facts,
+        blockDate: tryParseIsoDate(_b.date)!,
+        startMin: _b.startMin,
+        endMin: _b.endMin);
+  }
 
   /// [canUndo]：打卡误触撤销——RestoreBlock 还原回打卡前状态（2026-10-08 拍板）。
   Future<void> _run(String action, Future<CommandResult> Function() run,
@@ -183,6 +244,8 @@ class _BlockSheetState extends State<_BlockSheet> {
           '${plan != null ? ' · 来自清单：${plan.title}' : ''}',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: StColors.textSecondary),
         ),
+        // 硬红线 human 通道角标（§9.3：AI 通道被拒、human 手动放块绝不阻断，仅亮琥珀提醒）
+        _ruleWarning(context),
         // Landing Gear（§7 七轮）：顶部恒为启动第一步——行动前 60 秒是认知摩擦
         // 最大的时段；「马上开始」用 headline 级（全 app 最大字，ui-spec §0.2）
         if (plan?.notes != null && plan!.notes!.trim().isNotEmpty) ...[

@@ -79,4 +79,12 @@ abstract final class ArtifactRules {
   /// hero_metrics 通关区 ≤3 组：AI 传入超 3 项命令层**截前 3 落库不阻断**
   /// （与 badge 同款「截断优于拒绝」；工具描述同步约束 ≤3 为主防线）。
   static const int heroMetricsMax = 3;
+
+  /// 临场通关条浮现提前量（§9.1/§9.4，2026-10-08 拍板）：T_trigger = T_target − 120min。
+  /// 与 badge/heroMetrics 同款「同源单一出处」——命令层/工具描述/UI 同引。
+  static const int passLeadMinutes = 120;
+
+  /// 临场通关条收折延后量（§9.1/§9.4）：仅 departure/checkout 类 T_dismiss = T_action + 30min
+  /// （deadline/checkin 类到点即收，不叠加）；本地物理时钟口径。
+  static const int passDismissAfterMinutes = 30;
 }
