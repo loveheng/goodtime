@@ -307,16 +307,21 @@ class Repository extends ChangeNotifier {
 
   /// 凭证区子树聚合（§8 施工微观约定 1）：调用方先用内存 PlanTree 收集目标计划及
   /// 全部子孙 id，本方法**单条 SQL**完成多计划聚合（防逐子节点查询的列表抖动）。
-  /// state != voided：raw 保留（待提炼琥珀卡）、voided 不进卡面；created_at ASC 稳定序。
-  Future<List<Artifact>> artifactsForPlans(Iterable<String> planIds) async {
+  /// 默认 state != voided：raw 保留（待提炼琥珀卡）、voided 不进卡面；
+  /// `includeVoided=true` = UI 折叠组专用通道（§1.2 双通道口径 2026-10-08 拍板：
+  /// 排程/临场读侧全静默，UI「已作废 · N 条」折叠组单独放行）。created_at ASC 稳定序。
+  Future<List<Artifact>> artifactsForPlans(Iterable<String> planIds,
+      {bool includeVoided = false}) async {
     final ids = planIds.toList();
     if (ids.isEmpty) return const [];
     final db = await _database();
     final marks = List.filled(ids.length, '?').join(', ');
     final rows = await db.query(
       'artifacts',
-      where: 'plan_id IN ($marks) AND state != ?',
-      whereArgs: [...ids, Artifact.stateVoided],
+      where: includeVoided
+          ? 'plan_id IN ($marks)'
+          : 'plan_id IN ($marks) AND state != ?',
+      whereArgs: includeVoided ? ids : [...ids, Artifact.stateVoided],
       orderBy: 'created_at',
     );
     return [for (final r in rows) Artifact.fromMap(r)];

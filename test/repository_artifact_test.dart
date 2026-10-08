@@ -116,6 +116,19 @@ void main() {
       expect(await repo.artifactsForPlans(const []), isEmpty);
     });
 
+    test('artifactsForPlans includeVoided=true：UI「已作废」折叠组专用通道（§1.2 双通道口径）',
+        () async {
+      final p = await repo.addPlan(Plan(title: '云南七天'));
+      final live = await repo.addArtifact(ticket(planId: p.id, state: Artifact.stateStructured));
+      final dead = await repo.addArtifact(ticket(planId: p.id, state: Artifact.stateVoided));
+      final mainList = await repo.artifactsForPlans([p.id!]);
+      expect(mainList.map((e) => e.id), [live.id], reason: '默认口径排程读侧静默');
+      final uiList = await repo.artifactsForPlans([p.id!], includeVoided: true);
+      expect(uiList.map((e) => e.id), containsAll([live.id, dead.id]),
+          reason: 'UI 通道单独放行（存证保留需有可见出口）');
+      expect(uiList.where((e) => e.state == Artifact.stateVoided).length, 1);
+    });
+
     test('未归属池只出 plan_id 为空的行，新者在前', () async {
       final p = await repo.addPlan(Plan(title: '云南七天'));
       final orphan = await repo.addArtifact(ticket());

@@ -12,7 +12,8 @@ import 'fact_sheet.dart';
 /// plan_detail_page 整区迁出（fact 草案 §2.1 入口 1；文案=ui-spec §0.4 凭证区组）
 /// ——子树派生聚合（一趟旅行的根计划=行程凭证总览页）；raw=聚合琥珀卡
 /// 「N 条原文待提炼」（金样本 A1 口径）；全部锚点最晚日历日早于今日沉
-/// 「过去的凭证」折叠组；voided 不进卡面（读侧白名单挡掉）。
+/// 「过去的凭证」折叠组；voided 不进主卡面，沉底部「已作废 · N 条」折叠组
+/// （§1.2 双通道口径 2026-10-08：排程读侧静默、UI 通道单独放行）。
 /// 写通道=AI 命令层+分享/快记入口，本区无 human 添加钮；删除仅 human 长按
 /// （DeleteArtifact，删凭证绝不删块）。
 class PlanFactsPage extends StatefulWidget {
@@ -50,7 +51,7 @@ class _PlanFactsPageState extends State<PlanFactsPage> {
         listenable: _repo,
         builder: (context, _) => FutureBuilder<List<Artifact>>(
           future: _subtreeIds(widget.planId)
-              .then((ids) => _repo.artifactsForPlans(ids)),
+              .then((ids) => _repo.artifactsForPlans(ids, includeVoided: true)),
           builder: (context, snap) {
             final all = snap.data ?? const <Artifact>[];
             if (all.isEmpty) {
@@ -63,9 +64,14 @@ class _PlanFactsPageState extends State<PlanFactsPage> {
                         ?.copyWith(color: StColors.textSecondary)),
               );
             }
-            final active = all.where((f) => !factExpired(f)).toList()
+            // voided 单列（§1.2 双通道：不进主卡面，沉底部折叠组）
+            final voided =
+                all.where((f) => f.state == Artifact.stateVoided).toList();
+            final live =
+                all.where((f) => f.state != Artifact.stateVoided).toList();
+            final active = live.where((f) => !factExpired(f)).toList()
               ..sort((a, b) => (a.createdAt ?? 0).compareTo(b.createdAt ?? 0));
-            final expired = all.where(factExpired).toList();
+            final expired = live.where(factExpired).toList();
             final raw =
                 active.where((f) => f.state == Artifact.stateRaw).toList();
             final structured =
@@ -82,7 +88,15 @@ class _PlanFactsPageState extends State<PlanFactsPage> {
                   ),
                 if (expired.isNotEmpty)
                   _PastFactsGroup(
+                    title: '过去的凭证',
                     expired: expired,
+                    onOpen: (f) => showVoucherSheet(context, f),
+                    onDelete: _confirmDelete,
+                  ),
+                if (voided.isNotEmpty)
+                  _PastFactsGroup(
+                    title: '已作废',
+                    expired: voided,
                     onOpen: (f) => showVoucherSheet(context, f),
                     onDelete: _confirmDelete,
                   ),
@@ -195,12 +209,15 @@ class _RawFactsCard extends StatelessWidget {
   }
 }
 
-/// 「过去的凭证」折叠组（ui-spec §0.4）：全部锚点最晚日历日早于今日的派生
-/// 折叠（span 取 end_date），与「过去的背景」同收纳模式；逐条点开通关卡、
-/// 长按删除（§0.4 凭证删除）。
+/// 折叠组（ui-spec §0.4）：「过去的凭证」=全部锚点最晚日历日早于今日的派生
+/// 折叠（span 取 end_date），与「过去的背景」同收纳模式；「已作废」=state=voided
+/// 存证（§1.2 双通道口径，2026-10-08 拍板）。二者同形态：逐条点开通关卡、
+/// 长按删除（§0.4 凭证删除，仅 human）。
 class _PastFactsGroup extends StatefulWidget {
-  const _PastFactsGroup({required this.expired, required this.onOpen, required this.onDelete});
+  const _PastFactsGroup(
+      {required this.title, required this.expired, required this.onOpen, required this.onDelete});
 
+  final String title;
   final List<Artifact> expired;
   final void Function(Artifact) onOpen;
   final void Function(BuildContext, Artifact) onDelete;
@@ -231,7 +248,7 @@ class _PastFactsGroupState extends State<_PastFactsGroup> {
                   color: StColors.textSecondary,
                 ),
                 const SizedBox(width: 6),
-                Text('过去的凭证 · ${widget.expired.length} 条',
+                Text('${widget.title} · ${widget.expired.length} 条',
                     style: Theme.of(context)
                         .textTheme
                         .labelMedium

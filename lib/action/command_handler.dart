@@ -561,17 +561,37 @@ class CommandHandler {
             columns: ['id'], where: 'plan_id = ?', whereArgs: [cmd.id]);
         await txn.delete('backgrounds', where: 'plan_id = ?', whereArgs: [cmd.id]);
         final artRows = await txn.query('artifacts',
-            columns: ['id', 'payload', 'version'],
+            columns: ['id', 'payload', 'version', 'block_id'],
             where: 'plan_id = ?',
             whereArgs: [cmd.id]);
         final now = DateTime.now().millisecondsSinceEpoch;
         for (final r in artRows) {
+          // block_id 三分支（§9.5-8，2026-10-08 拍板）：
+          // ① 块随 Plan 级联删除 → 双清（当前 delete_plan 对有块计划硬失败，
+          //    本分支为防御路径，块级联放开时自动生效）；
+          // ② 块被移出/保留（含块属其他 plan）→ 保留 block_id（🎫 微标不丢）；
+          // ③ 块已不存在（日切物理删除的自然悬空）→ 不写库清外键，保留原值，
+          //    读侧查无此块静默降级（凭证比块长寿，§1.1）。
+          final blockId = r['block_id'] as String?;
+          String? nextBlockId = blockId;
+          if (blockId != null) {
+            final blk = await txn.query('schedule_blocks',
+                columns: ['id', 'plan_id'],
+                where: 'id = ?',
+                whereArgs: [blockId]);
+            if (blk.isNotEmpty && blk.first['plan_id'] == cmd.id) {
+              nextBlockId = null; // ①
+            }
+          }
           await txn.update(
             'artifacts',
             {
               'plan_id': null,
-              'payload': Artifact.encodePayload(
-                  Artifact.payloadWithRefs(Artifact.decodePayload(r['payload'] as String?), planId: null)),
+              'block_id': nextBlockId,
+              'payload': Artifact.encodePayload(Artifact.payloadWithRefs(
+                  Artifact.decodePayload(r['payload'] as String?),
+                  planId: null,
+                  blockId: nextBlockId)),
               'updated_at': now,
               'version': (r['version'] as int? ?? 0) + 1,
             },
@@ -717,6 +737,18 @@ class CommandHandler {
     // （枚举已在入口校验，此处只判出生状态）。非出生编辑缺省=沿用现值。
     final birth = existing.state == Artifact.stateRaw &&
         cmd.state == Artifact.stateStructured;
+    // 出生确认严进（§9.5-7，2026-10-08 拍板）：raw→structured 必须显式给出
+    // category/source_kind——缺失即拒，严禁静默沿用 verbal/verbal 占位（否则
+    // booking 凭证永久挂「口头信息 · 待核实」角标）。**防漏填不防填错**：AI 拿
+    // 不准时仍可填 verbal/verbal（合法组合），真正防线是 playbook 回显义务。
+    if (birth && (cmd.category == null || cmd.sourceKind == null)) {
+      throw ActionException(
+        'raw 提炼回填（state=structured）需要显式给出 category 与 source_kind（出生确认，§9.5-7）',
+        code: ActionErrorCode.invalidRequest,
+        hint: 'category: transit/ticket/hotel/venue/verbal；'
+            'source_kind: booking/announcement/verbal；拿不准请先按最贴切值填写并在回显中请用户确认——缺失不再静默沿用 verbal 占位',
+      );
+    }
     final patch = <String, Object?>{
       'title': ?cmd.title,
       'badge': ?badge,
