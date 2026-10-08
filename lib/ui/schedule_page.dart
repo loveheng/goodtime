@@ -15,6 +15,7 @@ import '../models/plan.dart';
 import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
+import '../widgets/now_next_card.dart';
 import 'block_sheet.dart';
 import 'global_action_sheet.dart';
 import 'mcp_settings_page.dart';
@@ -330,6 +331,7 @@ class _DayView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (data.isToday) const NowNextCard(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Row(

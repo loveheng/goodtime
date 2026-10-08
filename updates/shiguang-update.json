@@ -1,7 +1,7 @@
 {
-  "versionCode": 20014,
+  "versionCode": 28019,
   "versionName": "1.1.0",
   "apkUrl": "https://r2.oklhj.eu.org/updates/app-release.apk",
-  "sha256": "24d16ea41cbddfa669c46a015c497811febef060855b1bd1da5c5083f00fc7dd",
-  "changelog": "新增背景信息记录（七切片全链路）；清单详情改为全页展示"
+  "sha256": "279e2e3b9b92c6437f804060270bf22a815e026a4b6323d3f415aedb777a8bd9",
+  "changelog": "修复应用内自更新安装：改用系统 PackageInstaller 会话 API 直接写入安装会话，解决 Android 14+ 拉起安装时报「软件包无效」的问题"
 }
