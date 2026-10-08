@@ -23,8 +23,8 @@ void main() {
         Brightness.light);
     expect(StColors.textPrimary, const Color(0xFF1A1C1E));
 
-    // 2. 设置页切「深色」→ 主题与全局语义面板联动
-    await tester.tap(find.byTooltip('设置'));
+    // 2. 设置页切「深色」→ 主题与全局面板联动（设置=底部第三 Tab，2026-10-08 拍板）
+    await tester.tap(find.text('设置').last);
     await pumpFlush(tester);
     // 外观段在列表折叠边缘（树内有/视口外），滚到完全可见再点（2026-10-08 子页化后）
     await _scrollToText(tester, '深色');

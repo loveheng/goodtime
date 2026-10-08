@@ -9,9 +9,9 @@ import 'settings_page.dart';
 import '../app_services.dart';
 import '../theme/tokens.dart';
 
-/// 主框架（ui-spec §1）：底部双 Tab「日程｜清单」+ 右下角快记 FAB 两 Tab 常驻
-/// （2026-10-06 拍板，自顶部常驻快记条迁改；守卫态不撤=「快记永不关门」平移）
-/// + 设置右上角进。
+/// 主框架（ui-spec §1）：底部三 Tab「日程｜清单｜设置」+ 右下角快记 FAB 两 Tab
+/// 常驻（2026-10-06 拍板，自顶部常驻快记条迁改；守卫态不撤=「快记永不关门」
+/// 平移）。2026-10-08 用户拍板：设置自 AppBar 右上角迁入底部第三 Tab（§11 留痕）。
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -52,22 +52,15 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_tab == 0 ? '日程' : '清单'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: '设置',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
-            ),
-          ),
-        ],
+        title: Text(_tab == 0 ? '日程' : (_tab == 1 ? '清单' : '设置')),
       ),
       body: SafeArea(
         child: Stack(
           children: [
             Positioned.fill(
-              child: _tab == 0 ? const SchedulePage() : const PlansPage(),
+              child: _tab == 0
+                  ? const SchedulePage()
+                  : (_tab == 1 ? const PlansPage() : const SettingsPage()),
             ),
             const Positioned(
               right: StScale.insetLg,
@@ -83,6 +76,7 @@ class _AppShellState extends State<AppShell> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.calendar_today_outlined), label: '日程'),
           NavigationDestination(icon: Icon(Icons.checklist_outlined), label: '清单'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), label: '设置'),
         ],
       ),
     );

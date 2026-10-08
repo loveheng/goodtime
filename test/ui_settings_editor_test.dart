@@ -19,7 +19,8 @@ void main() {
 
     await tester.pumpWidget(const ShiguangApp());
     await pumpFlush(tester);
-    await tester.tap(find.byTooltip('设置'));
+    // 设置=底部第三 Tab（2026-10-08 拍板；原 AppBar 右上角 tooltip 入口退役）
+    await tester.tap(find.text('设置').last);
     await pumpFlush(tester);
 
     // 一周节奏：进子页 → 添加「上班」周一（FixedSlotEditorSheet）
