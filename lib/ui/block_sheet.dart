@@ -33,6 +33,40 @@ Future<void> showNewBlockSheet(BuildContext context, DayData data,
   );
 }
 
+/// 否决原因可选输入（ui-spec §3.4 拍板回归，2026-10-08）：弹框留空=不带原因
+/// 直接否决；返回 null=用户取消、''=无原因否决、非空=带原因（AI 下轮排程参考）。
+Future<String?> showRejectReasonDialog(BuildContext context,
+    {String title = '否决这条提案？'}) async {
+  final controller = TextEditingController();
+  final text = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLines: 2,
+        decoration: const InputDecoration(
+          hintText: '为什么不想做？（可选，AI 下轮排程会参考）',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.of(dialogContext).pop(controller.text.trim()),
+          child: const Text('否决'),
+        ),
+      ],
+    ),
+  );
+  return text; // null=取消 / ''=无原因 / 非空=带原因
+}
+
 class _BlockSheet extends StatefulWidget {
   const _BlockSheet({required this.block});
 
@@ -193,7 +227,15 @@ class _BlockSheetState extends State<_BlockSheet> {
         ),
         OutlinedButton(
           onPressed: _busy == null
-              ? () => _run('reject', () => _handler.execute(RejectBlockCommand(_b.id!)))
+              ? () async {
+                  // 否决先问原因（可选，§3.4 拍板回归）；取消=不动
+                  final reason = await showRejectReasonDialog(context);
+                  if (reason == null || !mounted) return;
+                  await _run(
+                      'reject',
+                      () => _handler.execute(
+                          RejectBlockCommand(_b.id!, reason: reason.isEmpty ? null : reason)));
+                }
               : null,
           child: const Text('否决'),
         ),

@@ -22,10 +22,27 @@ import 'quick_note_fab.dart';
 /// 卡片点按进计划详情页（全页路由，2026-10-07 对齐 ui-spec §5 定稿；
 /// 编辑 sheet 浮层形态随背景区迁入退役）；长按归档/删除；
 /// 「待确认 N 项」角标 + 🔥 今日核心标记。
-class PlansPage extends StatelessWidget {
+/// 2026-10-08 三批回归（N1）：页顶搜索框按标题过滤——只影响各分区**可见条目**
+/// （归属判定仍按块日期），冷藏池同滤；查询非空时隐藏空态「记一笔」出口
+/// （有结果就不该再劝记新条目）。
+class PlansPage extends StatefulWidget {
   const PlansPage({super.key});
 
+  @override
+  State<PlansPage> createState() => _PlansPageState();
+}
+
+class _PlansPageState extends State<PlansPage> {
   Repository get _repo => AppServices.repo;
+
+  /// 搜索查询（N1）：空串=不过滤；大小写不敏感的标题子串匹配。
+  String _query = '';
+
+  List<Plan> _filter(List<Plan> list) {
+    if (_query.isEmpty) return list;
+    final q = _query.toLowerCase();
+    return list.where((p) => p.title.toLowerCase().contains(q)).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -109,6 +126,16 @@ class PlansPage extends StatelessWidget {
   }
 
   Widget _body(BuildContext context, _PlansView view) {
+    final today = _filter(view.today);
+    final inProgress = _filter(view.inProgress);
+    final waiting = _filter(view.waiting);
+    final archivedPlans = _filter(view.archivedPlans);
+    final searching = _query.isNotEmpty;
+    final noHit = searching &&
+        today.isEmpty &&
+        inProgress.isEmpty &&
+        waiting.isEmpty &&
+        archivedPlans.isEmpty;
     final empty = view.today.isEmpty &&
         view.inProgress.isEmpty &&
         view.waiting.isEmpty &&
@@ -131,11 +158,28 @@ class PlansPage extends StatelessWidget {
         ),
       );
     }
+    if (noHit) {
+      return Column(
+        children: [
+          _searchBar(context),
+          Expanded(
+            child: Center(
+              child: Text('没有匹配「$_query」的计划',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: StColors.textSecondary)),
+            ),
+          ),
+        ],
+      );
+    }
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, StScale.fabClearanceDp),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _searchBar(context),
           // 未归属凭证派生入口（§1.7 定稿修正）：N=0 隐藏，派生计数不入库；
           // 管理面板复用挂载 sheet 常驻组形态（fact_sheet.dart 同源）
           if (view.unattributedFacts.isNotEmpty)
@@ -168,23 +212,48 @@ class PlansPage extends StatelessWidget {
                 ),
               ),
             ),
-          if (view.today.isNotEmpty) ...[
+          if (today.isNotEmpty) ...[
             _sectionTitle(context, '今天'),
-            for (final p in view.today)
+            for (final p in today)
               _PlanCard(plan: p, proposed: view.proposedByPlan[p.id] ?? 0, spark: view.sparkPlanIds.contains(p.id)),
           ],
-          if (view.inProgress.isNotEmpty) ...[
+          if (inProgress.isNotEmpty) ...[
             _sectionTitle(context, '当下推进中'),
-            for (final p in view.inProgress)
+            for (final p in inProgress)
               _PlanCard(plan: p, proposed: view.proposedByPlan[p.id] ?? 0, spark: false),
           ],
-          if (view.waiting.isNotEmpty) ...[
+          if (waiting.isNotEmpty) ...[
             _sectionTitle(context, '待安排'),
-            ..._quadrants(context, view.waiting),
+            ..._quadrants(context, waiting),
           ],
-          if (view.archivedPlans.isNotEmpty)
-            _ColdPoolSection(plans: view.archivedPlans),
+          if (archivedPlans.isNotEmpty)
+            _ColdPoolSection(plans: archivedPlans),
         ],
+      ),
+    );
+  }
+
+  /// 搜索框（N1，2026-10-08 三批回归）：页顶常驻，标题子串过滤（含冷藏池）；
+  /// 清空钮一键复位。
+  Widget _searchBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: TextField(
+        key: const Key('plans-search'),
+        onChanged: (v) => setState(() => _query = v.trim()),
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: '清空',
+                  onPressed: () => setState(() => _query = ''),
+                ),
+          hintText: '搜计划标题…',
+          border: const OutlineInputBorder(),
+        ),
       ),
     );
   }

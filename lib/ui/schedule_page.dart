@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 
 import '../action/command_handler.dart';
@@ -16,6 +17,7 @@ import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 import 'block_sheet.dart';
 import 'global_action_sheet.dart';
+import 'mcp_settings_page.dart';
 
 /// 今日页（ui-spec §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
 /// ×安全线徽章）+ 分级确认卡（火种突出/Routine 折叠/两态收缩）+ 时间轴
@@ -36,6 +38,11 @@ class _SchedulePageState extends State<SchedulePage> {
 
   /// 时间轴滚动控制柄（「回到现在」定位，2026-10-08 拍板）
   final GlobalKey<_TimelineState> _timelineKey = GlobalKey();
+
+  /// 确认卡两态坍缩（spec §3.4 滚动驱动回归 2026-10-08）：下滑浏览时间轴
+  /// 自动收为 44dp 胶囊给时间轴让路，回滚到顶恢复展开；状态上提至此
+  /// （_DayView 无状态），日切换时复位为展开。
+  bool _confirmCollapsed = false;
 
   /// 日视图选中日期（日期参数化：可从周/月跳入任意一天回看历史）
   late DateTime _selected = scheduleDayOf(DateTime.now(), _wakeGuess);
@@ -107,8 +114,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 合并监听 mcp：MCP 启停联动今日页「桌面 AI 未连接」卡（§9，2026-10-08 回归）
     return ListenableBuilder(
-      listenable: _repo,
+      listenable: Listenable.merge([_repo, AppServices.mcp]),
       builder: (context, _) => Column(
         children: [
           Padding(
@@ -157,6 +165,12 @@ class _SchedulePageState extends State<SchedulePage> {
                       return _DayView(
                         data: data,
                         timelineKey: _timelineKey,
+                        confirmCollapsed: _confirmCollapsed,
+                        onConfirmCollapse: (v) {
+                          if (v != _confirmCollapsed) {
+                            setState(() => _confirmCollapsed = v);
+                          }
+                        },
                         onPickToday: _backToToday,
                         onPrevDay: () => _shiftDay(-1),
                         onNextDay: () => _shiftDay(1),
@@ -171,11 +185,16 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  void _backToToday() => setState(() =>
-      _selected = scheduleDayOf(DateTime.now(), _wakeGuess));
+  void _backToToday() => setState(() {
+        _selected = scheduleDayOf(DateTime.now(), _wakeGuess);
+        _confirmCollapsed = false;
+      });
 
   void _shiftDay(int delta) =>
-      setState(() => _selected = addDays(_selected, delta));
+      setState(() {
+        _selected = addDays(_selected, delta);
+        _confirmCollapsed = false;
+      });
 
   // ---- 视图横滑翻页（ui-spec §6.4，2026-10-06 拍板）----
 
@@ -281,6 +300,8 @@ class _DayView extends StatelessWidget {
   const _DayView({
     required this.data,
     required this.timelineKey,
+    required this.confirmCollapsed,
+    required this.onConfirmCollapse,
     required this.onPickToday,
     required this.onPrevDay,
     required this.onNextDay,
@@ -290,6 +311,10 @@ class _DayView extends StatelessWidget {
 
   /// 时间轴滚动控制柄：「回到现在」定位（2026-10-08 拍板）。
   final GlobalKey<_TimelineState>? timelineKey;
+
+  /// 确认卡坍缩态（滚动驱动 §3.4，状态在 _SchedulePageState）。
+  final bool confirmCollapsed;
+  final void Function(bool collapsed) onConfirmCollapse;
 
   final VoidCallback onPickToday;
   final VoidCallback onPrevDay;
@@ -353,6 +378,8 @@ class _DayView extends StatelessWidget {
           ),
         // 双轨仪表盘（§3.1/§10 八轮）：推进任务 × 保护时长并列核心交付指标
         _Dashboard(data: data),
+        // MCP 未连接卡（§9 空态表回归，2026-10-08）：今日可见，一键进 MCP 服务页
+        if (data.isToday && !AppServices.mcp.running) const _McpOfflineCard(),
         // 昨日遗留区（§3.2）：守卫态与 Clean Slate 保护期整区淡出，非今日不渲染
         if (!windDown && !data.cleanSlate && data.isToday && data.leftovers.isNotEmpty)
           _LeftoverSection(data: data),
@@ -361,7 +388,29 @@ class _DayView extends StatelessWidget {
         else if (data.cleanSlate && data.isToday)
           const _CleanSlateBanner()
         else if (data.isToday && proposed.isNotEmpty)
-          _TieredConfirmCard(proposed: proposed, data: data),
+          // 滚动驱动坍缩（§3.4 拍板回归 2026-10-08）：捕获时间轴竖向滚动——
+          // 下滑浏览（direction=forward）收为 44dp 胶囊，回滚至顶恢复展开；
+          // 返回 false 不拦截通知、滚动照常
+          NotificationListener<UserScrollNotification>(
+            onNotification: (n) {
+              if (n.metrics.axis != Axis.vertical) return false;
+              bool? next;
+              if (n.direction == ScrollDirection.forward) {
+                next = true;
+              } else if (n.direction == ScrollDirection.reverse &&
+                  n.metrics.pixels < 24) {
+                next = false;
+              }
+              if (next != null) onConfirmCollapse(next);
+              return false;
+            },
+            child: _TieredConfirmCard(
+              proposed: proposed,
+              data: data,
+              collapsed: confirmCollapsed,
+              onToggle: onConfirmCollapse,
+            ),
+          ),
         Expanded(
           child: data.visibleBlocks.isEmpty
               ? _EmptyState(data: data)
@@ -430,6 +479,39 @@ class _Dashboard extends StatelessWidget {
                 color: lit ? StColors.safelineOn : StColors.safelineOff),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// MCP 未连接卡（ui-spec §9 空态表回归，2026-10-08）：今日页常驻提示，
+/// 一键进 MCP 服务子页（配对/启停）。MCP 已启动时整卡消失。
+class _McpOfflineCard extends StatelessWidget {
+  const _McpOfflineCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(StScale.radiusCard),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const McpSettingsPage()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(children: [
+            const Icon(Icons.lan_outlined, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('桌面 AI 未连接——配对后可让 AI 排程',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+            Icon(Icons.chevron_right,
+                size: 18, color: StColors.textSecondary),
+          ]),
+        ),
       ),
     );
   }
@@ -527,11 +609,32 @@ class _LeftoverSection extends StatelessWidget {
 }
 
 /// 放工守卫静默视图（§3.7 八轮）：sleep 前 2h 隐藏推进提示，转完成面陈述；
-/// 快记条永不关门（例外条款，app_shell 常驻不撤）。
+/// 2026-10-08 拍板回归补**明日概要**（明日块数+最早一块，label 解析同块浮层
+/// 口径 label→plan.title）；快记条永不关门（例外条款，app_shell 常驻不撤）。
 class _WindDownBanner extends StatelessWidget {
   const _WindDownBanner({required this.data});
 
   final DayData data;
+
+  /// 明日概要数据：count=0 表示明日无安排。
+  Future<Map<String, Object?>?> _tomorrowSummary() async {
+    final iso = isoDate(addDays(data.today, 1));
+    final blocks = (await AppServices.repo.blocksOnDate(iso))
+        .where((b) => b.status != ScheduleBlock.statusMelted)
+        .toList()
+      ..sort((a, b) => a.startMin.compareTo(b.startMin));
+    if (blocks.isEmpty) return {'count': 0};
+    final first = blocks.first;
+    var label = first.label ?? '';
+    if (label.isEmpty && first.planId != null) {
+      label = (await AppServices.repo.planById(first.planId!))?.title ?? '';
+    }
+    return {
+      'count': blocks.length,
+      'firstTime': clockOf(first.startMin),
+      'firstLabel': label.isEmpty ? '(未命名)' : label,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -547,10 +650,31 @@ class _WindDownBanner extends StatelessWidget {
         color: StColors.freeFlowBg,
         borderRadius: BorderRadius.circular(StScale.radiusCard),
       ),
-      child: Text(
-        '放工了：今天完成 ${done.length} 项 / $minutes 分钟。'
-        '明天的安排已备好，快记条不打烊，想到什么随时记。',
-        style: Theme.of(context).textTheme.bodySmall,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '放工了：今天完成 ${done.length} 项 / $minutes 分钟。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          FutureBuilder<Map<String, Object?>?>(
+            future: _tomorrowSummary(),
+            builder: (context, snap) {
+              final t = snap.data;
+              if (t == null) return const SizedBox.shrink();
+              final count = t['count'] as int;
+              return Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  count == 0
+                      ? '明天还没有安排——想到什么随时记，快记条不打烊。'
+                      : '明天有 $count 项安排，最早 ${t['firstTime']}「${t['firstLabel']}」。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -580,18 +704,28 @@ class _CleanSlateBanner extends StatelessWidget {
 /// 分级确认卡（§3.4 拍板：页内 sticky 卡片 + 两态收缩，防批量盲签）：
 /// 火种突出（为什么排在这），其余折叠为「其余 N 项日常推进」；
 /// 收缩为 44dp 吸顶胶囊，保留一键确认快速通道。
+/// 2026-10-08 滚动驱动回归：展开/坍缩态由父级 [_DayView] 经 NotificationListener
+/// 驱动（下滑浏览收起、回滚至顶展开），本组件只保留受控呈现 + [onToggle] 手动切换。
 class _TieredConfirmCard extends StatefulWidget {
-  const _TieredConfirmCard({required this.proposed, required this.data});
+  const _TieredConfirmCard({
+    required this.proposed,
+    required this.data,
+    required this.collapsed,
+    required this.onToggle,
+  });
 
   final List<ScheduleBlock> proposed;
   final DayData data;
+
+  /// true=44dp 吸顶胶囊态；false=完整卡态（受控）。
+  final bool collapsed;
+  final void Function(bool collapsed) onToggle;
 
   @override
   State<_TieredConfirmCard> createState() => _TieredConfirmCardState();
 }
 
 class _TieredConfirmCardState extends State<_TieredConfirmCard> {
-  bool _expanded = true;
   bool _busy = false;
 
   ScheduleBlock? get _spark {
@@ -604,7 +738,9 @@ class _TieredConfirmCardState extends State<_TieredConfirmCard> {
   List<ScheduleBlock> get _routine =>
       widget.proposed.where((b) => !b.isDaySpark).toList();
 
-  Future<void> _act(bool confirm) async {
+  /// [confirm]=true 批量确认；false 批量否决（[reason] 可选，经弹框收集回传 AI，
+  /// §3.4 拍板回归 2026-10-08）。单块冲突不中断批量；失败块留在提案态逐块处理。
+  Future<void> _act(bool confirm, {String? reason}) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -614,7 +750,7 @@ class _TieredConfirmCardState extends State<_TieredConfirmCard> {
           await handler.execute(
               ConfirmBlockCommand(b.id!, expectedVersion: b.version));
         } else {
-          await handler.execute(RejectBlockCommand(b.id!));
+          await handler.execute(RejectBlockCommand(b.id!, reason: reason));
         }
       }
     } on ActionException {
@@ -629,11 +765,11 @@ class _TieredConfirmCardState extends State<_TieredConfirmCard> {
     final scheme = Theme.of(context).colorScheme;
     final spark = _spark;
     final others = _routine;
-    if (!_expanded) {
+    if (widget.collapsed) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
         child: GestureDetector(
-          onTap: () => setState(() => _expanded = true),
+          onTap: () => widget.onToggle(false),
           child: Container(
             height: StScale.blockMinHeightDp,
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -680,7 +816,7 @@ class _TieredConfirmCardState extends State<_TieredConfirmCard> {
                 IconButton(
                   icon: const Icon(Icons.keyboard_arrow_up, size: 20),
                   tooltip: '收起',
-                  onPressed: () => setState(() => _expanded = false),
+                  onPressed: () => widget.onToggle(true),
                 ),
               ]),
               Text('「${_labelOf(spark)}」 ${clockOf(spark.startMin)}–${clockOf(spark.endMin)}',
@@ -699,7 +835,7 @@ class _TieredConfirmCardState extends State<_TieredConfirmCard> {
                 IconButton(
                   icon: const Icon(Icons.keyboard_arrow_up, size: 20),
                   tooltip: '收起',
-                  onPressed: () => setState(() => _expanded = false),
+                  onPressed: () => widget.onToggle(true),
                 ),
               ]),
             if (others.isNotEmpty) ...[
@@ -719,7 +855,16 @@ class _TieredConfirmCardState extends State<_TieredConfirmCard> {
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
-                  onPressed: _busy ? null : () => _act(false),
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          // 否决先问原因（可选，§3.4：回传 AI 下轮参考）；取消=不动
+                          final reason = await showRejectReasonDialog(context,
+                              title: '全部否决这 ${widget.proposed.length} 项提案？');
+                          if (reason == null || !mounted) return;
+                          await _act(false,
+                              reason: reason.isEmpty ? null : reason);
+                        },
                   child: const Text('全部否决'),
                 ),
                 const SizedBox(width: 8),
@@ -1330,10 +1475,56 @@ class _GestureBlockState extends State<_GestureBlock> {
         canUndo: true);
   }
 
+  /// 换乘抽屉（ui-spec §6.4 拍板形态回归，2026-10-08）：左滑过卡点呼出候选列表
+  /// （待安排池 light/anywhere，swapCandidatesFor 时长相近优先），显式挑选后经
+  /// SwapBlockCommand(targetPlanId) 换入——原任务无痕回池；空池直接轻提示不开抽屉。
   Future<void> _swap() async {
     HapticFeedback.mediumImpact();
-    await _run(() => CommandHandler(AppServices.repo)
-        .execute(SwapBlockCommand(_b.id!, expectedVersion: _b.version)));
+    final messenger = ScaffoldMessenger.of(context);
+    final candidates = await swapCandidatesFor(AppServices.repo, _b);
+    if (!mounted) return;
+    if (candidates.isEmpty) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('愿望池里还没有可换乘的轻松事——先记几件 5 分钟就能做的琐事')));
+      return;
+    }
+    final picked = await showModalBottomSheet<Plan>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          children: [
+            Text('换件轻松的？', style: Theme.of(sheetContext).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text('挑一件换进这个时段，原任务放回清单待安排',
+                style: Theme.of(sheetContext)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: StColors.textSecondary)),
+            const SizedBox(height: 8),
+            for (final p in candidates)
+              ListTile(
+                leading: const Icon(Icons.coffee_outlined),
+                title: Text(p.title),
+                subtitle:
+                    p.estimate != null ? Text('约 ${p.estimate} 分钟') : null,
+                onTap: () => Navigator.of(sheetContext).pop(p),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      final r = await CommandHandler(AppServices.repo).execute(SwapBlockCommand(
+          _b.id!, targetPlanId: picked.id, expectedVersion: _b.version));
+      messenger.showSnackBar(SnackBar(
+          content: Text(r.note ?? '已换乘'), duration: const Duration(seconds: 2)));
+    } on ActionException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _degrade() async {
