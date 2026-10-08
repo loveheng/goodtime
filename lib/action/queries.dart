@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../data/repository.dart';
 import '../data/settings.dart';
+import '../models/artifact.dart';
 import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
@@ -81,6 +82,16 @@ class ScheduleQueries {
     final exceptions = parseExceptions(raw);
     final today = scheduleDayOf(now ?? DateTime.now(), wake);
     final n = days < 1 ? 1 : (days > 3 ? 3 : days);
+    // 凭证摘要搭载（fact 草案 §1.6 定稿修正：窗口对齐实际返回视窗，state 白名单）
+    // ——视窗内一次性取行，逐日按锚点覆盖过滤装配
+    final structuredFacts = await _repo.artifactsByState(Artifact.stateStructured);
+    final factPlanTitles = <String, String>{};
+    for (final f in structuredFacts) {
+      final pid = f.planId;
+      if (pid != null && !factPlanTitles.containsKey(pid)) {
+        factPlanTitles[pid] = (await _repo.planById(pid))?.title ?? '未知计划';
+      }
+    }
     final out = <Map<String, Object?>>[];
     for (var i = 0; i < n; i++) {
       final date = addDays(today, i);
@@ -122,9 +133,67 @@ class ScheduleQueries {
         // 排程背景装配（背景草案 §4 排程通道）：物理过滤+祖先链+分区禁平铺，
         // 与容量水位线/天气（几何机械数据）严格分区——日级态势句不携带任何背景
         'backgrounds': await _dayBackgroundPayload(iso, planIds),
+        // 凭证摘要搭载（fact 草案 §1.6）：当日硬约束自动到达 AI 视线——
+        // 排程必须避开发车/止检/止入场锚点
+        'facts': _dayFactsPayload(structuredFacts, factPlanTitles, iso),
       });
     }
-    return {'today': isoDate(today), 'days': out};
+    return {
+      'today': isoDate(today),
+      'days': out,
+      // 视窗外硬锚点摘要（fact 草案 §1.6 边界补全，2026-10-08 拍板）：3 天视窗
+      // 之后 ~14 天内的 structured 凭证轻量投影——补「提前多日整段排行程看不到票」
+      // 盲区；只给 date/title/deadline_min/plan_title 四字段，防上下文膨胀。
+      'upcoming_facts': _upcomingFactsPayload(structuredFacts, factPlanTitles, today, n),
+    };
+  }
+
+  /// 视窗外（窗口末日之后 ~14 天内）structured 凭证摘要：按最早锚 date 升序，
+  /// 每条 {date, title, deadline_min?, plan_title?}；不带锚数组/constraints
+  /// （§1.6 边界补全：与 list_plans「归档冷数据不拉」同原则，轻字段防膨胀）。
+  List<Map<String, Object?>> _upcomingFactsPayload(List<Artifact> facts,
+      Map<String, String> titles, DateTime today, int windowDays) {
+    final windowEnd = addDays(today, windowDays - 1);
+    final horizon = addDays(today, windowDays + 13); // 视窗外 ~14 天
+    final rows = <(DateTime, Map<String, Object?>)>[];
+    for (final f in facts) {
+      if (f.state != Artifact.stateStructured) continue;
+      final anchors = f.payload['time_anchors'];
+      if (anchors is! List) continue;
+      DateTime? earliest;
+      int? deadlineMin;
+      for (final e in anchors) {
+        if (e is! Map) continue;
+        final date = e['date'];
+        if (date is! String || date.length < 10) continue;
+        final d = DateTime.tryParse(date.substring(0, 10));
+        if (d == null) continue;
+        if (earliest == null || d.isBefore(earliest)) earliest = d;
+        // 若该锚恰在本实现关注的视窗外段，取其时刻/段首作 deadline
+        if (d.isAfter(windowEnd) && !d.isAfter(horizon)) {
+          for (final key in const {'min', 'start_min'}) {
+            final v = e[key];
+            if (v is int && (deadlineMin == null || v < deadlineMin)) {
+              deadlineMin = v;
+            }
+          }
+        }
+      }
+      if (earliest == null) continue;
+      if (!earliest.isAfter(windowEnd)) continue; // 窗内锚走 facts 正常搭载
+      if (earliest.isAfter(horizon)) continue; // 过远冷数据不拉
+      rows.add((
+        earliest,
+        {
+          'date': isoDate(earliest),
+          'title': f.title,
+          'deadline_min': ?deadlineMin,
+          if (f.planId != null) 'plan_title': titles[f.planId!],
+        },
+      ));
+    }
+    rows.sort((a, b) => a.$1.compareTo(b.$1));
+    return [for (final r in rows) r.$2];
   }
 
   /// 当日 ∈ applicable_dates（背景草案 §4 排程物理过滤；无窗=恒注入）。
@@ -185,6 +254,75 @@ class ScheduleQueries {
       };
     }
     return {'global': globals, 'plans': planSections};
+  }
+
+  /// 单日凭证摘要装配（fact-user-relay-draft.md §1.6，2026-10-07 定稿修正）：
+  /// - **窗口对齐**：搭载范围=get_schedule 实际返回视窗（无参=当日+次日、
+  ///   days=N 全窗）——固定两日窗会让远期硬约束全盲（周三排周五到周日）；
+  /// - **state 白名单**（§8 施工微观约定 3）：仅 state=structured——raw 原文不
+  ///   消耗排程 prompt token，voided 不出现在排程视线；
+  /// - **按计划分组禁平铺**（背景分区装配同款）：每段带计划标题；
+  ///   摘要四件套=category/title/badge/最早 deadline_min（≈100 token/日），
+  ///   凭证全文只进 UI 不进 AI 上下文。
+  Map<String, Object?> _dayFactsPayload(
+      List<Artifact> facts, Map<String, String> titles, String iso) {
+    final planSections = <String, Object?>{};
+    final unattributed = <Map<String, Object?>>[];
+    for (final f in facts) {
+      if (!_factCoversDate(f, iso)) continue;
+      final item = <String, Object?>{
+        'id': f.id,
+        'category': f.category,
+        'title': f.title,
+        'badge': ?f.badge,
+        'deadline_min': ?_earliestDeadlineMin(f, iso),
+      };
+      final pid = f.planId;
+      if (pid == null) {
+        unattributed.add(item);
+        continue;
+      }
+      var section = planSections[pid] as Map<String, Object?>?;
+      if (section == null) {
+        section = <String, Object?>{'title': titles[pid], 'items': <Map<String, Object?>>[]};
+        planSections[pid] = section;
+      }
+      (section['items'] as List<Map<String, Object?>>).add(item);
+    }
+    return {'plans': planSections, 'unattributed': unattributed};
+  }
+
+  /// 锚点覆盖判定：任意锚 date 命中当日，或 span 跨日覆盖 [date, end_date]
+  /// 闭区间（一律日历日口径 §1.3）。
+  bool _factCoversDate(Artifact f, String iso) {
+    final anchors = f.payload['time_anchors'];
+    if (anchors is! List) return false;
+    for (final e in anchors) {
+      if (e is! Map) continue;
+      final date = e['date'];
+      if (date is! String) continue;
+      if (date == iso) return true;
+      final end = e['end_date'];
+      if (end is String && date.compareTo(iso) < 0 && iso.compareTo(end) <= 0) return true;
+    }
+    return false;
+  }
+
+  /// 最早 deadline_min：当日 moment.min 与 span.start_min 取最小（检票/止检类
+  /// 时刻是排程硬约束锚）；纯日期锚无分钟 → 缺省不携带。
+  int? _earliestDeadlineMin(Artifact f, String iso) {
+    final anchors = f.payload['time_anchors'];
+    if (anchors is! List) return null;
+    int? best;
+    for (final e in anchors) {
+      if (e is! Map) continue;
+      if (e['date'] != iso) continue;
+      for (final key in const {'min', 'start_min'}) {
+        final v = e[key];
+        if (v is int && (best == null || v < best)) best = v;
+      }
+    }
+    return best;
   }
 
   /// 近 N 个作息日的 done 聚合 + 校准指标全量（§6，2026-10-05 拍板）。

@@ -27,6 +27,26 @@ class _AppGateState extends State<AppGate> {
   void initState() {
     super.initState();
     _reload();
+    // 分享转投（§2.3）：原生消息可早于首帧/监听注册到达——初始值非空直接
+    // 排消费，监听兜新消息；并发由 runPendingShare 内部守卫，挂起语义留池。
+    AppServices.pendingShare.addListener(_onPendingShare);
+    _maybeConsumeShare();
+  }
+
+  @override
+  void dispose() {
+    AppServices.pendingShare.removeListener(_onPendingShare);
+    super.dispose();
+  }
+
+  void _onPendingShare() => _maybeConsumeShare();
+
+  void _maybeConsumeShare() {
+    if (!mounted || AppServices.pendingShare.value.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      AppServices.runPendingShare(context);
+    });
   }
 
   void _reload() {

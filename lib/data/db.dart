@@ -3,8 +3,9 @@ import 'package:sqflite/sqflite.dart';
 
 /// 存储层：台账库——plans（清单条目=本体 Soul）+ fixed_slots（固定占用=约束）+
 /// schedule_blocks（日程块实例=肉身 Avatar）+ backgrounds（软背景，v3 增，
-/// background-context-draft.md §2）+ app_settings KV。
-/// Schema 唯一出处为设计 SSOT §4 + 背景草案 §2；后续演进走
+/// background-context-draft.md §2）+ artifacts（硬事实凭证，v4 增，
+/// fact-user-relay-draft.md §1.1）+ app_settings KV。
+/// Schema 唯一出处为设计 SSOT §4 + 背景草案 §2 + 事实草案 §1.1；后续演进走
 /// onUpgrade 分段幂等迁移（模式照抄拾贝 db.dart，schedule-app.md §12 领料）。
 class Db {
   static Database? _db;
@@ -19,7 +20,7 @@ class Db {
     final dir = await getDatabasesPath();
     final db = await openDatabase(
       _pathOverride ?? p.join(dir, 'shiguang.db'),
-      version: 3,
+      version: 4,
       onCreate: (db, version) => _createAll(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         // 分段幂等迁移区（拾贝模式）：每段「oldVersion < N」+ 幂等 _ensure* 补齐。
@@ -31,6 +32,11 @@ class Db {
           // v2→v3：backgrounds 软背景表单表先行（施工时序调整，schedule-app §11
           // 留痕；artifacts 拍板落地时另批迁移）
           await _ensureBackgroundsTable(db);
+        }
+        if (oldVersion < 4) {
+          // v3→v4：artifacts 硬事实凭证单表（fact-user-relay-draft.md §1.1，
+          // 背景侧已占 v3、本批另批迁移——schedule-app §11 留痕）
+          await _ensureArtifactsTable(db);
         }
       },
       onOpen: (db) async {
@@ -123,6 +129,28 @@ class Db {
       'CREATE INDEX IF NOT EXISTS idx_backgrounds_plan ON backgrounds(plan_id)',
     );
     await db.execute('''
+      CREATE TABLE IF NOT EXISTS artifacts (
+        id TEXT NOT NULL PRIMARY KEY,                   -- uuid
+        category TEXT NOT NULL,                         -- transit/ticket/hotel/venue/verbal（五类收敛，§1.2）
+        source_kind TEXT NOT NULL,                      -- booking/announcement/verbal（三级可靠性）
+        state TEXT NOT NULL,                            -- raw/structured/voided（voided=退票作废存证，读侧全通道静默）
+        origin TEXT NOT NULL,                           -- shared/quicknote/ai/manual（出生来源）
+        title TEXT NOT NULL,                            -- 摘要标题（快记通道=原文原样落库）
+        badge TEXT,                                     -- 时间轴微标单值（仅 booking 类 AI 显式指定，超 12 字符命令层截断）
+        payload TEXT NOT NULL,                          -- §1.2 契约 JSON 单一真相（首字段 "v":1；元数据列=提取投影同源写入）
+        attachments TEXT NOT NULL,                      -- 预留列恒存空数组 JSON（图片 V1.5 走 human 通道，零迁移演进）
+        captured_by TEXT NOT NULL DEFAULT 'me',         -- 多人预留钉子（主草案 §3.4）
+        plan_id TEXT REFERENCES plans(id),              -- 可空=null=未归属池；NO ACTION 护栏，detach 处置归命令层
+        block_id TEXT,                                  -- 软引用不设外键（凭证比块长寿：日切删块/melted 不牵连凭证）
+        created_at INTEGER NOT NULL,                    -- 毫秒时间戳
+        updated_at INTEGER NOT NULL,                    -- 毫秒时间戳
+        version INTEGER NOT NULL DEFAULT 0              -- 乐观锁：提炼回填/改挂/作废走 CAS
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_artifacts_plan ON artifacts(plan_id)',
+    );
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS app_settings (
         key TEXT PRIMARY KEY,       -- 设置键注册表：lib/data/settings.dart SettingsKeys
         value TEXT NOT NULL,        -- 统一字符串存储，类型编解码在 SettingsKeys/命令层
@@ -163,6 +191,32 @@ class Db {
     ''');
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_backgrounds_plan ON backgrounds(plan_id)',
+    );
+  }
+
+  /// 幂等补齐 artifacts（v3→v4，2026-10-07）：硬事实凭证层（fact-user-relay-draft.md §1.1）。
+  static Future<void> _ensureArtifactsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS artifacts (
+        id TEXT NOT NULL PRIMARY KEY,
+        category TEXT NOT NULL,
+        source_kind TEXT NOT NULL,
+        state TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        title TEXT NOT NULL,
+        badge TEXT,
+        payload TEXT NOT NULL,
+        attachments TEXT NOT NULL,
+        captured_by TEXT NOT NULL DEFAULT 'me',
+        plan_id TEXT REFERENCES plans(id),
+        block_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        version INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_artifacts_plan ON artifacts(plan_id)',
     );
   }
 }

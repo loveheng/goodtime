@@ -8,6 +8,7 @@ import 'ui/app_gate.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppServices.init();
+  await AppServices.initFlutter();
   runApp(const ShiguangApp());
 }
 

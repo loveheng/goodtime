@@ -67,3 +67,16 @@ abstract final class ScheduleRules {
   /// AI 应建议改为长期背景（去掉日期窗）——劝改非拦截，防数组膨胀。
   static const int backgroundDateWindowAdviseDays = 14;
 }
+
+/// 事实凭证常量（fact-user-relay-draft.md §1.2，2026-10-07 拍板）。
+///
+/// **同源单一出处**：命令层截断/校验、工具描述约束、UI 渲染防御一律引本处。
+abstract final class ArtifactRules {
+  /// badge 微标 12 字符命令层截断（44dp 块卡 UI 硬约束——截断优于拒绝；
+  /// UI 渲染层另有 maxWidth 96dp+ellipsis 双层防御，标题空间优先）。
+  static const int badgeMaxChars = 12;
+
+  /// hero_metrics 通关区 ≤3 组：AI 传入超 3 项命令层**截前 3 落库不阻断**
+  /// （与 badge 同款「截断优于拒绝」；工具描述同步约束 ≤3 为主防线）。
+  static const int heroMetricsMax = 3;
+}

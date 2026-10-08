@@ -54,6 +54,21 @@ class QuickNoteDraft {
   }
 }
 
+/// 快记抽屉统一入口（FAB 与清单空态共用，2026-10-08 拍板）：预载草稿 → 键盘吸附抽屉。
+Future<void> showQuickNoteSheet(BuildContext context) async {
+  final draft = await QuickNoteDraft.load();
+  if (!context.mounted) return;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) => Padding(
+      padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
+      child: QuickNotePanel(initial: draft),
+    ),
+  );
+}
+
 /// 右下角快记悬浮钮：两 Tab 恒在；草稿在盘时右上角 6dp 琥珀点（sparkStroke）。
 class QuickNoteFab extends StatefulWidget {
   const QuickNoteFab({super.key});
@@ -74,18 +89,8 @@ class _QuickNoteFabState extends State<QuickNoteFab> {
     ));
   }
 
-  Future<void> _open(BuildContext context) async {
-    final draft = await QuickNoteDraft.load();
-    if (!context.mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
-        child: QuickNotePanel(initial: draft),
-      ),
-    );
+  Future<void> _open(BuildContext context) {
+    return showQuickNoteSheet(context);
   }
 
   @override

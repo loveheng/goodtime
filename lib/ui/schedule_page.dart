@@ -8,6 +8,7 @@ import '../action/queries.dart';
 import '../action/rules.dart';
 import '../app_services.dart';
 import '../data/repository.dart';
+import '../models/artifact.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
@@ -32,6 +33,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
   /// 顶部「日｜周｜月」三段切换（§4，2026-10-06 拍板）
   String _viewMode = 'day'; // day | week | month
+
+  /// 时间轴滚动控制柄（「回到现在」定位，2026-10-08 拍板）
+  final GlobalKey<_TimelineState> _timelineKey = GlobalKey();
 
   /// 日视图选中日期（日期参数化：可从周/月跳入任意一天回看历史）
   late DateTime _selected = scheduleDayOf(DateTime.now(), _wakeGuess);
@@ -64,6 +68,16 @@ class _SchedulePageState extends State<SchedulePage> {
     final plans = <String, Plan?>{
       for (final id in planIds) id: await _repo.planById(id),
     };
+    // 关联凭证（§2.1 入口 2）：blockId → artifact 映射（最多一枚/块），
+    // 🎫 微标与块浮层通关卡同源数据
+    final artifactIds = {
+      for (final b in blocks) b.id!,
+    };
+    final artifactsByBlock = <String, Artifact>{};
+    for (final bid in artifactIds) {
+      final a = await _repo.artifactForBlock(bid);
+      if (a != null) artifactsByBlock[bid] = a;
+    }
     final cleanSlate = settings['initialized'] == true
         ? await queries.isBreakdown()
         : false;
@@ -87,6 +101,7 @@ class _SchedulePageState extends State<SchedulePage> {
       cleanSlate: cleanSlate,
       energy: settings['today_energy'] as String? ?? 'normal',
       roam: roam,
+      artifactsByBlock: artifactsByBlock,
     );
   }
 
@@ -141,6 +156,7 @@ class _SchedulePageState extends State<SchedulePage> {
                       if (data == null) return const SizedBox.shrink();
                       return _DayView(
                         data: data,
+                        timelineKey: _timelineKey,
                         onPickToday: _backToToday,
                         onPrevDay: () => _shiftDay(-1),
                         onNextDay: () => _shiftDay(1),
@@ -198,6 +214,7 @@ class DayData {
     this.isToday = true,
     this.energy = 'normal',
     this.roam = false,
+    this.artifactsByBlock = const {},
   });
 
   final int wake;
@@ -210,6 +227,9 @@ class DayData {
   final Map<String, Plan?> plans;
   final Map<String, Object?> settings;
   final bool cleanSlate;
+
+  /// 关联凭证映射（blockId → artifact；§2.1 入口 2 🎫 微标 + 块浮层通关卡）。
+  final Map<String, Artifact> artifactsByBlock;
 
   /// 选中日是否为作息日「今天」（回看历史日时隐藏提案卡等今日专属件）。
   final bool isToday;
@@ -260,12 +280,17 @@ class DayData {
 class _DayView extends StatelessWidget {
   const _DayView({
     required this.data,
+    required this.timelineKey,
     required this.onPickToday,
     required this.onPrevDay,
     required this.onNextDay,
   });
 
   final DayData data;
+
+  /// 时间轴滚动控制柄：「回到现在」定位（2026-10-08 拍板）。
+  final GlobalKey<_TimelineState>? timelineKey;
+
   final VoidCallback onPickToday;
   final VoidCallback onPrevDay;
   final VoidCallback onNextDay;
@@ -293,6 +318,12 @@ class _DayView extends StatelessWidget {
                         .bodySmall
                         ?.copyWith(color: Theme.of(context).colorScheme.primary)),
               const Spacer(),
+              if (data.isToday)
+                TextButton(
+                  onPressed: () =>
+                      timelineKey?.currentState?.goNow(animate: true),
+                  child: const Text('回到现在', style: TextStyle(fontSize: 12)),
+                ),
               IconButton(
                 icon: const Icon(Icons.warning_amber_outlined, size: 20),
                 tooltip: '遇到突发情况？',
@@ -334,7 +365,7 @@ class _DayView extends StatelessWidget {
         Expanded(
           child: data.visibleBlocks.isEmpty
               ? _EmptyState(data: data)
-              : _Timeline(data: data),
+              : _Timeline(key: timelineKey, data: data),
         ),
       ],
     );
@@ -740,14 +771,56 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _Timeline extends StatelessWidget {
-  const _Timeline({required this.data});
+class _Timeline extends StatefulWidget {
+  const _Timeline({super.key, required this.data});
 
   final DayData data;
+
+  @override
+  State<_Timeline> createState() => _TimelineState();
+}
+
+/// 时间轴（§3.5）：今日打开定位当前时刻线（2026-10-08 拍板）——首帧后把
+/// 「现在」居中，免滚动寻位；历史日回看仍从窗首开始。
+class _TimelineState extends State<_Timeline> {
+  DayData get data => widget.data;
+
+  final ScrollController _scroll = ScrollController();
 
   static const _gutterWidth = 52.0;
   double get _windowMinutes => (data.sleepAdj - data.wake).toDouble();
   double get _windowHeight => _windowMinutes * StScale.dpPerMinute;
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧后定位（hasClients 前不能 jumpTo）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (data.isToday) goNow();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// 「现在」居中；窗外（凌晨/深夜）钳到首尾。供 header「回到现在」按钮复用。
+  void goNow({bool animate = false}) {
+    if (!_scroll.hasClients) return;
+    final viewport = _scroll.position.viewportDimension;
+    final maxScroll = _windowHeight > viewport ? _windowHeight - viewport : 0.0;
+    final target =
+        (minutesOfDay(DateTime.now()) - data.wake) * StScale.dpPerMinute - viewport / 2;
+    final clamped = target.clamp(0.0, maxScroll);
+    if (animate) {
+      _scroll.animateTo(clamped,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    } else {
+      _scroll.jumpTo(clamped);
+    }
+  }
 
   double _topOf(int minutes) =>
       (minutes - data.wake).clamp(0, _windowMinutes) * StScale.dpPerMinute;
@@ -758,7 +831,6 @@ class _Timeline extends StatelessWidget {
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
       final timelineWidth = constraints.maxWidth - _gutterWidth - 16;
@@ -766,6 +838,7 @@ class _Timeline extends StatelessWidget {
         children: [
           Expanded(
             child: SingleChildScrollView(
+              controller: _scroll,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, StScale.fabClearanceDp),
                 child: SizedBox(
@@ -1135,6 +1208,15 @@ class _BlockCard extends StatelessWidget {
                   child: Text('📋',
                       style: TextStyle(fontSize: 10, color: textColor)),
                 ),
+              // 🎫 凭证微标（§2.1 入口 2）：blockId 有非 voided 凭证即挂；
+              // 文本=badge（有则显），无 badge 只显票形
+              if (data.artifactsByBlock[block.id!] != null)
+                Positioned(
+                  left: 0,
+                  top: block.planId != null && !block.pinned ? 12 : 0,
+                  child: _voucherMark(
+                      data.artifactsByBlock[block.id!]!.badge, textColor),
+                ),
               if (isDone)
                 Positioned(
                   right: 0,
@@ -1156,6 +1238,23 @@ class _BlockCard extends StatelessWidget {
         ),
         child: Text(text,
             style: const TextStyle(fontSize: 9, color: Colors.white, height: 1.2)),
+      );
+
+  /// 🎫 凭证微标（ui-spec §0.4）：票形 + badge 文本（有则显，ellipsis 96dp 同
+  /// 凭证卡 badge 口径）；微标不挡块主文本（左下挂角）。
+  Widget _voucherMark(String? badge, Color textColor) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('🎫', style: TextStyle(fontSize: 10)),
+          if (badge != null && badge.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 60),
+              child: Text(badge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 9, color: textColor)),
+            ),
+        ],
       );
 }
 
@@ -1180,21 +1279,44 @@ class _GestureBlockState extends State<_GestureBlock> {
 
   ScheduleBlock get _b => widget.block;
 
-  Future<void> _run(Future<CommandResult> Function() run) async {
+  /// 手势写回：融化/换乘后块立即从时间轴卸载（melted 不渲染/块被替换），
+  /// messenger 须在 await 前捕获（同遗留区 _act 口径），否则完成提示丢失。
+  /// [canUndo]：融化误触撤销——RestoreBlock 还原回手势前状态。
+  Future<void> _run(Future<CommandResult> Function() run,
+      {bool canUndo = false}) async {
     if (_busy) return;
     setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final prevStatus = _b.status; // 旧快照对象不随 db 新态 = 撤销目标态
     try {
       final r = await run();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(r.note ?? '完成'), duration: const Duration(seconds: 2)),
-        );
-      }
+      final undo = canUndo
+          ? SnackBarAction(
+              label: '撤销',
+              onPressed: () async {
+                try {
+                  final ur = await CommandHandler(AppServices.repo)
+                      .execute(RestoreBlockCommand(_b.id!, toStatus: prevStatus));
+                  messenger.showSnackBar(SnackBar(
+                      content: Text(ur.note ?? '已恢复'),
+                      duration: const Duration(seconds: 2)));
+                } on ActionException catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text(e.message)));
+                }
+              },
+            )
+          : null;
+      messenger.showSnackBar(SnackBar(
+        content: Text(r.note ?? '完成'),
+        duration:
+            undo == null ? const Duration(seconds: 2) : const Duration(seconds: 5),
+        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-spec §3 层叠规则）
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
+        action: undo,
+      ));
     } on ActionException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
-      }
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _dx = 0);
     }
@@ -1202,8 +1324,10 @@ class _GestureBlockState extends State<_GestureBlock> {
 
   Future<void> _melt() async {
     HapticFeedback.mediumImpact();
-    await _run(() => CommandHandler(AppServices.repo)
-        .execute(MeltBlockCommand(_b.id!, expectedVersion: _b.version)));
+    await _run(
+        () => CommandHandler(AppServices.repo)
+            .execute(MeltBlockCommand(_b.id!, expectedVersion: _b.version)),
+        canUndo: true);
   }
 
   Future<void> _swap() async {
@@ -1494,7 +1618,7 @@ class _WeekView extends StatelessWidget {
                                 child: Padding(
                                   padding: const EdgeInsets.all(2),
                                   child: Text(
-                                    '${(d['date'] as String).substring(8)}日 周${d['weekday']}'
+                                    '${tryParseIsoDate(d['date'] as String)!.day}日 周${d['weekday']}'
                                     '${d['exception'] != null ? ' 🏖' : ''}',
                                     textAlign: TextAlign.center,
                                     style: Theme.of(context)

@@ -30,6 +30,11 @@ class StColors {
   static Color celebrationBg = const Color(0xFFFFF3D6);
   static Color celebrationStroke = const Color(0xFFD4AF37);
 
+  /// 凭证通关卡 Hero 面（ui-spec §0.1 voucherSurface，2026-10-08 切片 6）：
+  /// 色系近 spark 琥珀、**不用庆祝金**——庆祝金语义专属犒劳时刻；描边复用
+  /// sparkStroke 不引新色（verbal 待核实角标同款纪律）。
+  static Color voucherBg = const Color(0xFFFFECB3);
+
   /// 🛡️ 能量补给带（派生渲染不入库；界面文案「留白缓冲」）。
   static Color supplyBandBg = const Color(0xFFE8F5E9);
   static Color supplyBandStroke = const Color(0xFF81C784);
@@ -67,6 +72,7 @@ class StColors {
     roamStroke = const Color(0x6690CAF9);
     celebrationBg = dark ? const Color(0xFF3B3323) : const Color(0xFFFFF3D6);
     celebrationStroke = const Color(0xFFD4AF37);
+    voucherBg = dark ? const Color(0xFF3A2F12) : const Color(0xFFFFECB3);
     supplyBandBg = dark ? const Color(0xFF1E3324) : const Color(0xFFE8F5E9);
     supplyBandStroke = const Color(0xFF81C784);
     freeFlowBg = dark ? const Color(0xFF1F2E1B) : const Color(0xFFF1F8E9);

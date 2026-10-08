@@ -8,11 +8,14 @@ import '../action/commands.dart';
 import '../action/queries.dart';
 import '../app_services.dart';
 import '../data/repository.dart';
+import '../models/artifact.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
+import 'fact_sheet.dart';
 import 'plan_detail_page.dart';
+import 'quick_note_fab.dart';
 
 /// 清单页 M1（ui-spec §5 裁剪）：三分区单页滚动——今天（今日有块的 plan）/
 /// 当下推进中（有未来块）/ 待安排（四象限分组、空组隐藏、Q4=愿望池）。
@@ -49,6 +52,8 @@ class PlansPage extends StatelessWidget {
     final todayIso = isoDate(today);
     // 冷藏池需要 archived 条目：一次查询带回，_load 内分流
     final plans = await _repo.listPlans(includeArchived: true);
+    // 未归属凭证派生计数（§1.7）：N=0 提示行隐藏，不入库
+    final unattributedFacts = await _repo.artifactsUnattributed();
 
     final todayBlocks = await _repo.blocksOnDate(todayIso);
     final planOfBlock = <String, String>{}; // block planId -> date
@@ -99,6 +104,7 @@ class PlansPage extends StatelessWidget {
       proposedByPlan: proposedByPlan,
       sparkPlanIds: sparkPlanIds,
       todayIso: todayIso,
+      unattributedFacts: unattributedFacts,
     );
   }
 
@@ -109,8 +115,20 @@ class PlansPage extends StatelessWidget {
         view.archivedPlans.isEmpty; // 冷藏池有货也不算空池
     if (empty) {
       return Center(
-        child: Text('池子空空的——想到什么就记下来，30 秒的事',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: StColors.textSecondary)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('池子空空的——想到什么就记下来，30 秒的事',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: StColors.textSecondary)),
+            const SizedBox(height: 16),
+            // 空态给出口：文案旁直接可记（同日程页空态「自己放一件事进来」口径，
+            // 2026-10-08 拍板）；入口复用快记抽屉（quick_note_fab 统一通道）
+            FilledButton.tonal(
+              onPressed: () => showQuickNoteSheet(context),
+              child: const Text('记一笔'),
+            ),
+          ],
+        ),
       );
     }
     return SingleChildScrollView(
@@ -118,6 +136,38 @@ class PlansPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // 未归属凭证派生入口（§1.7 定稿修正）：N=0 隐藏，派生计数不入库；
+          // 管理面板复用挂载 sheet 常驻组形态（fact_sheet.dart 同源）
+          if (view.unattributedFacts.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: StColors.voucherBg,
+                borderRadius: BorderRadius.circular(StScale.radiusCard),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(StScale.radiusCard),
+                  onTap: () => showUnattributedFactsPanel(context),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    child: Row(children: [
+                      const Icon(Icons.folder_shared_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                            '${view.unattributedFacts.length} 条未归属凭证',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w600)),
+                      ),
+                      Icon(Icons.chevron_right,
+                          size: 18, color: StColors.textSecondary),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
           if (view.today.isNotEmpty) ...[
             _sectionTitle(context, '今天'),
             for (final p in view.today)
@@ -185,6 +235,7 @@ class _PlansView {
     required this.proposedByPlan,
     required this.sparkPlanIds,
     required this.todayIso,
+    required this.unattributedFacts,
   });
 
   final List<Plan> today;
@@ -194,6 +245,7 @@ class _PlansView {
   final Map<String, int> proposedByPlan;
   final Set<String> sparkPlanIds;
   final String todayIso;
+  final List<Artifact> unattributedFacts;
 }
 
 /// 冷藏池（schedule-app §8；界面文案「收起的旧想法 · N 条」词汇表 §0.4）：

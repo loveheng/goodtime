@@ -15,3 +15,5 @@ UI测试：testWidgets(FakeAsync) × sqflite ffi 组合下流程测试卡死互�
 手势widget测试：testWidgets 里拖拽触发命令链后单次长 runAsync 窗口不推进多跳 I/O，跨 zone 续跑堆积致 isolate 崩溃 ➔ pumpFlush 多轮 runAsync+pump 逐跳冲刷（见 [UI测试] 三板斧）；仍崩则撤下 widget 级改真机走查（熔断） (Ref: misc)
 
 android构建：AGP 报多条「Dependency androidx.* requires … compile against version 34 or later; :插件 is currently compiled against android-33」➔ 缓存内陈旧插件硬编码 compileSdkVersion 33，其 androidx 依赖元数据要求 minCompileSdk≥34；Flutter 工具链只拦插件高于 app、不抬低者（FlutterPluginUtils 仅 higher 校验）➔ 根 android/build.gradle.kts 对 com.android.library 子项目钳制 compileSdk≥36；根脚本期 :app 已被 evaluationDependsOn 评估完，直接 subprojects{afterEvaluate} 会抛 already evaluated，须按 state.executed 分两路 (Ref: m1)
+
+Node 22 fetch 上传恒 ETIMEDOUT 而 curl/裸 net.connect 均通：autoSelectFamily（Happy Eyeballs）单次连接尝试默认 250ms 上限，RTT ~300ms 的远端（如 Cloudflare S3 API *.r2.cloudflarestorage.com）每次尝试必被杀，AggregateError 列出全部候选 IP 超时 ➔ `node --no-network-family-autoselection --dns-result-order=ipv4first` 关竞速按解析序直连；release-r2.sh 上传调用已固化此参数 (Ref: m1)

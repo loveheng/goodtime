@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../data/repository.dart';
 import '../data/settings.dart';
 import 'dart:math' show min;
+import '../models/artifact.dart';
 import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
@@ -63,6 +64,7 @@ class CommandHandler {
         final SwapBlockCommand c => _swapBlock(c),
         final DegradeBlockCommand c => _degradeBlock(c),
         final MeltBlockCommand c => _meltBlock(c),
+        final RestoreBlockCommand c => _restoreBlock(c),
         final ReflowDayCommand c => _reflowDay(c),
         final DeletePlanCommand c => _deletePlan(c),
         final ConfirmBlockCommand c => _confirmBlock(c),
@@ -76,6 +78,8 @@ class CommandHandler {
         final UpdateFixedSlotsCommand c => _updateFixedSlots(c),
         final UpsertBackgroundCommand c => _upsertBackground(c, actor),
         final MergeBackgroundsCommand c => _mergeBackgrounds(c, actor),
+        final UpsertFactsCommand c => _upsertFacts(c, actor),
+        final DeleteArtifactCommand c => _deleteArtifact(c),
       };
 
   void _gate(ScheduleCommand cmd, CommandActor actor) {
@@ -87,6 +91,7 @@ class CommandHandler {
       SwapBlockCommand() ||
       DegradeBlockCommand() ||
       MeltBlockCommand() ||
+      RestoreBlockCommand() ||
       ReflowDayCommand() ||
       DeletePlanCommand() ||
       ConfirmBlockCommand() ||
@@ -95,6 +100,7 @@ class CommandHandler {
       ShiftBlockCommand() ||
       TickBlockCommand() ||
       PostponeBlockCommand() ||
+      DeleteArtifactCommand() ||
       PanicClearCommand() =>
         true,
       _ => false,
@@ -541,18 +547,39 @@ class CommandHandler {
     );
   }
 
-  /// 删除计划（human 专属）：同事务显式级联销毁该 plan 名下全部背景（背景草案 §2
-  /// ——语境随本体消亡，物理删除不留孤儿；否决 DDL CASCADE，外键仍是「未处置引用
-  /// 让删除硬失败」的护栏，处置语义在命令层）。子计划/日程块引用仍硬失败，
-  /// 且事务整体回滚（背景原样保留，删除是全有或全无）。
+  /// 删除计划（human 专属）：同事务显式处置两软表——背景级联销毁（语境随本体
+  /// 消亡，物理删除不留孤儿）；artifacts **detach 至未归属池**（§1.1：凭证=现实
+  /// 存证，删计划≠删现实——双写铁律，列 plan_id 置 null 与 payload 投影字段同
+  /// 事务同步）。子计划/日程块引用仍硬失败，且事务整体回滚（删除是全有或全无）。
   Future<CommandResult> _deletePlan(DeletePlanCommand cmd) async {
     await _requirePlan(cmd.id);
     final purged = <String>[];
+    var detached = 0;
     try {
       await _repo.transaction((txn) async {
         final rows = await txn.query('backgrounds',
             columns: ['id'], where: 'plan_id = ?', whereArgs: [cmd.id]);
         await txn.delete('backgrounds', where: 'plan_id = ?', whereArgs: [cmd.id]);
+        final artRows = await txn.query('artifacts',
+            columns: ['id', 'payload', 'version'],
+            where: 'plan_id = ?',
+            whereArgs: [cmd.id]);
+        final now = DateTime.now().millisecondsSinceEpoch;
+        for (final r in artRows) {
+          await txn.update(
+            'artifacts',
+            {
+              'plan_id': null,
+              'payload': Artifact.encodePayload(
+                  Artifact.payloadWithRefs(Artifact.decodePayload(r['payload'] as String?), planId: null)),
+              'updated_at': now,
+              'version': (r['version'] as int? ?? 0) + 1,
+            },
+            where: 'id = ?',
+            whereArgs: [r['id'] as String],
+          );
+        }
+        detached = artRows.length;
         await txn.delete('plans', where: 'id = ?', whereArgs: [cmd.id]);
         purged.addAll([for (final r in rows) r['id'] as String]);
       });
@@ -563,11 +590,299 @@ class CommandHandler {
         hint: '先处理引用（块否决/子计划删除）或改用「归档」',
       );
     }
+    final parts = <String>[
+      if (purged.isNotEmpty) '名下 ${purged.length} 条背景随计划销毁',
+      if (detached > 0) '$detached 条凭证已移入未归属',
+    ];
     return CommandResult(
       op: cmd.op,
       targetId: cmd.id,
-      note: purged.isEmpty ? '已删除' : '已删除（名下 ${purged.length} 条背景随计划一并销毁）',
+      note: parts.isEmpty ? '已删除' : '已删除（${parts.join('；')}）',
     );
+  }
+
+  // ---- artifacts（事实凭证，fact-user-relay-draft.md §1.1/§1.4/§8-3）----
+
+  /// 事实凭证写：建档 / AI 提炼回填 / 改挂 / 作废四合一（human/ai 双 actor）。
+  /// - **双写铁律**（§1.1）：plan_id/block_id 列与 payload 投影字段同源同步
+  ///   （Artifact.payloadWithRefs 单点），严禁列新 JSON 旧；
+  /// - **截断优于拒绝**（§1.2）：badge 超 12 字符截断、hero_metrics 超 3 项截前 3；
+  /// - **raw_text 永存只增**：编辑传入不同原文时追加双段（改签 SOP 溯源）；
+  /// - **作废**（state=voided）：存证保留，关联块同事务解除 pinned（§1.4 反向
+  ///   销毁防护——绝不物理删块）。
+  Future<CommandResult> _upsertFacts(UpsertFactsCommand cmd, CommandActor actor) async {
+    _validateFactsEnums(cmd);
+    if (cmd.planId != null) await _requirePlan(cmd.planId!);
+    final notes = <String>[];
+    final badge = _clipBadge(cmd.badge, notes);
+    final heroMetrics = _clipHeroMetrics(cmd.heroMetrics, notes);
+
+    // ---- 建档（分享原文入册 raw 一字不解析 / AI 对话投喂直接结构化）----
+    if (cmd.id == null) {
+      if (cmd.title == null) {
+        throw ActionException('upsert_facts 建档需要 title', code: ActionErrorCode.invalidRequest);
+      }
+      if (cmd.origin == null) {
+        throw ActionException(
+          'upsert_facts 建档需要 origin（shared/quicknote/ai/manual）',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      if (cmd.category == null || cmd.sourceKind == null) {
+        throw ActionException(
+          'upsert_facts 建档需要 category/source_kind（编辑路径缺省=不变）',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      // 出生确认（§1.2）：raw 建档零解析定不了正确类别——猜即第二真相，
+      // 命令层强制 verbal/verbal 占位；终值由首次 structured 回填定（见编辑段）。
+      if ((cmd.state ?? Artifact.stateRaw) == Artifact.stateRaw &&
+          (cmd.category != Artifact.categoryVerbal || cmd.sourceKind != Artifact.sourceVerbal)) {
+        throw ActionException(
+          'raw 建档（state 缺省或=raw）只接受 category=verbal + source_kind=verbal；'
+          'AI 对话投喂结构化凭证请显式传 state="structured" 并给出正确的 category/source_kind',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      final payload = Artifact.payloadWithRefs(
+        {
+          'hero_metrics': ?heroMetrics,
+          'time_anchors': ?cmd.timeAnchors,
+          'constraints': ?cmd.constraints,
+          'location': ?cmd.location,
+          'copyable_code': ?cmd.copyableCode,
+          'contact_phone': ?cmd.contactPhone,
+          'raw_text': ?cmd.rawText,
+        },
+        planId: cmd.planId,
+        blockId: cmd.blockId,
+      );
+      final created = await _repo.addArtifact(Artifact(
+        category: cmd.category!,
+        sourceKind: cmd.sourceKind!,
+        state: cmd.state ?? Artifact.stateRaw,
+        origin: cmd.origin!,
+        title: cmd.title!,
+        badge: badge,
+        payload: payload,
+        planId: cmd.planId,
+        blockId: cmd.blockId,
+      ));
+      final baseNote = created.state == Artifact.stateRaw ? '已记下原文（待 AI 提炼）' : '已记录凭证';
+      return CommandResult(
+        op: cmd.op,
+        targetId: created.id,
+        snapshot: artifactToJson(created),
+        note: [baseNote, ...notes].join('；'),
+      );
+    }
+
+    // ---- 编辑（提炼回填 / 改挂 / 作废）：字段级 merge，只覆盖传入槽位 ----
+    final existing = await _repo.artifactById(cmd.id!);
+    if (existing == null) {
+      throw ActionException('凭证不存在: ${cmd.id}', code: ActionErrorCode.notFound);
+    }
+    if (cmd.expectedVersion != null && cmd.expectedVersion != existing.version) {
+      throw ActionException(
+        '版本冲突：凭证已被他人更新',
+        code: ActionErrorCode.versionConflict,
+        data: {'latest': artifactToJson(existing)},
+      );
+    }
+
+    // raw_text 追加双段只增不清（改签 SOP：改签前后两段短信都要留）
+    String? rawText = existing.payload['raw_text'] as String?;
+    if (cmd.rawText != null && cmd.rawText != rawText) {
+      final appended = rawText != null && rawText.isNotEmpty;
+      rawText = appended ? '$rawText\n${cmd.rawText}' : cmd.rawText;
+      if (appended) notes.add('原文已追加存档');
+    }
+
+    final mergedPayload = Artifact.payloadWithRefs(
+      {
+        ...existing.payload,
+        'hero_metrics': ?heroMetrics,
+        'time_anchors': ?cmd.timeAnchors,
+        'constraints': ?cmd.constraints,
+        'location': ?cmd.location,
+        'copyable_code': ?cmd.copyableCode,
+        'contact_phone': ?cmd.contactPhone,
+        'raw_text': ?rawText,
+      },
+      planId: cmd.planId ?? existing.planId,
+      blockId: cmd.blockId ?? existing.blockId,
+    );
+    // 出生确认（§1.2 唯一例外）：raw 占位行首次转 structured 时允许定
+    // category/source_kind 终值（单事务同写列）；structured 后二值恒不可变
+    // （枚举已在入口校验，此处只判出生状态）。非出生编辑缺省=沿用现值。
+    final birth = existing.state == Artifact.stateRaw &&
+        cmd.state == Artifact.stateStructured;
+    final patch = <String, Object?>{
+      'title': ?cmd.title,
+      'badge': ?badge,
+      if (cmd.state != null) 'state': cmd.state!,
+      if (birth) 'category': cmd.category ?? existing.category,
+      if (birth) 'source_kind': cmd.sourceKind ?? existing.sourceKind,
+      'payload': Artifact.encodePayload(mergedPayload),
+      if (cmd.planId != null) 'plan_id': cmd.planId,
+      if (cmd.blockId != null) 'block_id': cmd.blockId,
+    };
+    final demote = cmd.state == Artifact.stateVoided &&
+        existing.state != Artifact.stateVoided &&
+        existing.blockId != null;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _repo.transaction((txn) async {
+      await txn.update(
+        'artifacts',
+        {...patch, 'updated_at': now, 'version': existing.version + 1},
+        where: 'id = ? AND version = ?',
+        whereArgs: [cmd.id, existing.version],
+      );
+      if (demote) {
+        // 关联块失去事实来源挂载 → 从 pinned 降格为普通可调块（绝不删块）
+        await txn.rawUpdate(
+          'UPDATE schedule_blocks SET pinned = 0, version = version + 1, updated_at = ? WHERE id = ?',
+          [now, existing.blockId],
+        );
+      }
+    });
+    final fresh = (await _repo.artifactById(cmd.id!))!;
+    String editNote;
+    if (cmd.state == Artifact.stateVoided) {
+      editNote = '已标记作废（存证保留，关联块已解除钉定）';
+    } else if (cmd.planId != null && cmd.planId != existing.planId) {
+      editNote = '已改挂凭证';
+    } else {
+      editNote = '已更新凭证';
+    }
+    return CommandResult(
+      op: cmd.op,
+      targetId: fresh.id,
+      snapshot: artifactToJson(fresh),
+      note: [editNote, ...notes].join('；'),
+    );
+  }
+
+  /// 凭证物理删除（human 专属，_gate 拦 AI）：误分享文本清理；退票/作废走
+  /// upsert_facts state=voided。关联块同事务失去挂载并降格 pinned（§1.4 反向
+  /// 销毁防护——绝不物理删块）。
+  Future<CommandResult> _deleteArtifact(DeleteArtifactCommand cmd) async {
+    final existing = await _repo.artifactById(cmd.id);
+    if (existing == null) {
+      throw ActionException('凭证不存在: ${cmd.id}', code: ActionErrorCode.notFound);
+    }
+    var demoted = false;
+    await _repo.transaction((txn) async {
+      await txn.delete('artifacts', where: 'id = ?', whereArgs: [cmd.id]);
+      if (existing.blockId != null) {
+        final n = await txn.rawUpdate(
+          'UPDATE schedule_blocks SET pinned = 0, version = version + 1, updated_at = ? WHERE id = ?',
+          [DateTime.now().millisecondsSinceEpoch, existing.blockId],
+        );
+        demoted = n > 0;
+      }
+    });
+    return CommandResult(
+      op: cmd.op,
+      targetId: cmd.id,
+      note: demoted ? '已删除凭证（关联块已解除钉定，日程块保留）' : '已删除凭证',
+    );
+  }
+
+  // 枚举严进（写入口拒畸形；读侧容错防御是另一道，见 Artifact.decodePayload）
+  void _validateFactsEnums(UpsertFactsCommand cmd) {
+    const categories = {
+      Artifact.categoryTransit,
+      Artifact.categoryTicket,
+      Artifact.categoryHotel,
+      Artifact.categoryVenue,
+      Artifact.categoryVerbal,
+    };
+    if (cmd.category != null && !categories.contains(cmd.category)) {
+      throw ActionException(
+        'upsert_facts category 非法：${cmd.category}',
+        code: ActionErrorCode.invalidRequest,
+        hint: 'transit/ticket/hotel/venue/verbal',
+      );
+    }
+    if (cmd.sourceKind != null &&
+        !const {
+          Artifact.sourceBooking,
+          Artifact.sourceAnnouncement,
+          Artifact.sourceVerbal,
+        }.contains(cmd.sourceKind)) {
+      throw ActionException(
+        'upsert_facts source_kind 非法：${cmd.sourceKind}',
+        code: ActionErrorCode.invalidRequest,
+        hint: 'booking/announcement/verbal',
+      );
+    }
+    if (cmd.state != null &&
+        !const {
+          Artifact.stateRaw,
+          Artifact.stateStructured,
+          Artifact.stateVoided,
+        }.contains(cmd.state)) {
+      throw ActionException(
+        'upsert_facts state 非法：${cmd.state}',
+        code: ActionErrorCode.invalidRequest,
+        hint: 'raw/structured/voided',
+      );
+    }
+    if (cmd.origin != null &&
+        !const {
+          Artifact.originShared,
+          Artifact.originQuicknote,
+          Artifact.originAi,
+          Artifact.originManual,
+        }.contains(cmd.origin)) {
+      throw ActionException(
+        'upsert_facts origin 非法：${cmd.origin}',
+        code: ActionErrorCode.invalidRequest,
+        hint: 'shared/quicknote/ai/manual',
+      );
+    }
+    _validateTimeAnchors(cmd.op, cmd.timeAnchors);
+  }
+
+  /// time_anchors 写入口严进：kind ∈ moment/span/rule；date/end_date 给定必须合法
+  /// 日历日（复用 Background.isValidIsoDate 单点——一律日历日口径 §1.3）。
+  void _validateTimeAnchors(String op, List<Map<String, Object?>>? anchors) {
+    if (anchors == null) return;
+    for (var i = 0; i < anchors.length; i++) {
+      final a = anchors[i];
+      final kind = a['kind'];
+      if (kind is! String || !const {'moment', 'span', 'rule'}.contains(kind)) {
+        throw ActionException(
+          '$op time_anchors[$i] kind 非法：$kind（moment/span/rule）',
+          code: ActionErrorCode.invalidRequest,
+        );
+      }
+      for (final key in const {'date', 'end_date'}) {
+        final v = a[key];
+        if (v != null && (v is! String || !Background.isValidIsoDate(v))) {
+          throw ActionException(
+            '$op time_anchors[$i].$key 非法日期：$v（须为 YYYY-MM-DD 合法日历日）',
+            code: ActionErrorCode.invalidRequest,
+          );
+        }
+      }
+    }
+  }
+
+  String? _clipBadge(String? badge, List<String> notes) {
+    if (badge == null) return null;
+    if (badge.length <= ArtifactRules.badgeMaxChars) return badge;
+    notes.add('badge 超 ${ArtifactRules.badgeMaxChars} 字符已截断');
+    return badge.substring(0, ArtifactRules.badgeMaxChars);
+  }
+
+  /// hero_metrics 超 3 项截前 3 落库（截断优于拒绝，不阻断不抛错）
+  List<Map<String, Object?>>? _clipHeroMetrics(List<Map<String, Object?>>? raw, List<String> notes) {
+    if (raw == null) return null;
+    if (raw.length <= ArtifactRules.heroMetricsMax) return raw;
+    notes.add('hero_metrics 超 ${ArtifactRules.heroMetricsMax} 项已截前 ${ArtifactRules.heroMetricsMax}');
+    return raw.sublist(0, ArtifactRules.heroMetricsMax);
   }
 
   /// 窗口 [wake, sleepAdj) 内的空闲分钟数 = 窗长 − 占用并集∩窗（§6 可用时间口径，
@@ -901,6 +1216,37 @@ class CommandHandler {
       targetId: cmd.id,
       snapshot: blockToJson(fresh),
       note: '已暂缓，放回清单待安排（无痕，零心理负债）',
+    );
+  }
+
+  /// 恢复（UI 撤销通道）：melted/done → proposed/confirmed，仅这两个来源态可回退。
+  /// 派生件（保护区/车道）随 visibleBlocks 自动重算，恢复只需还原 status 一个字段。
+  Future<CommandResult> _restoreBlock(RestoreBlockCommand cmd) async {
+    final b = await _requireBlock(cmd.id);
+    if (b.status != ScheduleBlock.statusMelted && b.status != ScheduleBlock.statusDone) {
+      throw ActionException(
+        '仅「已暂缓」/「已完成」的块可恢复（当前 ${b.status}）',
+        code: ActionErrorCode.invalidRequest,
+        hint: '恢复只用于撤销误触的「暂缓」/「打卡」',
+      );
+    }
+    if (cmd.toStatus != ScheduleBlock.statusProposed &&
+        cmd.toStatus != ScheduleBlock.statusConfirmed) {
+      throw ActionException(
+          '恢复目标态须为 proposed/confirmed（收到 ${cmd.toStatus}）',
+          code: ActionErrorCode.invalidRequest);
+    }
+    final ok = await _repo.patchBlock(b.id!, {'status': cmd.toStatus},
+        expectedVersion: cmd.expectedVersion);
+    if (!ok) throw await _blockConflict(cmd.op, cmd.id);
+    final fresh = await _requireBlock(cmd.id);
+    return CommandResult(
+      op: cmd.op,
+      targetId: cmd.id,
+      snapshot: blockToJson(fresh),
+      note: cmd.toStatus == ScheduleBlock.statusConfirmed
+          ? '已恢复，回到日程'
+          : '已恢复，回到提案待确认',
     );
   }
 

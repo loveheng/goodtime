@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../action/command_handler.dart';
 import '../action/commands.dart';
 import '../app_services.dart';
+import '../models/artifact.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
+import 'fact_sheet.dart';
 import 'schedule_page.dart';
 
 /// 块浮层（M1 表单形态，ui-spec §10「点块表单」；Landing Gear 抽屉 M4）：
@@ -49,19 +51,46 @@ class _BlockSheetState extends State<_BlockSheet> {
   CommandHandler get _handler => CommandHandler(AppServices.repo);
   ScheduleBlock get _b => widget.block;
 
-  Future<void> _run(String action, Future<CommandResult> Function() run) async {
+  /// [canUndo]：打卡误触撤销——RestoreBlock 还原回打卡前状态（2026-10-08 拍板）。
+  Future<void> _run(String action, Future<CommandResult> Function() run,
+      {bool canUndo = false}) async {
     setState(() => _busy = action);
+    // pop 后本 sheet 卸载，messenger 与撤销目标态须在 await 前捕获
+    final messenger = ScaffoldMessenger.of(context);
+    final prevStatus = _b.status;
     try {
       final r = await run();
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(r.note ?? '完成'), duration: const Duration(seconds: 2)),
+      if (mounted) Navigator.of(context).pop();
+      SnackBarAction? undo;
+      if (canUndo) {
+        undo = SnackBarAction(
+          label: '撤销',
+          onPressed: () async {
+            try {
+              final ur = await CommandHandler(AppServices.repo).execute(
+                  RestoreBlockCommand(_b.id!, toStatus: prevStatus));
+              messenger.showSnackBar(SnackBar(
+                  content: Text(ur.note ?? '已恢复'),
+                  duration: const Duration(seconds: 2)));
+            } on ActionException catch (e) {
+              messenger.showSnackBar(SnackBar(content: Text(e.message)));
+            }
+          },
         );
       }
+      messenger.showSnackBar(SnackBar(
+        content: Text(r.note ?? '完成'),
+        duration: undo == null
+            ? const Duration(seconds: 2)
+            : const Duration(seconds: 5),
+        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-spec §3 层叠规则）
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
+        action: undo,
+      ));
     } on ActionException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)),
         );
       }
@@ -73,6 +102,8 @@ class _BlockSheetState extends State<_BlockSheet> {
   @override
   Widget build(BuildContext context) {
     final planFuture = _b.planId == null ? Future<Plan?>.value(null) : AppServices.repo.planById(_b.planId!);
+    // 关联凭证（§7 块浮层通关卡）：「马上开始」→ 关联凭证首屏；无凭证整层消失
+    final artifactFuture = AppServices.repo.artifactForBlock(_b.id!);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -86,6 +117,17 @@ class _BlockSheetState extends State<_BlockSheet> {
               children: [
                 _header(context, plan),
                 const SizedBox(height: 12),
+                FutureBuilder<Artifact?>(
+                  future: artifactFuture,
+                  builder: (context, aSnap) {
+                    final fact = aSnap.data;
+                    if (fact == null) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: FactDetailSheet(fact: fact, block: _b, padding: EdgeInsets.zero),
+                    );
+                  },
+                ),
                 if (_editing) _editForm(context) else _actions(context),
               ],
             );
@@ -162,7 +204,8 @@ class _BlockSheetState extends State<_BlockSheet> {
           FilledButton.tonal(
             onPressed: _busy == null
                 ? () => _run('tick',
-                    () => _handler.execute(TickBlockCommand(_b.id!, expectedVersion: _b.version)))
+                    () => _handler.execute(TickBlockCommand(_b.id!, expectedVersion: _b.version)),
+                    canUndo: true)
                 : null,
             child: const Text('打卡'),
           ),

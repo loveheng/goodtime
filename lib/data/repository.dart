@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../models/artifact.dart';
 import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
@@ -261,6 +262,147 @@ class Repository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- artifacts ----------
+
+  /// patch 白名单（手编契约）：category/source_kind/origin/captured_by 出生不可变、
+  /// created_at 不可变——契约字段不在白名单内，patch 通道根本改不到。唯一例外=
+  /// 出生确认（fact 草案 §1.2）：首次 raw→structured 回填由命令层单事务直写列，
+  /// 不经此白名单（白名单只守卫 repo 级 patch 通道）。
+  /// payload=整段契约 JSON 串（命令层经 Artifact.encodePayload 单点编码并保证与
+  /// 投影列同源——双写铁律 §1.1）。
+  static const _artifactPatchColumns = {
+    'title', 'badge', 'state', 'payload', 'plan_id', 'block_id', //
+  };
+
+  Future<Artifact> addArtifact(Artifact art) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final a = Artifact(
+      id: art.id ?? newId(),
+      category: art.category,
+      sourceKind: art.sourceKind,
+      state: art.state,
+      origin: art.origin,
+      title: art.title,
+      badge: art.badge,
+      payload: art.payload,
+      attachments: art.attachments,
+      capturedBy: art.capturedBy,
+      planId: art.planId,
+      blockId: art.blockId,
+      createdAt: art.createdAt ?? now,
+      updatedAt: now,
+      version: 0,
+    );
+    final db = await _database();
+    await db.insert('artifacts', a.toMap());
+    notifyListeners();
+    return a;
+  }
+
+  Future<Artifact?> artifactById(String id) async {
+    final db = await _database();
+    final rows = await db.query('artifacts', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : Artifact.fromMap(rows.first);
+  }
+
+  /// 凭证区子树聚合（§8 施工微观约定 1）：调用方先用内存 PlanTree 收集目标计划及
+  /// 全部子孙 id，本方法**单条 SQL**完成多计划聚合（防逐子节点查询的列表抖动）。
+  /// state != voided：raw 保留（待提炼琥珀卡）、voided 不进卡面；created_at ASC 稳定序。
+  Future<List<Artifact>> artifactsForPlans(Iterable<String> planIds) async {
+    final ids = planIds.toList();
+    if (ids.isEmpty) return const [];
+    final db = await _database();
+    final marks = List.filled(ids.length, '?').join(', ');
+    final rows = await db.query(
+      'artifacts',
+      where: 'plan_id IN ($marks) AND state != ?',
+      whereArgs: [...ids, Artifact.stateVoided],
+      orderBy: 'created_at',
+    );
+    return [for (final r in rows) Artifact.fromMap(r)];
+  }
+
+  /// 按 state 取凭证行（读侧装配单点）：state='structured' 供 get_schedule 逐日
+  /// 搭载过滤、state='raw' 供 list_plans「N 条原文待提炼」摘要（§8 施工微观约定 3
+  /// 的白名单入口——排除 voided 由调用方按通道语义另行处理，raw/structured 天然不含）。
+  Future<List<Artifact>> artifactsByState(String state) async {
+    final db = await _database();
+    final rows = await db.query(
+      'artifacts',
+      where: 'state = ?',
+      whereArgs: [state],
+      orderBy: 'created_at',
+    );
+    return [for (final r in rows) Artifact.fromMap(r)];
+  }
+
+  /// 按关联块反查凭证（§2.1 入口 2 时间轴 🎫 微标 / 块浮层通关卡）：
+  /// block_id 软引用（无外键），最多一枚（删凭证不删块，§1.4）。voided 不进。
+  Future<Artifact?> artifactForBlock(String blockId) async {
+    final db = await _database();
+    final rows = await db.query(
+      'artifacts',
+      where: 'block_id = ? AND state != ?',
+      whereArgs: [blockId, Artifact.stateVoided],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : Artifact.fromMap(rows.first);
+  }
+
+  /// 未归属池（plan_id IS NULL；D2 宿主=挂载 sheet 常驻组+计划列表页派生入口）。
+  /// voided 不进卡面；created_at DESC 新者在前（管理面板先看刚分享进来的）。
+  Future<List<Artifact>> artifactsUnattributed() async {
+    final db = await _database();
+    final rows = await db.query(
+      'artifacts',
+      where: 'plan_id IS NULL AND state != ?',
+      whereArgs: [Artifact.stateVoided],
+      orderBy: 'created_at DESC',
+    );
+    return [for (final r in rows) Artifact.fromMap(r)];
+  }
+
+  /// state 白名单计数（§8 施工微观约定 3）：list_plans 快照「N 条原文待提炼」等
+  /// 聚合口径的单点；voided 由调用方按通道语义排除（raw 计数天然不含）。
+  Future<int> countArtifacts({String? state}) async {
+    final db = await _database();
+    final rows = await db.query(
+      'artifacts',
+      columns: ['COUNT(*) AS c'],
+      where: state == null ? null : 'state = ?',
+      whereArgs: state == null ? null : [state],
+    );
+    return rows.first['c'] as int;
+  }
+
+  /// 字段级 patch + 乐观锁，语义同 [patchPlan]（AI 提炼回填/改挂/作废共用；
+  /// payload 整段替换由命令层合并旧值后经 encodePayload 编码传入）。
+  Future<bool> patchArtifact(String id, Map<String, Object?> patch, {int? expectedVersion}) async {
+    final values = _whitelist(patch, _artifactPatchColumns);
+    if (values.isEmpty) return true;
+    final db = await _database();
+    final set = [for (final k in values.keys) '$k = ?', 'version = version + 1', 'updated_at = ?'].join(', ');
+    final where = expectedVersion == null ? 'id = ?' : 'id = ? AND version = ?';
+    final args = <Object?>[
+      ...values.values,
+      DateTime.now().millisecondsSinceEpoch,
+      id,
+      ?expectedVersion,
+    ];
+    final n = await db.rawUpdate('UPDATE artifacts SET $set WHERE $where', args);
+    if (n > 0) notifyListeners();
+    return n > 0;
+  }
+
+  /// 物理删除（DeleteArtifact 仅 human 通道：误分享文本清理；AI 无删除权。
+  /// 删凭证绝不删块——pinned 降格处置在命令层，§1.4 反向销毁防护）。
+  Future<void> deleteArtifact(String id) async {
+    final db = await _database();
+    final n = await db.delete('artifacts', where: 'id = ?', whereArgs: [id]);
+    if (n == 0) throw StateError('artifact 不存在: $id');
+    notifyListeners();
+  }
+
   // ---------- fixed_slots ----------
 
   Future<List<FixedSlot>> listFixedSlots() async {
@@ -441,7 +583,7 @@ class Repository extends ChangeNotifier {
     return n > 0;
   }
 
-  /// 全量导出（§11 数据出口「导出 JSON 全量」）：五个存储面一次 JSON 化，
+  /// 全量导出（§11 数据出口「导出 JSON 全量」）：六个存储面一次 JSON 化，
   /// 备份/迁移用途；设置页一键触发。
   Future<Map<String, Object?>> exportAll() async {
     final db = await _database();
@@ -451,6 +593,7 @@ class Repository extends ChangeNotifier {
       'fixed_slots': await db.query('fixed_slots'),
       'schedule_blocks': await db.query('schedule_blocks'),
       'backgrounds': await db.query('backgrounds'),
+      'artifacts': await db.query('artifacts'),
       'app_settings': await db.query('app_settings'),
     };
   }

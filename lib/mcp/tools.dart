@@ -4,6 +4,7 @@ import '../action/command_handler.dart';
 import '../action/commands.dart';
 import '../action/queries.dart';
 import '../data/repository.dart';
+import '../models/artifact.dart';
 import '../models/background.dart';
 import '../service/weather.dart';
 import '../util/schedule_day.dart';
@@ -11,7 +12,8 @@ import '../data/settings.dart';
 import 'jsonrpc.dart';
 
 /// MCP 工具面（schedule-app.md §6 原十排程工具 + suggest_user_setting 建言通道 +
-/// 背景双工具 upsert_background/merge_backgrounds，背景草案 §2/§4，2026-10-07）。
+/// 背景双工具 upsert_background/merge_backgrounds（背景草案 §2/§4）+
+/// upsert_facts 硬事实通道（fact-user-relay-draft.md §8-4，2026-10-07））。
 ///
 /// 本层只做三件事，**不做任何业务判断**（防呆全在命令层，模式照抄拾贝 tools.dart）：
 /// ① 把大模型输出的 JSON 反序列化成 [ScheduleCommand]（与 UI 组装的同一类对象，
@@ -177,7 +179,8 @@ List<Map<String, Object?>> toolSchemas() => [
                 '否则整单拒绝并逐条返回原因 + available_free_windows。'
                 '调用前必须先 get_schedule 读当天分布（先读后排）；只排明确态的叶子行动；'
                 'is_day_spark 指定当天最重要的一件事（至多一个）；你的提案只替换自己的未确认块，'
-                'human/pinned 块绕行。人确认后才生效。',
+                'human/pinned 块绕行。为视窗外远期行程排程时，get_schedule 的 upcoming_facts '
+                '锚点时间是硬约束，提案不得与之冲突。人确认后才生效。',
         'inputSchema': {
           'type': 'object',
           'properties': {
@@ -227,7 +230,12 @@ List<Map<String, Object?>> toolSchemas() => [
         'name': 'get_schedule',
         'description':
             '读今天+明天（可选 days≤3 拉长）的日程视图：块（含 effective_label=块 label 缺省回落计划标题）、'
-                'fixed_slots（当天开始+前夜溢出段）。日期由服务端供——「今天」按作息日切割，'
+                'fixed_slots（当天开始+前夜溢出段）、facts=当日结构化凭证摘要（发车/止检/止入场等硬约束'
+                '自动到达你的视线，随视窗逐日搭载；按计划分组，unattributed=未归属凭证——提案必须避开'
+                '锚点时刻并为赶路留缓冲）。upcoming_facts=视窗（3 天）之外未来 ~14 天的结构化凭证'
+                '轻量摘要（date/title/deadline_min/plan_title）——为远期行程（车票/门诊/门票）做规划时'
+                '这些锚点时间是硬约束，提案不得与之冲突；过远冷数据不搭载。'
+                '日期由服务端供——「今天」按作息日切割，'
                 '不要自己算日期。排程前的必读动作（先读后排）。',
         'inputSchema': {
           'type': 'object',
@@ -341,6 +349,93 @@ List<Map<String, Object?>> toolSchemas() => [
           'required': ['ops'],
         },
       },
+      {
+        'name': 'upsert_facts',
+        'description':
+            '写入硬事实凭证（车票/门票/酒店/场馆通知/口信——有刚性时空边界或到场约束的'
+                '事实，与软背景相对）：你是唯一解析器，端侧零解析。id 省略=建档（对话投喂'
+                '直接 state=structured；系统分享/快记原文已由 app 以 verbal/verbal 占位'
+                '入册为 raw，你在下一轮读 raw_text 提炼回填同 id——出生确认：该次回填'
+                '由你定 category/source_kind 终值，之后二值恒不可变）。id 给定=编辑'
+                '（字段级 merge 只覆盖传入槽位：'
+                '提炼回填 state=structured / 改挂 plan_id / 作废 state=voided——退票/取消'
+                '须先获用户同意；raw_text 传入不同原文时自动追加双段只增不清，不要重发'
+                '相同原文）。time_anchors 三类锚：moment（时刻：发车/止检，date+min）、'
+                'span（区段：乘车/入住，date+start_min+end_min，跨日加 end_date）、'
+                'rule（长期规则：周一闭馆）。badge 仅 booking 类显式给出（「05车12F」式'
+                '单值微标，超 12 字符自动截断）；hero_metrics ≤3 组 {k,v}（超 3 自动截前 3）；'
+                '低置信槽位宁可缺省不猜。三刀路由：有刚性时空边界→本工具；需用户做一次'
+                '行动→add_plan 或等待锚点；到场遵守/携带/注意→constraints 三数组'
+                '（required_items 要求/rules 禁止/notices 提示）；叙事性软上下文→'
+                'upsert_background。物理删除仅用户可做，你无权删除、只可提议。'
+                '写完必须向用户显式回显（「已记录凭证：xxx——不对就说我改」）。',
+        'inputSchema': {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'string', 'description': '凭证 uuid（省略=建档；给定且存在=编辑）'},
+            'category': {
+              'type': 'string',
+              'enum': ['transit', 'ticket', 'hotel', 'venue', 'verbal'],
+              'description': '交通/门票/住宿/须知/口头信息 五类收敛'
+            },
+            'source_kind': {
+              'type': 'string',
+              'enum': ['booking', 'announcement', 'verbal'],
+              'description': 'booking=官方预订凭证（可亮 hero+上时间轴）/ announcement=官方公告政策 / verbal=口头转述（永不硬拦）'
+            },
+            'state': {
+              'type': 'string',
+              'enum': ['raw', 'structured', 'voided'],
+              'description': '建档缺省 raw；提炼回填=structured；作废（退票/取消，须用户同意）=voided。AI 对话投喂结构化凭证（车票/门票等，能定类别与锚点）请显式传 structured，一步到位'
+            },
+            'title': {'type': 'string', 'description': '摘要标题（如「大理→丽江 动车 D8724」）'},
+            'origin': {
+              'type': 'string',
+              'enum': ['shared', 'quicknote', 'ai', 'manual'],
+              'description': '出生来源（建档必填）：shared=系统分享 / quicknote=快记粘贴 / ai=对话投喂'
+            },
+            'badge': {'type': 'string', 'description': '时间轴微标单值（05车12F；仅 booking 类；超 12 字符自动截断）'},
+            'hero_metrics': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'properties': {'k': {'type': 'string'}, 'v': {'type': 'string'}},
+                'required': ['k', 'v'],
+              },
+              'description': '通关区 KV ≤3 组（车厢座位/检票口/预约码），超 3 自动截前 3'
+            },
+            'time_anchors': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'role': {'type': 'string', 'description': '锚角色（发车/停止检票/入住）'},
+                  'kind': {'type': 'string', 'enum': ['moment', 'span', 'rule']},
+                  'date': {'type': 'string', 'description': 'YYYY-MM-DD 合法日历日'},
+                  'min': {'type': 'integer', 'description': 'moment 时刻分钟 0..1439'},
+                  'start_min': {'type': 'integer', 'description': 'span 起始分钟'},
+                  'end_min': {'type': 'integer', 'description': 'span 结束分钟'},
+                  'end_date': {'type': 'string', 'description': 'span 跨日结束日（缺省=单日）'},
+                },
+                'required': ['kind'],
+              },
+              'description': '时空锚数组：事实存锚点不存区段，驱动块生成/止检红线/一致性比对'
+            },
+            'constraints': {
+              'type': 'object',
+              'description': '三数组 required_items（要求带/做）/rules（禁止）/notices（提示）+机读参数 advance_arrival_minutes/forbidden_weekdays/daily_deadline_min',
+            },
+            'location': {'type': 'string', 'description': '地点（检票口/场馆地址；UI 转 geo: 导航）'},
+            'copyable_code': {'type': 'string', 'description': '订单号/预约码（UI 一键复制）'},
+            'contact_phone': {'type': 'string', 'description': '联系电话（UI 转 tel: 拨号）'},
+            'raw_text': {'type': 'string', 'description': '原文逐字永存（编辑传入不同原文=追加双段，不重发相同原文）'},
+            'plan_id': {'type': 'string', 'description': '归属计划（编辑给定=改挂；缺省=未归属池）'},
+            'block_id': {'type': 'string', 'description': '升格生成的关联块 id（一致性比对/🎫 微标数据源）'},
+            'expected_version': {'type': 'integer', 'description': '你看到的 version（编辑乐观锁，冲突回 latest）'},
+          },
+          'required': ['category', 'source_kind'],
+        },
+      },
     ];
 
 Future<List<Map<String, Object?>>> callTool(
@@ -356,9 +451,24 @@ Future<List<Map<String, Object?>>> callTool(
         includeArchived: args['include_archived'] == true,
         parentId: _str(args['parent_id']),
       );
+      // raw 凭证摘要搭载（fact 草案 §1.6/§1.7 消化 SOP）：「N 条原文待提炼」——
+      // 逐条读 raw_text 解析后经 upsert_facts 回填同 id（state=structured）
+      final rawFacts = await repo.artifactsByState(Artifact.stateRaw);
       return [
         _text(jsonEncode({
           'count': plans.length,
+          'raw_facts': {
+            'count': rawFacts.length,
+            'items': [
+              for (final f in rawFacts)
+                {
+                  'id': f.id,
+                  'title': f.title,
+                  'plan_id': ?f.planId,
+                  'raw_text': ?f.payload['raw_text'],
+                },
+            ],
+          },
           'plans': [
             for (final p in plans)
               {
@@ -490,6 +600,13 @@ Future<List<Map<String, Object?>>> callTool(
     case 'merge_backgrounds':
       final r = await _guarded(() => handler.execute(
             ScheduleCommand.fromJson({'op': 'merge_backgrounds', ...args}),
+            actor: CommandActor.ai,
+          ));
+      return [_text(jsonEncode(r.toJson()))];
+
+    case 'upsert_facts':
+      final r = await _guarded(() => handler.execute(
+            ScheduleCommand.fromJson({'op': 'upsert_facts', ...args}),
             actor: CommandActor.ai,
           ));
       return [_text(jsonEncode(r.toJson()))];

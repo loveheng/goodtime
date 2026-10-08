@@ -133,31 +133,65 @@ class _SettingsPageState extends State<SettingsPage> {
     final key = it['key']?.toString() ?? '';
     final reason = it['reason']?.toString() ?? '';
     final suggested = it['suggested_value']?.toString();
+    final hasValue = suggested != null && suggested.isNotEmpty;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.lightbulb_outline),
       title: Text('建议修改「$key」'),
-      subtitle: Text(suggested != null && suggested.isNotEmpty
-          ? '建议值：$suggested\n原因：$reason'
-          : '原因：$reason'),
-      isThreeLine: suggested != null && suggested.isNotEmpty,
-      trailing: IconButton(
-        icon: const Icon(Icons.check_circle_outline),
-        tooltip: '忽略',
-        onPressed: () async {
-          final raw = await _repo.settingsGet(SettingsKeys.aiSettingSuggestions);
-          if (raw == null) return;
-          final list = (jsonDecode(raw) as List)
-              .whereType<Map<Object?, Object?>>()
-              .map((e) => Map<String, Object?>.from(e))
-              .where((e) => e['id'] != it['id'])
-              .toList();
-          await _repo.settingsSet({SettingsKeys.aiSettingSuggestions: jsonEncode(list)});
-          if (!context.mounted) return;
-          setState(() => _sugFuture = _readSuggestions());
-        },
-      ),
+      subtitle: Text(hasValue ? '建议值：$suggested\n原因：$reason' : '原因：$reason'),
+      isThreeLine: hasValue,
+      // 采纳=写入建议值（✓）；忽略=移除建议（✕）。✓ 语义修复：原实现
+      // check 图标行为却是删除，与用户肌肉记忆相反（2026-10-08 拍板）。
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (hasValue)
+          IconButton(
+            icon: const Icon(Icons.check_circle_outline),
+            tooltip: '采纳',
+            onPressed: () => _applySuggestion(key, suggested),
+          ),
+        IconButton(
+          icon: const Icon(Icons.close),
+          tooltip: '忽略',
+          onPressed: () => _dismissSuggestion(it),
+        ),
+      ]),
     );
+  }
+
+  /// 采纳（2026-10-08 拍板）：建议值写入对应设置键后移除该建议。
+  /// 键白名单与发起侧同源（mcp tools.dart suggest_user_setting 的 uiOnly 五键）；
+  /// 非法值由命令层拦截并回错（同页其它设置写入口径）。
+  Future<void> _applySuggestion(String key, String suggested) async {
+    try {
+      await _handler
+          .execute(UpdateSettingsCommand(values: {key: suggested}));
+      await _removeSuggestion((e) => e['key'] == key);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已采纳：$key = $suggested'), duration: const Duration(seconds: 2)));
+    } on ActionException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
+    }
+  }
+
+  Future<void> _dismissSuggestion(Map<String, Object?> it) =>
+      _removeSuggestion((e) => e['id'] == it['id']);
+
+  /// 按判据移除建议条目并刷新（采纳/忽略共用写通道）。
+  Future<void> _removeSuggestion(
+      bool Function(Map<String, Object?>) test) async {
+    final raw = await _repo.settingsGet(SettingsKeys.aiSettingSuggestions);
+    if (raw == null) return;
+    final list = (jsonDecode(raw) as List)
+        .whereType<Map<Object?, Object?>>()
+        .map((e) => Map<String, Object?>.from(e))
+        .where((e) => !test(e))
+        .toList();
+    await _repo.settingsSet({SettingsKeys.aiSettingSuggestions: jsonEncode(list)});
+    if (!mounted) return;
+    setState(() => _sugFuture = _readSuggestions());
   }
 
   /// 应用内自更新 + 配置热更入口（docs/guide/self-update.md）。

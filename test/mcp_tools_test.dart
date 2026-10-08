@@ -40,7 +40,7 @@ void main() {
 
   Future<void> seedSettings() => repo.settingsSet({'wake_time': '420', 'sleep_time': '1380'});
 
-  test('工具面注册（§6 十个排程工具 + 建言通道 + 背景双工具）', () {
+  test('工具面注册（§6 十个排程工具 + 建言通道 + 背景双工具 + 硬事实通道）', () {
     final names = [for (final t in toolSchemas()) t['name']];
     expect(names, [
       'list_plans',
@@ -56,6 +56,7 @@ void main() {
       'suggest_user_setting',
       'upsert_background',
       'merge_backgrounds',
+      'upsert_facts',
     ]);
   });
 

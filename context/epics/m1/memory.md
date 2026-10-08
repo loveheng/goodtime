@@ -24,7 +24,7 @@ last-merge: 2026-10-07
 - [2026-10-06] M4 现实接口：例外日旅行模式（固定占用挂起/填充率 min 合成/旗标水位线）+ 天气投影（Open-Meteo 无 key/TTL 1h/静默降级）+ 三日容量水位线 + reflow_day 水流重算（淹没留白→压 15min 火种→melted 蒸发三级阻尼）+ retro_log/swap_block/degrade_block/melt_block 四命令 + JSON 导出 + mDNS bonsoir 广播（shiguang-mcp._tcp fail-open，待真机实证）。
 - [2026-10-06] 日/周/月三视图并存（SSOT 修正落地）：日参数化回看/周 7 列网格/月格子摘要，weekOverview/monthOverview 派生查询同源零第二真相。
 - [2026-10-06] M4 UI 尾巴收官（functional-spec §1 M4 全清）：三手势（长按 400ms 坍缩/左滑 35% 换乘/右滑 45% 融化+手势锁+触觉）+ 四形态专项渲染（deep/spark/roam/庆祝香槟金）+ 逆向记账入口（空槽点过去时段→retro_log）+ Landing Gear「马上开始」headline + 放工守卫（sleep 前 2h 静默）+ swapCandidates 查询共享。
-- [2026-10-06] 拾贝好用脚本迁移 5 件入项目池：arch-guard（六条拾光规则）/build-apk/bump-version/commit-msg-gate/pre-commit-gate + git 钩子垫片（好放行/坏拦截实测）；release-r2 分发链路挂账待发布方式定。
+- [2026-10-06] 拾贝好用脚本迁移 5 件入项目池：arch-guard（六条拾光规则）/build-apk/bump-version/commit-msg-gate/pre-commit-gate + git 钩子垫片（好放行/坏拦截实测）；release-r2 分发链路已定稿并实测（docs/guide/self-update.md；10-07 两版发布 12011/20014）。
 - [2026-10-06] build-apk 首次真机构建打通：根 android/build.gradle.kts 钳制 library 子项目 compileSdk≥36（修 bonsoir_android 5.1.6 硬编码 33 的 15 条编译错误）+ app minSdk=34（仅支持 Android 14+）。
 - [2026-10-06] 快记入口形态拍板（评审后用户裁定）：顶部常驻输入→右下角 FAB+键盘吸附展开抽屉；草稿三字段（text/星/死线）静默 KV+FAB 琥珀点；TextInputAction.done 回车即存；放工守卫态 FAB 恒可用（平移「快记永不关门」）。M1 封板后切 feature 分支独立切片落地（M1.1，约 0.5 天），执行清单挂 todos.md；方向 B（title/spec 分层+AI 唯一读 spec+open_items 歧义管道）评估=与 SSOT §4/§5 同构且已实装，零改动零文档动作。
 - [2026-10-06] M1 封板版提交 e48da23（81 文件 12389 行，M1–M4 全量首入库；gitignore 补 /android/build 与 .gradle）。

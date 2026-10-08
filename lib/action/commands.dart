@@ -1,3 +1,4 @@
+import '../models/artifact.dart';
 import '../models/background.dart';
 import '../models/fixed_slot.dart';
 import '../models/plan.dart';
@@ -186,6 +187,23 @@ Map<String, Object?> backgroundToJson(Background b) => {
       'source': b.source,
       'captured_by': b.capturedBy,
       'version': b.version,
+    };
+
+/// artifacts 快照 JSON（MCP 唯一序列化口径）：payload 契约 JSON 原样透出（单一
+/// 真相，槽位不再拍平复制——防快照内出现第二份）；plan_id/block_id 为投影列现值。
+Map<String, Object?> artifactToJson(Artifact a) => {
+      'id': a.id,
+      'category': a.category,
+      'source_kind': a.sourceKind,
+      'state': a.state,
+      'origin': a.origin,
+      'title': a.title,
+      'badge': a.badge,
+      'payload': a.payload,
+      'captured_by': a.capturedBy,
+      'plan_id': a.planId,
+      'block_id': a.blockId,
+      'version': a.version,
     };
 
 // ───────────────────────────── 命令本体 ─────────────────────────────
@@ -418,6 +436,31 @@ sealed class ScheduleCommand {
           for (var i = 0; i < rawOps.length; i++)
             BackgroundMergeOp.fromJson(_map(rawOps[i], 'ops[$i]', op), 'ops[$i]', op),
         ]);
+      case 'upsert_facts':
+        return UpsertFactsCommand(
+          id: _str(json['id']),
+          // category/source_kind 编辑路径可缺省（=沿用现值）；建档必填校验在
+          // command_handler 建档分支（真正守门点），解析层不重复收紧
+          category: _str(json['category']),
+          sourceKind: _str(json['source_kind']),
+          title: _str(json['title']),
+          state: _str(json['state']),
+          origin: _str(json['origin']),
+          badge: _str(json['badge']),
+          heroMetrics: _objList(json['hero_metrics'], 'hero_metrics', op),
+          timeAnchors: _objList(json['time_anchors'], 'time_anchors', op),
+          constraints:
+              json['constraints'] == null ? null : _map(json['constraints'], 'constraints', op),
+          location: _str(json['location']),
+          copyableCode: _str(json['copyable_code']),
+          contactPhone: _str(json['contact_phone']),
+          rawText: _str(json['raw_text']),
+          planId: _str(json['plan_id']),
+          blockId: _str(json['block_id']),
+          expectedVersion: ev,
+        );
+      case 'delete_artifact':
+        return DeleteArtifactCommand(_reqStr(json, 'id', op));
       default:
         throw ActionException(
           '未知命令：$op',
@@ -450,6 +493,8 @@ sealed class ScheduleCommand {
     'update_fixed_slots',
     'upsert_background',
     'merge_backgrounds',
+    'upsert_facts',
+    'delete_artifact',
   ];
 }
 
@@ -988,6 +1033,33 @@ final class TickBlockCommand extends ScheduleCommand {
       };
 }
 
+/// 恢复（human 专属，UI 撤销通道）：把误触弄丢的块状态还原回活跃态——
+/// melted（右滑融化误触）/ done（打卡误触）→ proposed/confirmed。
+/// 仅 UI 撤销 SnackBar 使用、不进 MCP 工具面（同 quick_note_draft 口径）：
+/// 状态机不放开通用回退，只允许这两个中性/终态回活跃态，守住「减震器」语义。
+final class RestoreBlockCommand extends ScheduleCommand {
+  const RestoreBlockCommand(this.id, {required this.toStatus, super.expectedVersion});
+
+  final String id;
+
+  /// 还原目标态：proposed/confirmed（活跃态）。命令层校验，其余拒绝。
+  final String toStatus;
+
+  @override
+  String get op => 'restore_block';
+
+  @override
+  String? get targetId => id;
+
+  @override
+  Map<String, Object?> toJson() => {
+        'op': op,
+        'id': id,
+        'to_status': toStatus,
+        if (expectedVersion != null) 'expected_version': expectedVersion,
+      };
+}
+
 /// 设置写（§3 UpdateSettings，人/AI）：键注册制，传 null 清空对应项。
 /// 遗留区「顺延今日」（ui-spec §3.2，2026-10-06 拍板）：missed 块整体搬到
 /// 目标日，起止钟点不变、身份不变（postpone_count+1）。仅 missed 可顺延；
@@ -1211,10 +1283,114 @@ final class MergeBackgroundsCommand extends ScheduleCommand {
       };
 }
 
+/// 事实凭证写（fact-user-relay-draft.md §1.1/§1.4/§8-3，人/AI 双通道）：
+/// id 缺省=建档（系统分享原文入册 state=raw / AI 对话投喂直接结构化）；
+/// id 给定且存在=编辑（AI 提炼回填 structured / 改挂 plan_id / 作废 voided）——
+/// 字段级 merge 只覆盖传入槽位，raw_text **追加双段只增不清**（改签 SOP 溯源）。
+/// 槽位由命令层组装成 §1.2 契约 JSON（v:1 经 Artifact.encodePayload 单点编码）；
+/// plan_id/block_id 双写铁律=列与 payload 投影同步（Artifact.payloadWithRefs）。
+/// category/source_kind/origin/captured_by 出生不可变（编辑路径忽略传入），
+/// **例外=出生确认**（§1.2 施工定案）：raw 建档零解析恒以 verbal/verbal 占位
+/// （命令层拒非占位的 raw 建档），首次 raw→structured 回填允许定二值终值，
+/// structured 后恒不可变。
+/// 作废=state=voided（存证保留）；物理删除走 DeleteArtifact（仅 human）。
+final class UpsertFactsCommand extends ScheduleCommand {
+  const UpsertFactsCommand({
+    this.id,
+    this.category,
+    this.sourceKind,
+    this.title,
+    this.state,
+    this.origin,
+    this.badge,
+    this.heroMetrics,
+    this.timeAnchors,
+    this.constraints,
+    this.location,
+    this.copyableCode,
+    this.contactPhone,
+    this.rawText,
+    this.planId,
+    this.blockId,
+    super.expectedVersion,
+  });
+
+  final String? id; // 缺省=建档；给定=编辑
+  final String? category; // transit/ticket/hotel/venue/verbal；建档必填，
+      // raw 建档恒 verbal 占位，出生确认（首次 raw→structured）定终值
+  final String? sourceKind; // booking/announcement/verbal；建档必填，口径同上
+  final String? title; // 建档必填（命令层校验）；编辑缺省=不变
+  final String? state; // raw/structured/voided；建档缺省=raw
+  final String? origin; // 建档必填（shared/quicknote/ai/manual）；编辑忽略
+  final String? badge; // 超 12 字符命令层截断（截断优于拒绝）
+  final List<Map<String, Object?>>? heroMetrics; // ≤3 截前 3
+  final List<Map<String, Object?>>? timeAnchors; // moment/span/rule 三类锚
+  final Map<String, Object?>? constraints; // 三数组+机读参数
+  final String? location;
+  final String? copyableCode;
+  final String? contactPhone;
+
+  /// 原文永存：编辑路径与已存原文不同时**追加**新段，绝不覆盖
+  final String? rawText;
+  final String? planId; // 建档 null=未归属池；编辑给定=改挂
+  final String? blockId; // AI 升格回填关联块（软引用）
+
+  @override
+  String get op => 'upsert_facts';
+  @override
+  String? get targetId => id;
+  @override
+  Map<String, Object?> toJson() => {
+        'op': op,
+        if (id != null) 'id': id,
+        if (category != null) 'category': category,
+        if (sourceKind != null) 'source_kind': sourceKind,
+        if (title != null) 'title': title,
+        if (state != null) 'state': state,
+        if (origin != null) 'origin': origin,
+        if (badge != null) 'badge': badge,
+        if (heroMetrics != null) 'hero_metrics': heroMetrics,
+        if (timeAnchors != null) 'time_anchors': timeAnchors,
+        if (constraints != null) 'constraints': constraints,
+        if (location != null) 'location': location,
+        if (copyableCode != null) 'copyable_code': copyableCode,
+        if (contactPhone != null) 'contact_phone': contactPhone,
+        if (rawText != null) 'raw_text': rawText,
+        if (planId != null) 'plan_id': planId,
+        if (blockId != null) 'block_id': blockId,
+        if (expectedVersion != null) 'expected_version': expectedVersion,
+      };
+}
+
+/// 凭证物理删除（fact-user-relay-draft.md §1.4，human 专属）：误分享文本清理。
+/// 退票/作废走 upsert_facts state=voided（存证保留，AI 经对话同意可写）；
+/// AI 无删除权、只可提议。删凭证绝不删块——关联块失去挂载并从 pinned 降格
+/// （同事务，§1.4 反向销毁防护）。
+final class DeleteArtifactCommand extends ScheduleCommand {
+  const DeleteArtifactCommand(this.id);
+  final String id;
+  @override
+  String get op => 'delete_artifact';
+  @override
+  String? get targetId => id;
+  @override
+  Map<String, Object?> toJson() => {'op': op, 'id': id};
+}
+
 // ───────────────────────────── 载荷解析助手 ─────────────────────────────
 
 String? _str(Object? v) => v is String && v.isNotEmpty ? v : null;
 int? _int(Object? v) => v is int ? v : (v is String ? int.tryParse(v) : null);
+
+/// JSON 对象数组解析（hero_metrics/time_anchors 载荷）：给定了就必须是数组且元素
+/// 为对象，类型不对整组拒——写入口严进（读侧容错过滤是另一道，不适用于此）。
+List<Map<String, Object?>>? _objList(Object? v, String key, String op) {
+  if (v == null) return null;
+  if (v is! List) {
+    throw ActionException('$op 的 $key 必须是数组', code: ActionErrorCode.invalidRequest);
+  }
+  return [for (var i = 0; i < v.length; i++) _map(v[i], '$key[$i]', op)];
+}
 
 String _reqStr(Map<String, Object?> json, String key, String op) {
   final v = json[key];

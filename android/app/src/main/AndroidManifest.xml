@@ -32,6 +32,14 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- 分享入口（fact 草案 §2.3）：外部 App 分享纯文本 → raw 入册零解析
+                 （一字不解析，origin=shared, state=raw）→ 挂载 sheet 归属。
+                 零新权限（ACTION_SEND 纯 intent）；singleTop 下热启动走 onNewIntent。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
         </activity>
         <!-- flutter_foreground_task 前台服务（勿改名） -->
         <service
