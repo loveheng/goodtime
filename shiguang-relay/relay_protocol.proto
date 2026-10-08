@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+// ============================================================================
+// shiguang-relay · 协同中继协议（冻结契约 v0.1.0-contract）
+//
+// 2026-10-09 服务端架构审查修正已内建：
+//   - 废除独立 Mailbox API；事实同步并入 bundle 事件流
+//     (ATTACH_FACT / UPDATE_FACT / DETACH_FACT)，共用全局 seq_id 与 WSS 广播
+//   - 注册/好友接口剔除 display_name（昵称仅存 encrypted_profile，服务端零明文）
+//   - 零 entity_key 暴露：服务端不接收/不存储任何业务代号（如车次 D8724、预约码）
+//     事实级去重由客户端 resolver（纯本地）在解密后完成；传输级去重由 client_msg_id 幂等保证
+//   - 好友邀请基于 Ticket（二维码/防篡改签名，含短期 nonce+过期），非 to_user（防撞库）
+//   - 双 Token 鉴权（access/refresh）+ client_msg_id 幂等重放防护（详见 collab §1.4）
+//   - 网关硬约束：单包 Payload ≤256KB；P2P 瞬时信令 TTL 即焚（relay_messages.expires_at）
+//
+// 注意：本文件为契约规范，不含任何 Go 业务代码（Phase 0 停火协议）。
+// ============================================================================
+
+package shiguang.relay.v1;
+
+// ---------------------------------------------------------------------------
+// 顶层信封（bundle 事件流）
+// ---------------------------------------------------------------------------
+message Envelope {
+  string bundle_id = 1;        // 路由用，服务端只见 UUID
+  ActionType action = 2;       // 服务端仅据此做 FSM 拓扑仲裁，不可读内容
+  int64 seq_id = 3;            // 服务端全局递增定序（UNIQUE(bundle_id, seq_id)）
+  string sender_hint = 4;      // 端侧展示用，服务端不依赖
+  bytes cipher = 5;            // AEAD(K_bundle, payload)，512B 填充后等长
+  string client_msg_id = 6;    // 幂等去重（Redis SETEX 300）
+  int64 client_ts = 7;         // 重放防护时间戳
+  string topology_ref = 8;     // bundle_skeletons 引用（Quorum 仲裁用）
+}
+
+enum ActionType {
+  // —— 排程协商（FSM）——
+  PROPOSE = 0;
+  ACCEPT = 1;
+  REJECT = 2;
+  PATCH_TIME = 3;
+  REASSIGN = 4;
+  MAKE_OPTIONAL = 5;
+  PRUNE = 6;
+  CANCEL = 7;
+  REOPEN = 8;
+  VOTE = 9;
+  ADD_SLOT = 10;
+  FORCE_FINALIZE = 11;         // 发起人落槌
+  NUDGE = 12;
+  BYPASS = 13;
+  REKEY = 14;
+  MEMBER_REMOVED = 15;
+  TRANSFER_INITIATOR = 16;
+  BRIEFING_UPDATE = 17;
+  STEP_NOTE = 18;
+  // —— 事实同步（2026-10-09 收敛进 bundle 事件流）——
+  ATTACH_FACT = 19;
+  UPDATE_FACT = 20;
+  DETACH_FACT = 21;
+  // —— 拓扑可用性 ——
+  FREEMASK_QUERY = 22;
+  FREEMASK_RESPONSE = 23;
+  // —— 信令 / 生命周期 ——
+  DELIVERY_ACK = 24;           // 瞬时信令投递确认（触发阅后即焚）
+  CLIENT_ACK = 25;             // 事件游标确认
+  PING = 26;
+}
+
+// ---------------------------------------------------------------------------
+// 鉴权（双 Token）— 详见 collab-schedule-draft.md §1.4
+// ---------------------------------------------------------------------------
+message AuthChallenge {
+  string nonce = 1;            // 预会话 nonce
+  string pow_challenge = 2;    // Hashcash：求 SHA-256 前导 N 个 0 的随机数
+  int32 pow_difficulty = 3;
+  int64 expires_at = 4;
+}
+
+message RegisterRequest {
+  string user_id = 1;             // 客户端自生成 UUID
+  bytes identity_key_pub = 2;     // Ed25519 身份公钥
+  bytes signed_prekey_pub = 3;    // X25519 签名预密钥
+  bytes signed_prekey_sig = 4;    // 身份密钥对预密钥的签名
+  string push_token = 5;          // FCM/APNs；服务端不解析内容
+  bytes encrypted_profile = 6;     // 端侧全密文：昵称/备注/头像，服务端零明文
+  bytes signed_pop = 7;            // 对 AuthChallenge.nonce 的 Ed25519 签名（所有权证明 PoP）
+  string pow_solution = 8;         // Hashcash 解
+  // 注意：无 display_name 字段
+}
+
+message LoginRequest {
+  string user_id = 1;
+  bytes identity_key_pub = 2;
+  bytes signed_pop = 3;           // 对 nonce 的签名
+  string pow_solution = 4;
+}
+
+message AuthResponse {
+  string access_token = 1;        // 短效 JWT（网关无状态校验）
+  string refresh_token = 2;       // 长效，服务端双 Token 刷新
+  int64 access_expires_at = 3;
+}
+
+message RefreshRequest { string refresh_token = 1; }
+
+// ---------------------------------------------------------------------------
+// 好友（Ticket 制，防撞库）— 替代旧 {to_user} 直接邀请
+// ---------------------------------------------------------------------------
+message FriendshipTicket {
+  string issuer_user_id = 1;      // 邀请方 B（被加者）UUID
+  string subject_user_id = 2;     // 扫码方 A（发起人）UUID，可空=任意扫码者
+  string nonce = 3;               // 短期随机
+  int64 expires_at = 4;           // 过期时间
+  bytes signature = 5;            // B 用 identity_key 对上式字段的签名（防篡改）
+}
+
+message FriendshipRequest {
+  FriendshipTicket ticket = 1;    // 服务端解析：验签 + 过期 + nonce 校验
+  // 验签通过才写 friendships(status=pending)；杜绝 to_user 全库遍历撞库
+}
+
+message FriendshipResponse {
+  string invite_id = 1;
+  bool accept = 2;                // 客户端手动批准，不自动
+}
+
+message FriendshipView {
+  string user_id = 1;
+  string status = 2;              // pending / accepted / blocked
+  int64 created_at = 3;
+  // 无 nickname：展示名由本端 encrypted_profile 解密得到
+}
+
+// ---------------------------------------------------------------------------
+// 密钥分发（X3DH 预密钥包）
+// ---------------------------------------------------------------------------
+message KeyBundleQuery { string user_id = 1; }
+
+message KeyBundleResponse {
+  bytes identity_key_pub = 1;
+  bytes signed_prekey_pub = 2;
+  bytes signed_prekey_sig = 3;
+  repeated PreKey one_time_prekeys = 4;   // OPK 池，用尽触发补仓
+}
+
+message PreKey { string key_id = 1; bytes pub = 2; }
+
+// ---------------------------------------------------------------------------
+// P2P 瞬时信令（relay_messages，阅后即焚）— 非 bundle 事件
+// ---------------------------------------------------------------------------
+message RelayMessage {
+  string msg_id = 1;
+  string recipient_user_id = 2;   // 投递目标
+  string sender_user_id = 3;
+  string kind = 4;                // ticket_delivery / key_exchange / freemask ...
+  bytes cipher = 5;               // AEAD，≤256KB 网关硬限
+  int64 expires_at = 6;           // TTL 即焚
+}
+
+// ---------------------------------------------------------------------------
+// WSS 帧
+// ---------------------------------------------------------------------------
+message ClientFrame {
+  string client_msg_id = 1;
+  int64 client_ts = 2;
+  oneof body {
+    Envelope schedule = 3;
+    RelayMessage relay = 4;
+    AuthChallenge auth = 5;
+    RegisterRequest register = 6;
+    LoginRequest login = 7;
+    FriendshipRequest friend_req = 8;
+    FriendshipResponse friend_resp = 9;
+  }
+}
+
+message ServerFrame {
+  int64 seq_id = 1;
+  string client_msg_id = 2;       // 回显，供客户端匹配
+  oneof body {
+    Envelope schedule = 3;
+    RelayMessage relay = 4;
+    AuthResponse auth = 5;
+    FriendshipView friend = 6;
+    string error = 7;
+  }
+}

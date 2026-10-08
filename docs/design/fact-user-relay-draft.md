@@ -294,14 +294,12 @@ roster(id, display_name, relation[me|family|friend|other], is_self, color)
 
 **结论（2026-10-06 推导）**：朋友邀约要能被服务器撮合，服务器必须认得「谁是谁」——纯 plan-token 盲中继做不到「A 邀请 B 成为好友」。故服务器需最小用户体系（**Tier 2**，非纯 Tier 1 盲中继）。
 
-最小契约（✅ 骨架）：
+最小契约（✅ 骨架，已与冻结契约 relay_protocol.proto v0.1.0-contract 对齐）：
 
-```
-POST /v1/users          注册（user_id + public_key + push_token + display_name）
-POST /v1/friends/invite {to_user}       发起好友邀请
-POST /v1/friends/accept {invite_id}     接受（客户端手动批准，不自动）
-GET  /v1/friends                             好友列表（pending/accepted 状态）
-```
+- 注册：`POST /v1/users` —— `user_id`(客户端自生成 UUID) + `identity_key_pub` + `signed_prekey_pub` + `push_token` + `encrypted_profile`(端侧全密文，含昵称/备注) + `signed_pop`(对服务端 challenge 的 Ed25519 签名) + `pow_solution`(Hashcash)。**服务端零明文昵称**——`display_name` 已剔除，昵称仅存 `encrypted_profile`。
+- 鉴权：双 Token（access/refresh），详见 `collab-schedule-draft.md §1.4`；请求外层强制 `client_msg_id` + 时间戳，服务端 Redis `SETEX 300` 幂等去重（防重放）。
+- 好友：`POST /v1/friends/invite {ticket}` —— 凭**好友凭证 Ticket**（二维码/防篡改签名，含短期 nonce + 过期时间 + B 自签名），服务端验签通过才写 `friendships(status=pending)`；杜绝 `to_user` 撞库。
+- `POST /v1/friends/accept {invite_id}`（客户端手动批准，不自动）、`GET /v1/friends`（pending/accepted 状态）。
 
 ### 3.3 客户端边界策略（✅ 方向）
 
@@ -344,11 +342,17 @@ GET  /v1/friends                             好友列表（pending/accepted 状
 
 ```mermaid
 flowchart LR
-  A["摄入层（多源）"] --> R["重叠解析器（按 entity_key 聚类）"]
-  S["同步层（未来）"] --> R
+  subgraph CLIENT["客户端本地（解密后）"]
+    R["重叠解析器（按 entity_key 聚类）"]
+  end
+  A["摄入层（多源）"] -->|密文| SVR["服务端（纯盲·只广播）"]
+  SYNC["同步层（bundle 事件流）"] -->|密文| SVR
+  SVR -->|加密 Patch 事件| R
   R --> C["canonical 事实"]
   R --> Q["待裁决队列"]
 ```
+
+> **⚠ 宿主铁律（2026-10-09 审查修正）**：重叠解析器 **100% 运行于客户端本地 SQLite**，服务端纯盲——它只持 `topology` / `action_type`，读不到事实起止时间、酒店名等明文，在数学上**无法**执行去重/冲突比对/覆盖分析。服务端职责仅限「将带加密 Patch 的事件广播到各设备」；去重与冲突标注由各端解密后在本地完成。任何「服务器帮我比对去重」的设想均属误解，必须杜绝。
 
 - **2026-10-07 注**：本地 MVP 单用户单来源，重叠解析整体延后——本地版由「随行凭证区 + 未归属池」承担呈现；重复/冲突/互补三类处置随多人轨拍板后实装。
 
@@ -358,35 +362,47 @@ flowchart LR
 
 ### 5.1 职责边界（✅）
 
-外部服务 = **哑中继（dumb relay）**：只做「存 + 推 + 转发」，**永远看不见事实明文**。
+外部服务 = **盲状态机中继（blind state-machine relay）**：内容层面纯盲——**永远看不见事实明文**（座位/身份证/金额/`entity_key` 业务代号）；结构层面持有 `bundles` / `bundle_skeletons` / `team_schedule_events` 两级 FSM，进行 topology Quorum 仲裁、乐观锁与全局 `seq_id` 定序。**服务端不运行任何重叠解析逻辑**（见 §4 宿主铁律）。
 
-### 5.2 服务契约（✅ 骨架）
+### 5.2 服务契约（✅ 骨架，已与冻结契约 v0.1.0-contract 对齐）
+
+**废除独立 Mailbox API（2026-10-09 审查修正）**：原 `POST/GET /v1/mailbox/{plan_id}` 粗粒度 blob 信箱与 `collab-schedule-draft.md §10` 的两级 FSM 事件流平行、且 `?since=` 无定序基准。现统一收敛：
+
+- **事实同步并入 bundle 事件流**：事实增删改 = bundle 内动作 `ATTACH_FACT` / `UPDATE_FACT` / `DETACH_FACT`（枚举见 `relay_protocol.proto`），共用 `team_schedule_events` 的全局 `seq_id` 与 WSS 广播；服务端只认 `action_type` 拓扑，零事实明文、零 `entity_key` 暴露。
+- **P2P 瞬时信令保留独立轻量通道**：好友 Ticket 投递、X3DH 密钥协商、FreeMask 探测等非 bundle 事件，走 `relay_messages`（瞬时、TTL 即焚），与持久化事件流解耦。
 
 ```
-POST /v1/users                       注册（user_id + public_key + push_token + display_name）
-POST /v1/friends/invite              发起好友邀请 {to_user}
-POST /v1/friends/accept              接受邀请 {invite_id}
-GET  /v1/friends                     好友列表
-POST /v1/mailbox/{plan_id}            provision 信箱（轻量「注册」，无账号语义）
-PUT  /v1/mailbox/{plan_id}/sub       订阅 push（设备 token）
-POST /v1/mailbox/{plan_id}/msg       投递 E2E 密文 blob
-GET  /v1/mailbox/{plan_id}/msg?since= 拉取增量
+POST /v1/users                         注册（user_id+identity_key_pub+signed_prekey_pub+push_token+encrypted_profile+signed_pop+pow_solution）
+POST /v1/auth/challenge                下发 PoW challenge + 预会话 nonce
+POST /v1/auth/login                    身份密钥签名登录，领双 Token
+POST /v1/auth/refresh                  刷新 access_token
+POST /v1/friends/invite {ticket}      凭 Ticket 发起好友邀请（防撞库）
+POST /v1/friends/accept {invite_id}   接受邀请（客户端手动批准）
+GET  /v1/friends                       好友列表（pending/accepted）
+POST /v1/schedule/action              ACCEPT/REJECT/PATCH/VOTE/ADD_SLOT/ATTACH_FACT/... 单事务写 bundles+skeletons+流水
+GET  /v1/schedule/sync?bundle_id=&since_seq=  增量事件拉取（离线重连/跳号补拉）
+POST /v1/relay/msg                     投递 P2P 瞬时信令密文（≤256KB，TTL 即焚）
 ```
 
-### 5.3 E2E 信封（✅ 方向）
+> 注册/好友接口已剔除 `display_name`；鉴权重放防护见 `collab-schedule-draft.md §1.4`。
 
-客户端加密，服务器不可解读：
+### 5.3 E2E 信封（✅ 方向，2026-10-09 审查修正）
+
+客户端加密，服务器不可解读。**事实 = bundle 的 `ATTACH_FACT` 动作**，信封随 `team_schedule_events` 走统一密文通道：
 
 ```json
 {
-  "plan_id": "plan_yulong",
+  "bundle_id": "bundle_yulong",
+  "action": "ATTACH_FACT",
+  "seq_id": 17,
   "sender_hint": "me",
-  "cipher": "<AEAD(plan_key, artifact_patch)>",
-  "entity_keys": ["D8724", "994821"]
+  "cipher": "<AEAD(K_bundle, artifact_patch)>"
 }
 ```
 
-- `plan_id` 仅路由/去重；`entity_keys` 仅服务器去重用，不含明文；`cipher` 为事实补丁密文。
+- `bundle_id` 仅路由；`cipher` 为事实补丁密文（AEAD，512B 填充后等长）。
+- **零 `entity_key` 暴露（零知识底线）**：服务端**不接收、不存储任何 `entity_key` / 业务代号**（如车次 `D8724`、预约码 `994821`）。原草案 `entity_keys` 字段已废除——服务端若对明文做去重即击穿零知识。事实级去重由**客户端 resolver**（§4，纯本地）在解密后基于 `entity_key` 完成；传输级去重由 `client_msg_id` 幂等保证。
+- 服务端去重策略最终结论：**服务端不做 entity 去重**（纳入客户端 resolver + `client_msg_id` 幂等），避免 HMAC 密钥归属悖论（`K_bundle` 服务端不可得）。
 
 ### 5.4 隐私边界（❓ 待定）
 

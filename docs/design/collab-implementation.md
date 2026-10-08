@@ -41,6 +41,7 @@ updated: 2026-10-08
 | 1.5 | `GET /v1/bundles/participating` + `GET /v1/schedule/sync?since_seq`（§10.2） | 换机场景模拟：新库 participating→sync 全量还原 |
 | 1.6 | WSS hub：首帧 AUTH（3s 掐线）+ 按 cursor 差异推送 + CLIENT_ACK 更新游标（§10.3） | 断连重连后补收漏掉的事件 |
 | 1.7 | 部署脚本：PaaS 或自建 compose + caddy 反代 WSS | 公网/Docker 内双客户端互通 |
+| 1.8 | **网关硬约束（2026-10-09 审查修正）**：单包 Payload ≤256KB 硬限（API 网关层拒绝超限，防 500MB 打爆内存/DB）；`relay_messages` TTL（建议 7/30 天）即焚 + 后台清理 cron 删除过期/acked；瞬时信令 `DELIVERY_ACK` 触发即焚；磁盘水位监控告警 | 投递 300KB 包被 413 拒；过期 relay_messages 被清理且不阻塞事件流 |
 
 **验收总纲**（设计稿 §12 表）：curl 发密文入库、seq 自增、广播可达；全员离线时 Wake Push Payload 携带 bundle_id+latest_seq。
 
