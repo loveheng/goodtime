@@ -294,7 +294,7 @@ roster(id, display_name, relation[me|family|friend|other], is_self, color)
 
 **结论（2026-10-06 推导）**：朋友邀约要能被服务器撮合，服务器必须认得「谁是谁」——纯 plan-token 盲中继做不到「A 邀请 B 成为好友」。故服务器需最小用户体系（**Tier 2**，非纯 Tier 1 盲中继）。
 
-最小契约（✅ 骨架，已与冻结契约 relay_protocol.proto v0.1.0-contract 对齐）：
+最小契约（✅ 骨架，已与冻结契约 relay_protocol.proto v0.1.1-contract 对齐）：
 
 - 注册：`POST /v1/users` —— `user_id`(客户端自生成 UUID) + `identity_key_pub` + `signed_prekey_pub` + `push_token` + `encrypted_profile`(端侧全密文，含昵称/备注) + `signed_pop`(对服务端 challenge 的 Ed25519 签名) + `pow_solution`(Hashcash)。**服务端零明文昵称**——`display_name` 已剔除，昵称仅存 `encrypted_profile`。
 - 鉴权：双 Token（access/refresh），详见 `collab-schedule-draft.md §1.4`；请求外层强制 `client_msg_id` + 时间戳，服务端 Redis `SETEX 300` 幂等去重（防重放）。
@@ -364,7 +364,7 @@ flowchart LR
 
 外部服务 = **盲状态机中继（blind state-machine relay）**：内容层面纯盲——**永远看不见事实明文**（座位/身份证/金额/`entity_key` 业务代号）；结构层面持有 `bundles` / `bundle_skeletons` / `team_schedule_events` 两级 FSM，进行 topology Quorum 仲裁、乐观锁与全局 `seq_id` 定序。**服务端不运行任何重叠解析逻辑**（见 §4 宿主铁律）。
 
-### 5.2 服务契约（✅ 骨架，已与冻结契约 v0.1.0-contract 对齐）
+### 5.2 服务契约（✅ 骨架，已与冻结契约 v0.1.1-contract 对齐）
 
 **废除独立 Mailbox API（2026-10-09 审查修正）**：原 `POST/GET /v1/mailbox/{plan_id}` 粗粒度 blob 信箱与 `collab-schedule-draft.md §10` 的两级 FSM 事件流平行、且 `?since=` 无定序基准。现统一收敛：
 
@@ -403,11 +403,30 @@ POST /v1/relay/msg                     投递 P2P 瞬时信令密文（≤256KB�
 - `bundle_id` 仅路由；`cipher` 为事实补丁密文（AEAD，512B 填充后等长）。
 - **零 `entity_key` 暴露（零知识底线）**：服务端**不接收、不存储任何 `entity_key` / 业务代号**（如车次 `D8724`、预约码 `994821`）。原草案 `entity_keys` 字段已废除——服务端若对明文做去重即击穿零知识。事实级去重由**客户端 resolver**（§4，纯本地）在解密后基于 `entity_key` 完成；传输级去重由 `client_msg_id` 幂等保证。
 - 服务端去重策略最终结论：**服务端不做 entity 去重**（纳入客户端 resolver + `client_msg_id` 幂等），避免 HMAC 密钥归属悖论（`K_bundle` 服务端不可得）。
+- **事实所有权本地化（Q12，2026-10-09 拍板）**：仅**已关联方案包（`plan_id ≠ null`）**的事实走 `ATTACH_FACT` 广播；**未归属事实（`plan_id = null`）纯属个人私密切片，绝不上中继**，100% 由本地 + BYOS（WebDAV/R2 个人备份）承载换机恢复。各端收到 `ATTACH_FACT` 解密后立即**物化进本地 SQLite `artifacts`**，从此成为本地私有资产；Bundle 归档（§5.7）只清事件流，各成员本地凭证完好。中继是**投递通道，不是个人云盘**。
 
 ### 5.4 隐私边界（❓ 待定）
 
 - **✅ 保**：服务器看不到事实明文（座位/身份证/金额）。
 - **❓ 待定**：服务器**看得到社交图**（谁和谁好友、谁和谁共规划 user_id 边）。是否把好友边也 E2E 加密见 §7-Q1。
+
+### 5.5 Q12 事实所有权本地化（2026-10-09 拍板，收敛为已定）
+
+中继服务是**多人协作的即时通讯管道**，不是**个人的云端网盘**。三层分工：
+
+```
+[个人设备 A] ──(个人备份 BYOS/R2)──► 永久存证（全量 artifacts，含 plan_id=null）
+     │ ATTACH_FACT 广播
+     ▼
+[中继 Relay] ──(临时事件流 team_schedule_events，TTL 30-90 天)──► 仅投递、不终身抚养
+     │ 端侧单向消费落盘
+     ▼
+[个人设备 B] ──► 物化进本地 SQLite artifacts ──(个人备份)──► B 的存证
+```
+
+- **未归属事实（`plan_id = null`）不上中继**：属个人私密切片，多端换机 100% 由 BYOS / `recovery_vault` 承载；中继不为单人未归属数据开存储。
+- **`ATTACH_FACT` 仅作一次性投递包**：发起/成员触发 → 密文 Payload 进 `team_schedule_events` 广播 → 各端收到解密即物化进本地 `artifacts`，此后为本地私有资产。
+- **解耦 Bundle 归档与凭证生命周期**：§5.7 物理清理事件流后，各成员本地凭证完好，换机走各自备份，无需去中继死信箱打捞。
 
 ---
 
@@ -434,7 +453,7 @@ POST /v1/relay/msg                     投递 P2P 瞬时信令密文（≤256KB�
 多人轨保留（2026-10-09 用户拍板，全部落定默认值）：
 
 - **Q1 ✅** 社交图**暂不 E2E 加密**（服务器可见 `user_id` 好友边；全加密成本过高，与「轻量」灵魂冲突）。**匿名隔离底线（拍板补充）**：服务端 `friendships` 表严格只存 `(user_id_a, user_id_b, status, created_at)`，绝不加 nickname/phone 明文；好友备注名/头像走端侧加密 `encrypted_friend_alias`（移出服务端表，存客户端本地或 `encrypted_profile`），服务端只见无意义 UUID 关系对。
-- **Q2 ✅** 注册 = **匿名 token + PoP 自签**（设计稿 §1.5），不引邮箱/手机验证；spam/伪造防御靠邀请制 + 好友 ACL + 注册 PoW/限流（见 §7.1）。
+- **Q2 ✅（2026-10-09 定调）** 注册 = **开放匿名 PoP 自签**（设计稿 §1.5），**绝不上邀请制**（否则冷启动死锁：首个用户无 Ticket 可取）；不引邮箱/手机验证。防 Sybil = ①注册孤岛无害化（无好友 Ticket 无法触达任何真实用户，刷号全是死号，攻击收益为零）②轻量 PoW + 单 IP 限流(≤3/min) ③OPK 注册瘦身(首批 10~20 个)。**仅好友建联(`/friends/invite`)才需 Ticket**（见 §7.1）。
 - **Q3 ✅** 「已知/朋友」= **手动白名单 + 仅双向 accepted 好友**；好友的好友默认不可见（§1.2 网关 ACL 已定）。
 - **Q5 ✅ 已收敛** 冲突裁决 = 门限共识（M-of-N + threshold）+ 发起人落槌 `FORCE_FINALIZE`（设计稿 §4.2/§4.4），无需再拍。
 - **Q6 ✅** 覆盖缺口：本地版由「随行凭证区+未归属池」承担；跨人 coverage 地图留 Phase 4 UI 时定。
@@ -442,6 +461,7 @@ POST /v1/relay/msg                     投递 P2P 瞬时信令密文（≤256KB�
 - **Q8 ✅** 部署 = **自建 VPS + Docker Compose + Caddy 反代**（设计稿 §8.3 备选），不绑 BaaS；push 走 FCM/APNs。
 - **Q9 ✅ 已拍板** §13 修正（见 §6），已并入 SSOT `schedule-app.md §13`。
 - **Q10 ✅** 中继 = **独立新仓 `shiguang-relay`（Go）**，不复用 `mcp_server`/`mcp_controller`（协议不同：MCP 桥=JSON-RPC/stdio 给桌面 AI，中继=Protobuf/WSS 给人际协同）。
+- **Q12 ✅（2026-10-09 拍板）事实所有权本地化**：中继仅作 Bundle 投递通道，非个人云盘。未归属事实(`plan_id=null`)绝不上中继，100% 本地 + BYOS(WebDAV/R2) 承载；`ATTACH_FACT` 仅作一次性投递包，各端收到即物化进本地 `artifacts`；Bundle 归档(§5.7)只清事件流，本地凭证完好，换机走各自 `recovery_vault`/BYOS（详见 §5.5）。
 
 本地轨：
 
@@ -453,9 +473,9 @@ POST /v1/relay/msg                     投递 P2P 瞬时信令密文（≤256KB�
 
 1. **Q1 匿名隔离底线**：`friendships` 服务端表列集收敛为 `(user_id_a, user_id_b, status, created_at)`，无 nickname/phone；好友展示信息（备注/头像）端侧用双方私钥加密后存储，服务端零明文。
 2. **隐患1 · Sybil/存储轰炸防线（Phase 1.2 注册）**：
-   - **轻量 PoW / Hashcash**：注册前服务端签发随机难度 `challenge`（求 SHA-256 前导 4 个 0 的随机数）；正常手机端 <50ms 无感，脚本批量刷号 CPU 几何级上升被物理阻断；PreKey 入库前校验 PoW，否则 `429`。
+   - **轻量 PoW / Hashcash（仅挡最低级扫描器，非主防线）**：注册前服务端签发随机难度 `challenge`（求 SHA-256 前导 4 个 0 ≈ 2^16 次，GPU 微秒级、对黑产近零成本，故不可依赖）；正常手机端 <50ms 无感，PreKey 入库前校验 PoW，否则 `429`。**真防御 = 注册孤岛无害化（无好友 Ticket 无法触达真实用户）+ 单 IP 限流(≤3/min) + OPK 瘦身**。
    - **IP 级动态速率限制**：注册接口单 IP 每分钟 ≤ 3–5 个账号。
-3. **隐患2 · 灾备死穴防线（Phase 1.7/5）**：`docker-compose.yml` 捆绑 Litestream / 定时 `pg_dump` sidecar，每小时将 PG WAL/快照经客户端免费 Cloudflare R2/S3 异地备份；守住「单机 VPS 炸了 10 分钟内拉起新主机一键还原」底线。
+3. **隐患2 · 灾备死穴防线（Phase 1.7/5）**：`docker-compose.yml` 捆绑**定时 `pg_dump | gzip` cron sidecar**（Litestream 仅支持 SQLite、对 PostgreSQL 无效，已剔除），每小时将 PG 快照经客户端免费 Cloudflare R2/S3 异地备份；守住「单机 VPS 炸了 10 分钟内拉起新主机一键还原」底线。
 4. **隐患4 · FCM/APNs 出网阻塞防线（Phase 1.6/1.7）**：**异步 Worker 池**（Go 内存带缓冲 `chan PushTask` + 2–3 goroutine）；主事务写 PG + WSS 广播后即返回 HTTP 200，离线用户 Wake Push 名单丢入后台异步消费，绝不拖慢核心 API。
 5. **Phase 0 停火协议**：拍板后进入 Phase 0 **只交付 `relay_protocol.proto` + `schema.sql` 两个契约文件并打 tag，绝不写一行 Go 业务代码**；契约锁死后再铺 3 周开发，避免返工扯皮。
 

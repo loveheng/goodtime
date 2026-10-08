@@ -124,7 +124,7 @@ sequenceDiagram
 ### 1.5 注册所有权证明与 OPK 补仓（PoP + PreKey 管理，评审补齐）
 
 - **公钥置换攻击防线（Proof-of-Possession）**：`POST /auth/register` 必须附带私钥自签名 `Sign(account_id + timestamp, IK_priv)`——服务端验证公钥能解开该签名（确认请求方真正持有私钥）才允许入库，截获请求替换公钥的攻击无效。
-- **OPK 枯竭风暴防线**：注册时一次性上传 100 个 One-Time PreKey；用户登录/心跳时服务端检测存量 **< 20** 即在心跳回包夹带 `NEED_PREKEYS` 标记，客户端后台静默生成新一批 100 个批量补传；极端耗尽时 X3DH **安全降级为仅依赖 Signed PreKey（SPK）**，不卡死建联。
+- **OPK 枯竭风暴防线（v0.1.1 瘦身）**：注册时首批**仅允许上传 10~20 个** One-Time PreKey（单账号 DB 占用 <1KB，即便被刷万号也撑不爆磁盘）；用户登录/心跳时服务端检测存量 **< 5** 即在心跳回包夹带 `NEED_PREKEYS` 标记，客户端后台静默生成新一批 10~20 个批量补传；极端耗尽时 X3DH **安全降级为仅依赖 Signed PreKey（SPK）**，不卡死建联。
 
 ### 1.6 好友添加防刷与 MITM 防线（Ticket + 安全码，评审补齐）
 
@@ -136,19 +136,26 @@ sequenceDiagram
 **§1.2「发起人与所有被邀请人必须互为好友」只在发起时成立**——若 A 与 B、A 与 C 是好友而 B、C 互不相识，B 的拒绝事件广播给 C 时会被 ACL 拦成 403，C 的状态机永久分叉死锁。定稿双层校验：
 
 ```sql
--- 服务端网关校验规则（伪代码）
-func CheckGatewayACL(sender_id, recipient_id, bundle_id) bool {
-    -- 1. 瞬时单聊信令（加好友请求、直投 Ping）：必须全局互为好友
+-- 服务端网关校验规则（伪代码，v0.1.1 修正）
+func CheckGatewayACL(sender_id, recipient_id, bundle_id, route) bool {
+    -- 1. 好友建联是独立系统路由，凭 FriendshipTicket 签名鉴权，
+    --    绝不走 IsDirectFriend（否则 pending 关系永远 403，好友永远建不起来）；
+    --    验签落盘 pending 后，由服务端向 B 发一次受限系统 Wake Push。
+    if route == "POST /v1/friends/invite" {
+        return VerifyTicketSignature(ticket)   -- 与好友 ACL 解耦
+    }
+    -- 2. 瞬时单聊信令（直投 Ping 等）：必须全局互为好友
     if bundle_id == "" {
         return IsDirectFriend(sender_id, recipient_id)
     }
-    -- 2. 协同方案包事件：双方均在 participant_uids 内即法定授权，
+    -- 3. 协同方案包事件：双方均在 participant_uids 内即法定授权，
     --    不再强制 B↔C 全局互为好友
     return IsParticipantOfBundle(bundle_id, sender_id)
         && IsParticipantOfBundle(bundle_id, recipient_id)
 }
 ```
 
+- **好友路由豁免（v0.1.1 修悖论）**：`POST /v1/friends/invite` 属系统握手路由，由 Ticket 签名合法性授权，不进 `IsDirectFriend` 好友 ACL；通过后才写 `friendships(pending)` 并触发一次受限系统通知。
 - **准入严管**：仅 PROPOSE 创建方案包时，严格校验发起人与每个被邀请人互为好友（防陌生人拉群刺探）；
 - **包内放行**：方案包合法建立后，事件流广播以 `bundle_id` 成员清单为授权边界——协作域内成员间的路由不再要求全员完全连通图。
 

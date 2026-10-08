@@ -22,4 +22,5 @@
 
 ## 契约版本
 
-- `v0.1.0-contract`：首版冻结（含上述审查修正）。Phase 1 起按此实现，未拍板前不改动枚举/DDL 结构。
+- `v0.1.0-contract`：首版冻结（含服务端架构审查修正：废 mailbox、零明文、零 entity_key、Ticket 防撞库、双 Token、256KB/TTL）。
+- `v0.1.1-contract`（2026-10-09 补丁）：加好友自报家门（`encrypted_intro` 解审批死锁）、`ATTACH_FACT` 语义定调（FSM 零影响 + 平权）、OPK 注册瘦身（10~20）、§1.7 ACL 摘掉好友分支、Q12 事实所有权本地化。Phase 1 起按此实现。

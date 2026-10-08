@@ -1,10 +1,12 @@
 syntax = "proto3";
 
 // ============================================================================
-// shiguang-relay · 协同中继协议（冻结契约 v0.1.0-contract）
+// shiguang-relay · 协同中继协议（冻结契约 v0.1.1-contract）
 //
 // 2026-10-09 服务端架构审查修正已内建：
-//   - 废除独立 Mailbox API；事实同步并入 bundle 事件流
+//   - v0.1.1 (2026-10-09 补丁)：加好友自报家门（identity_key_pub + encrypted_intro）解审批死锁；
+//     ATTACH_FACT 语义定调（FSM 零影响 + 全员平权）；OPK 注册首批仅 10~20 个（瘦身）
+//   - v0.1.0 首版：废除独立 Mailbox API；事实同步并入 bundle 事件流
 //     (ATTACH_FACT / UPDATE_FACT / DETACH_FACT)，共用全局 seq_id 与 WSS 广播
 //   - 注册/好友接口剔除 display_name（昵称仅存 encrypted_profile，服务端零明文）
 //   - 零 entity_key 暴露：服务端不接收/不存储任何业务代号（如车次 D8724、预约码）
@@ -54,6 +56,8 @@ enum ActionType {
   BRIEFING_UPDATE = 17;
   STEP_NOTE = 18;
   // —— 事实同步（2026-10-09 收敛进 bundle 事件流）——
+  // ATTACH_FACT 语义（v0.1.1 定调）：FSM 零影响（仅递增 seq_id + 广播，不改 Quorum、不触发 STALLED/CONFIRMED）
+  //   + 全员平权提交（内容共享非日程调度，不受 Directive 发起人独占限制）；端侧收到即物化进本地 artifacts。
   ATTACH_FACT = 19;
   UPDATE_FACT = 20;
   DETACH_FACT = 21;
@@ -112,11 +116,14 @@ message FriendshipTicket {
   string nonce = 3;               // 短期随机
   int64 expires_at = 4;           // 过期时间
   bytes signature = 5;            // B 用 identity_key 对上式字段的签名（防篡改）
+  bytes identity_key_pub = 6;     // B 的身份公钥，供 A 加密自报家门（解审批死锁，服务端不可读）
 }
 
 message FriendshipRequest {
   FriendshipTicket ticket = 1;    // 服务端解析：验签 + 过期 + nonce 校验
-  // 验签通过才写 friendships(status=pending)；杜绝 to_user 全库遍历撞库
+  bytes encrypted_intro = 2;      // A 用 ticket.identity_key_pub 做 ECIES 加密的自报家门短语（定长 128B 对齐，防长度侧信道）
+  // 验签通过才写 friendships(status=pending)；杜绝 to_user 全库遍历撞库。
+  // B 用私钥解开 encrypted_intro 显示「来自 张三 的好友申请」，破解纯 UUID 审批死锁；服务端仍纯盲。
 }
 
 message FriendshipResponse {
@@ -140,7 +147,7 @@ message KeyBundleResponse {
   bytes identity_key_pub = 1;
   bytes signed_prekey_pub = 2;
   bytes signed_prekey_sig = 3;
-  repeated PreKey one_time_prekeys = 4;   // OPK 池，用尽触发补仓
+  repeated PreKey one_time_prekeys = 4;   // OPK 池；注册首批仅允许上传 10~20 个（瘦身策略，单账号 DB <1KB），用尽时心跳触发静默补仓
 }
 
 message PreKey { string key_id = 1; bytes pub = 2; }
