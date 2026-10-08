@@ -15,7 +15,7 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 
 /**
- * 分享入口宿主（fact 草案 §2.3）：ACTION_SEND text/plain → 原生侧只做
+ * 分享入口宿主（fact 草案 §1.7）：ACTION_SEND text/plain → 原生侧只做
  * "取 EXTRA_TEXT + 转投 Dart"，零解析（raw 入册一字不解析的纪律在 Dart
  * 命令层）。冷启动 onCreate 取 intent，热启动（singleTop）走 onNewIntent；
  * Dart 侧收到后 upsert_facts raw 入册（origin=shared）+ 开挂载 sheet。

@@ -5,7 +5,7 @@ updated: 2026-10-08
 
 # 事实挂载 · 用户/好友体系 · 外部盲中继 — 设计草案
 
-> **状态**：**定稿已拍板**（2026-10-07 用户拍板：§0 七项+四洞察全部通过；同轮裁决 D2=未归属池宿主挂载 sheet 常驻组；schema 校准 v4——背景侧已占 v3）。拍板留痕=schedule-app §11「事实挂载（artifacts）」「事实摄入与凭证 UI（upsert_facts）」两行；2026-10-07 开工前评审定稿修正 8 项已回改（见 §0 末）；**施工未开工**。多人轨（§3–§6）与 §13 修正（Q9）仍另批不搭车。2026-10-06 起草；2026-10-07 评审收敛（§1/§2 全面重写，收敛记录见 §0）。
+> **状态**：**定稿已拍板**（2026-10-07 用户拍板：§0 七项+四洞察全部通过；同轮裁决 D2=未归属池宿主挂载 sheet 常驻组；schema 校准 v4——背景侧已占 v3）。拍板留痕=schedule-app §11「事实挂载（artifacts）」「事实摄入与凭证 UI（upsert_facts）」两行；2026-10-07 开工前评审定稿修正 8 项已回改（见 §0 末）；**MVP 六切片已全部落地**（2026-10-08，commit `60c9995`，落地对账见 §8）——剩余真待办=分期二临场通关条 + V1.5 硬红线校验/OCR，其开工 Blocker 四项裁决见 §9（2026-10-08 拍板）。多人轨（§3–§6）与 §13 修正（Q9）仍另批不搭车。2026-10-06 起草；2026-10-07 评审收敛（§1/§2 全面重写，收敛记录见 §0）；2026-10-08 施工完成对账 + 二期裁决（§8/§9）。
 > **目的**：把「零散事实结构化挂载」「摄入与 AI 结构化管道」「事实看板 UI」与「多人协同/盲中继（多人轨）」合并起草，供评审。
 > **标记**：✅ = 已收敛（含 2026-10-07 评审收敛；并入 SSOT 前仍需正式拍板）；❓ = 待定（讨论中，尚未拍板）。
 > **关联**：全局 SSOT = `schedule-app.md`（§13 四大铁律现需修正，见 §6）；软背景配套 = `background-context-draft.md`（事实=硬 / 背景=软的分流判据在其 §5）；本体定性 §4（plans=Soul/blocks=Avatar）本草案不修改。
@@ -44,6 +44,8 @@ updated: 2026-10-08
 ⑥badge UI 渲染防御（§1.2）：maxWidth 96dp + ellipsis，标题空间优先；
 ⑦跨午夜一致性比对折算口径（§1.3）：绝对时间轴分钟统一折算，禁同日直比；
 ⑧hero_metrics 命令层截断（§2.2）：超 3 项截前 3 落库不阻断。schedule-app §11 两行已同步校准。
+
+**施工期拍板与裁决留痕（2026-10-08）**：①**出生确认条款**（§1.2：raw 入册以 `verbal`/`verbal` 占位 → 首次 `structured` 回填允许 AI 定 `category`/`source_kind` 终值 → `structured` 后恒不可变）；②**`upcoming_facts` 边界补全**（§1.6：`get_schedule` 追加视窗外 ~14 天 structured 凭证四字段轻量投影）；两项均已同步 schedule-app §11。③**开工 Blocker 四项 + 维护性隐患四项**逐条拍板（含 Q-A/B/C 三选一），见 §9；④**voided 双通道口径**（排程读侧静默 / UI 折叠组可见）与 unvoid 双向，见 §1.2。
 
 ---
 
@@ -109,7 +111,7 @@ updated: 2026-10-08
 
 字段规则：
 
-- **枚举收敛**：`category` = `transit | ticket | hotel | venue | verbal`（场馆通知与场地政策合并为 `venue`——通知=带时间锚部分落 time_anchors，政策=长期规则落 constraints）；`source_kind` = `booking`（官方预订凭证）| `announcement`（官方公告/政策）| `verbal`（口头转述）；`state` = `raw | structured | voided`（`voided`=退票/取消作废，2026-10-07 定稿修正——凭证=现实存证，退票本身也是现实，**存证保留不删**；读侧全通道静默：不进搭载/临场通关条/一致性比对/凭证计数，UI 弱化显示；voided 由 AI actor 经用户对话同意后写入；物理删除仅 human 通道，分工见 §1.4）；`origin` = `shared | quicknote | ai | manual`。
+- **枚举收敛**：`category` = `transit | ticket | hotel | venue | verbal`（场馆通知与场地政策合并为 `venue`——通知=带时间锚部分落 time_anchors，政策=长期规则落 constraints）；`source_kind` = `booking`（官方预订凭证）| `announcement`（官方公告/政策）| `verbal`（口头转述）；`state` = `raw | structured | voided`（`voided`=退票/取消作废，2026-10-07 定稿修正——凭证=现实存证，退票本身也是现实，**存证保留不删**；**双通道口径（2026-10-08 拍板，原「读侧全通道静默 + UI 弱化显示」自相矛盾，此处定死）**：①**排程/临场读侧全静默**——不进 get_schedule 搭载/临场通关条候选/一致性比对/凭证计数（SQL 白名单 `state='structured'`，§8 约定 3 照旧）；②**UI 通道单独放行**——凭证子页底部「**已作废 · N 条**」折叠组可见（查看/长按删除，删除仅 human，与「过去的凭证」并列同款折叠卡片）；voided 由 AI actor 经用户对话同意后写入，**可回改（unvoid）：`voided ↔ structured` 双向可行**（AI 须经用户同意 / human 长按），**`raw → structured` 一旦发生不可逆**（出生确认条款同口径）；物理删除仅 human 通道，分工见 §1.4）；`origin` = `shared | quicknote | ai | manual`。
 - **出生不可变 + 出生确认（2026-10-08 施工定案）**：`category`/`source_kind`/`origin`/`captured_by` 出生不可变（编辑路径忽略传入，patch 白名单不含），例外一项——**raw 入册以 `verbal`/`verbal` 占位**（系统分享/快记入册零解析，AI 不在场定不了正确类别，猜即第二真相）；**首次** raw→structured 回填视为**出生确认**：命令层允许 AI 定 category/source_kind 终值（枚举严进照旧），structured 后恒不可变。调和三方：必填枚举字段 vs 零解析 raw 入册 vs AI 回填需定正确类别（金样本 A2 终态 = transit/booking）。
 - **机读/展示分离**：凡是引擎要用的字段一律数字/日期（`min` 与 blocks 同口径 0..1439），凡是给人看的一律 label 串；「建议到站 08:15」由 `advance_arrival_minutes` 推导，不存第二份。
 - **`badge`**：时间轴微标透出的**单值**（`05车12F`），由 AI 显式指定且仅 booking 类设置——推导 `hero_metrics[0]` 会猜错语义（预约段与预约码谁排第一是语义问题）。命令层**超 12 字符截断**（微标渲染于最小 44dp 高的块卡，UI 空间硬约束——截断优于拒绝），工具描述同步约束；UI 渲染层防御（2026-10-07 定稿修正）：**maxWidth 96dp + ellipsis 硬截断、标题空间优先**——12 全角字符 ≈168dp@14sp，360dp 屏足以挤死标题，命令层+渲染层双层防御缺一不可。
@@ -124,7 +126,7 @@ updated: 2026-10-08
 
 | kind | 语义 | 例 | 引擎用途 | UI 渲染 | AI 用途 |
 |---|---|---|---|---|---|
-| **moment** | 时刻 | 止检 08:45 / 发车 09:00 / 每日 16:00 停止入场 | 临场通关条触发（最早行动时刻 −2h 或 −advance）；V1.5 红线校验 | 时空网格单行时间，deadline 类加 ⚠ | 提案推理避开 |
+| **moment** | 时刻 | 止检 08:45 / 发车 09:00 / 每日 16:00 停止入场 | 临场通关条触发（**判据=role 受控枚举，公式=T_action−advance−120，2026-10-08 裁决见 §9.1**，原「−2h 或 −advance」表述作废）；V1.5 红线校验 | 时空网格单行时间，deadline 类加 ⚠ | 提案推理避开 |
 | **span** | 区段/持续状态 | 乘车 09:00–11:20 / 入住 10-17~10-19 / 索道进闸段 10:30–11:00 | 与关联块起止**一致性比对**（改签琥珀提示的数据源） | 卡上区间行「10-17 → 10-19 · 3 晚」 | 知道这段时间人在哪 |
 | **rule** | 长期规则 | 周一闭馆 / 禁三脚架 / 限带一件行李 | V1.5 红线校验输入 | 规则 Chip 流，**永不上时间轴** | 主动规避 |
 
@@ -155,7 +157,7 @@ flowchart LR
 | 钉死骨架 | **零新机制**——事实派生的块就是 pinned 块；`adjust_blocks add` 默认 pinned + 硬行程豁免填充率聚合（memory 口径已拍板） |
 | 自动派生赶路缓冲 | **走 playbook 不走引擎**：AI 读 `advance_arrival_minutes` 后在 propose 里自带「前往车站」块（重叠校验天然锁死该段）。**缓冲块不 pinned**——pinned 块 AI 自己也挪不动，改签时反而卡死；普通 AI 块被水流融化后晨间 propose 重排，自愈。机械自动注块会造出用户未确认的块，违反「人=终审」 |
 | 行前清单 | **凭证卡自带**（required_items Chip 即清单）+ AI 把「带身份证/氧气」写进 T-1 路线图步骤（金样本 #4 幕 3 既有形态）——零 schema |
-| 闭馆日硬红线 | **V1.5 机械校验**：propose/adjust 时校验关联 plan 的 artifacts（forbidden_weekdays 撞星期 / start_min 晚于 deadline_min / daily_deadline_min → `schedule_rejected` 逐条原因）。MVP 先靠 get_schedule 搭载让 AI 自觉，机械红线二步走——契合「App=裁判」哲学的正规增量，但不与 MVP 搭车 |
+| 闭馆日硬红线 | **V1.5 机械校验**：propose/adjust 时校验关联 plan 的 artifacts（forbidden_weekdays 撞星期 / start_min 晚于 deadline_min / daily_deadline_min → `schedule_rejected` 逐条原因）。**范围=本 plan 及递归子树、rule 生效窗=`rule_scope` 必填、刻度不对称（human 放行）——2026-10-08 裁决见 §9.2/§9.3**。MVP 先靠 get_schedule 搭载让 AI 自觉，机械红线二步走——契合「App=裁判」哲学的正规增量，但不与 MVP 搭车 |
 
 ### 1.6 摄入管道：三通道与三刀路由（✅）
 
@@ -211,13 +213,13 @@ flowchart TD
 
 ## §2 事实看板 UI（随行凭证 / Fact Capsule）
 
-**✅ 方案**：基于槽位协议的自适应卡包（Slot Assembler），不为任何门类硬编码 UI。**不新增底部 Tab**（双 Tab 拍板结构不动）——三个入口 + 一个全屏凭证 sheet。
+**✅ 方案**：基于槽位协议的自适应卡包（Slot Assembler），不为任何门类硬编码 UI。**不新增底部 Tab**（凭证不加第四 Tab；底部现为「日程｜清单｜设置」三 Tab——设置迁入第三 Tab 系 2026-10-08 用户拍板，原「双 Tab 拍板结构不动」就此修订）——三个入口 + 一个全屏凭证 sheet。
 
 ### 2.1 页面定位与三入口（✅）
 
 | 入口 | 形态 | 分期 |
 |---|---|---|
-| ① 计划详情「随行凭证」区 | 计划详情页新增一节（与 spec/路线图/notes/open_items/子树/犒赏并列），列出该 plan（含**子树派生聚合**）名下全部凭证——**一趟旅行的根计划详情页天然就是「行程凭证总览页」**，即「灵活页面」本体，零新导航。每条=紧凑卡（类别图标+title+badge+日期）；全部锚点最晚日历日早于今日的派生折叠进「过去的凭证」组（span 取 end_date）；plan_id=null 条目不进计划页（宿主=挂载 sheet 常驻组+计划列表页未归属入口，见 §1.7） | MVP |
+| ① 计划详情「随行凭证」区 | 计划详情页新增一节（与 spec/路线图/notes/open_items/子树/犒赏并列），列出该 plan（含**子树派生聚合**）名下全部凭证——**一趟旅行的根计划详情页天然就是「行程凭证总览页」**，即「灵活页面」本体，零新导航。每条=紧凑卡（类别图标+title+badge+日期）；全部锚点最晚日历日早于今日的派生折叠进「过去的凭证」组（span 取 end_date）；**`voided` 沉底部「已作废 · N 条」折叠组**（2026-10-08 拍板，§1.2——排程读侧仍全静默，只有 UI 这一条出口）；plan_id=null 条目不进计划页（宿主=挂载 sheet 常驻组+计划列表页未归属入口，见 §1.7） | MVP（voided 折叠组为新增待施工） |
 | ② 时间轴 🎫 微标 → 块浮层 | BlockRenderer 来源角标体系（📋/📌）加 🎫，微标文本=`badge` 字段；点块开浮层见通关卡 | MVP |
 | ③ 临场通关条 | 今日页顶部派生条：开始前 2h 内的凭证自动吸附（artifacts 按锚点范围查询，**派生不入库**，与补给带同纪律） | 分期二 |
 
@@ -263,7 +265,7 @@ flowchart TD
 | raw 凭证 | **待提炼的原文** |
 | plan_id=null 派生组 | **未归属**；分享时兜底动作=「先记下，稍后归属」 |
 | 未归属 App 内入口（定稿修正） | 计划列表页提示行「N 条未归属凭证」→「未归属凭证」管理面板 |
-| voided 凭证（定稿修正） | 「已作废」弱化标（弱化卡，同 verbal 精神） |
+| voided 凭证 | 折叠组「**已作废 · N 条**」；卡面弱化标「**已作废**」（弱化卡，同 verbal 精神） |
 | 一致性提示 | 「与日程时间不一致，点此核对」 |
 | 溯源折叠 | 「查看原文」 |
 | verbal 角标 | 「口头信息 · 待核实」 |
@@ -435,16 +437,32 @@ GET  /v1/mailbox/{plan_id}/msg?since= 拉取增量
 
 **拍板留痕（2026-10-07）**：用户对 §0 七项正式拍板通过（+D2 未归属池宿主=挂载 sheet 常驻组）→ 事实部分已并入 `schedule-app.md`（§11 台账两行：artifacts 表 v4 + 工具面增补 `upsert_facts`，附 `suggest_user_setting` 先例）；§3–§6 多人轨与 §13 修正（Q9）**另批**。
 
-**施工依赖序**（拍板后）：
+**施工依赖序（2026-10-07 原定）→ 落地对账（2026-10-08）**：
 
-1. 文档四件套：本草案定稿并入 SSOT ／ `schedule-app.md` §11 台账 ／ `ui-spec.md`（§0.4 词汇先行 + §5 计划详情分区 + §6 角标）／ `golden-samples.md` #4 增补走查幕
-2. `db.dart` **v4**：artifacts 单表另批迁移（背景侧已先行 v3 单表，见 `background-context-draft.md` §2；artifacts 含 attachments 预留列 + captured_by 钉子）+ 导出 JSON 带全
-3. 命令层：`UpsertFacts`（human/ai 双 actor；分享写入与 AI 提炼同命令双通道；改挂=同命令改 plan_id；投影列双写铁律与 hero_metrics>3 截断在命令层落实，见 §1.1/§2.2）+ `DeleteArtifact`（仅 human actor，清理误分享文本；AI 无删除权只可提议 voided——删凭证绝不删块=§1.4 防护）+ `UpsertBackground`（同批；全局预算 `budget_exceeded` **终态校验**——条数>8 或 总字数>400，仅拦 ai actor、拒绝体携全量现场供归并询问，human 放行——校验刻度不对称；归并=**原子批处理命令**（ops 数组单事务终态校验，先例 update_fixed_slots / propose_schedule））+ `delete_plan` 扩展处置两新表（背景级联销毁 / artifacts detach 未归属池+note 交代去向）
-4. 工具面：`upsert_facts` schema（state 三值 + hero_metrics ≤3 写入工具描述）+ `get_schedule` 搭载凭证摘要（照天气投影模式；**窗口对齐返回视窗**：无参=当日+次日、days=N 全窗——定稿修正）
-5. playbook：`facts.md`（三刀路由 + 消化 raw SOP + 改签 SOP + verbal 三去向）
-6. UI：ACTION_SEND text/plain 接入 + 挂载 sheet（含「未归属 N 条」常驻组=D2）+ **计划列表页未归属提示行/管理面板**（定稿修正，§1.7/§2.1）→ 计划详情「随行凭证」区 → 块浮层通关卡 → 🎫 时间轴微标
-7. 分期二：临场通关条（派生）
-8. V1.5：硬红线机械校验 / OCR 图片接入（Q11）/ 去重（多人轨）
+| # | 原定项 | 状态 | 落点（证据） |
+|---|---|---|---|
+| 1 | 文档四件套 | ✅ | 本草案（§0 留痕 + §9 裁决）／ `schedule-app.md` §11 三行（artifacts 表 v4 + upsert_facts 通道 + 二期裁决）／ `ui-spec.md` §0.4 词汇 + §5 计划详情分区 + §6 角标（含临场通关条文案，2026-10-08）／ `golden-samples.md` #4 附录 A1–A7（附录状态行 2026-10-08 已同步为「MVP 已落地」） |
+| 2 | `db.dart` **v4** | ✅ | `_ensureArtifactsTable`（v3→v4 分段幂等）+ 新建库 `_createAll`；含 attachments 预留列 + captured_by 钉子；`repository.exportAll` 六面含 artifacts |
+| 3 | 命令层 | ✅（含一处回改） | `UpsertFactsCommand`/`DeleteArtifactCommand`（双写铁律 `Artifact.payloadWithRefs`、badge 12 截断、hero_metrics 截前 3、voided 降 pinned）／ `UpsertBackground`+`MergeBackgrounds`（同批，原子批+终态预算）／ `delete_plan` 两新表：背景级联销毁 ✅、artifacts detach ✅ —— **但 `block_id` 三分支未落地（§9.5-8）** |
+| 4 | 工具面 | ✅ | `upsert_facts` schema + `get_schedule` 逐日搭载（窗口对齐返回视窗、按计划分组）+ `upcoming_facts`（~14 天四字段投影）；背景侧 +2 `upsert_background`/`merge_backgrounds` |
+| 5 | playbook | ✅ | `docs/playbook/facts.md`（三刀路由 + 消化 raw SOP + 快记收尾 + 改签 SOP + 提案反哺 + verbal 三去向） |
+| 6 | UI | ✅ | `ACTION_SEND text/plain`（Manifest + MainActivity）→ raw 入册 → 挂载 sheet（未归属常驻组）／ 计划列表页「N 条未归属凭证」提示行 + 管理面板／ 计划详情凭证区（随二批 UX 拆为 `PlanFactsPage` 子页）／ 块浮层嵌通关卡／ 🎫 时间轴微标／ `voucherSurface` token |
+| 7 | 分期二：临场通关条 | ❌ **未开工** | 判据与公式已裁决（§9.1/§9.4），等排期 |
+| 8 | V1.5：硬红线 / OCR / 去重 | ❌ **未开工** | 红线四项已裁决（§9.2/§9.3）；OCR=Q11 待拍板；去重=多人轨 |
+
+**剩余真待办清单（2026-10-08 核定）**：
+
+| 分期 | 项 | 契约 |
+|---|---|---|
+| 分期二 | 临场通关条（组件 + 层序 + 折叠 + 跳转 + `role` 枚举化 + 120/30 常量） | §9.1 / §9.4 |
+| V1.5 | 硬红线机械校验（`rule_scope` 必填 + 派生失活 + 子树校验 + `rejected_by_facts` + human 角标） | §9.2 / §9.3 |
+| V1.5 | OCR 图片接入 | Q11 ❓ 待拍板 |
+| 多人轨 | 去重（重复/冲突/互补） | §3–§6 |
+| 回改 | 多 span 重叠度贪心比对（`fact_sheet.dart`） | §9.5-5 |
+| 回改 | raw→structured 严进 `category`+`source_kind` 必填（`command_handler.dart`） | §9.5-7 |
+| 回改 | `delete_plan` 解挂三分支（`block_id` 随块生命周期） | §9.5-8 |
+| **新增** | **voided 可见出口**（凭证子页底部「已作废 · N 条」折叠组 + 含 voided 的查询变体） | §1.2 |
+| 文档 | `golden-samples.md` #4 附录状态行「施工中」待同步为已落地 | 本表 #1 |
 
 **金样本 #4 增补走查幕**：微信收到索道票短信 → 分享到拾光 → 挂到 c5「玉龙雪山一日」→ 凭证区显示「1 条原文待提炼」→ 桌面 AI 提炼成正式凭证卡 → D5 玉龙雪山日块浮层走查通关卡（hero=预约段/预约码 + 约束 Chip=身份证/氧气/防寒服）。
 
@@ -454,3 +472,109 @@ GET  /v1/mailbox/{plan_id}/msg?since= 拉取增量
 1. **子树凭证聚合单次 I/O**（§2.1）：Repository 不逐子节点发 SQL——用既有内存 PlanTree 先收集目标计划及全部子孙 id，再单条 `SELECT * FROM artifacts WHERE plan_id IN (…) AND state != 'voided' ORDER BY created_at` 完成聚合，防列表滑动查询抖动；
 2. **快记消化收尾**（§1.6）：AI 提炼凭证落库后**同轮归档原快记畸形 plan**（playbook `facts.md` 定死），计划列表零残留；
 3. **读侧 state 白名单**：一切面向排程/临场的读侧查询（get_schedule 搭载、临场通关条候选）SQL 硬编码 `WHERE state = 'structured'`——raw 原文不消耗排程 prompt token，voided 不出现在检票口与核对提示。
+
+---
+
+## §9 定稿裁决（2026-10-08 用户拍板）：开工 Blocker 与维护性隐患
+
+> **由来**：定稿评估报告确认 MVP 主干逻辑自洽且已施工完毕，但剩余两项真待办（分期二临场通关条、V1.5 硬红线）各卡一个未裁决点，另有四项维护性隐患文档落后于实现。本节为 2026-10-08 用户逐条拍板的落地契约。**§1.3 临场触发、§1.5 红线校验的表述以本节为准**（正文已加指针）。Frontmatter `updated` 同步 2026-10-08。
+
+| # | 裁决 | 分期 |
+|---|---|---|
+| 1 | 临场判据：`role` 受控枚举 + 分层时相推进公式 | 分期二 |
+| 2 | rule 生效窗：凭证级 `rule_scope` **必填** `valid_from`/`valid_to`；**删 `days_of_week`** | V1.5 |
+| 3 | 红线范围：本 plan **及递归子树**；跨午夜按块 `date` 归属 | V1.5 |
+| 4 | 界面与日口径：通关条层序 + **本地物理时钟**判定 | 分期二 |
+| 5 | 多 span 比对：重叠度贪心匹配 | 回改（已落地） |
+| 6 | 一条凭证挂多块：往返票拆两条 + `parent_artifact_id` | 契约演进 |
+| 7 | raw→structured 严进：`category`/`source_kind` 必填 | 回改（已落地） |
+| 8 | `delete_plan` 解挂：复用未归属池 + `block_id` 按块生命周期分支 | 回改（已落地） |
+
+### 9.1 裁决 1：临场通关条机读判据与时间合成公式（分期二）
+
+**`role` 收敛为受控枚举（废除自由串）**——自由串无法机读判定「哪个 moment 是要行动的时刻」：
+
+```dart
+enum MomentRole {
+  // ── 行动类（Actionable：参与临场通关条触发）──
+  departure, // 发车 / 起飞 / 登船
+  deadline,  // 停止检票 / 最晚入园 / 截止交付
+  checkin,   // 开放入住 / 验票开放
+  checkout,  // 退房截止
+  // ── 信息类（Informational：仅展示，不参与触发）──
+  arrival,   // 到达目的地（非用户动作）
+  reference, // 参考信息（日出日落 / 开放时间）
+}
+```
+
+- **机读规则**：`kind == 'moment' && role ∈ {departure, deadline, checkin, checkout}` → 有效行动锚点；`arrival`/`reference` 自动忽略。
+- **存量兼容（硬要求）**：已落库凭证 `role` 为中文自由串（「发车」「停止检票」）。枚举上线后旧值非法——**读侧容错：未知 `role` 按 `reference` 处理（不触发）+ `[DEGRADE]` 日志；不迁移、不改写 `payload`**（payload 单一真相 + 原文永存）。工具面 `role` 由自由串改枚举且 moment 必填。
+- 契约存英文枚举值，UI 出白话（映射见 ui-spec §0.4）；§1.2 示例中的中文 `role` 为旧口径展示值，新写入一律英文枚举。
+
+**合成公式（因果叠加，非二选一）**：
+
+| 量 | 公式 | 说明 |
+|---|---|---|
+| `T_target` | `T_action − advance_arrival_minutes` | **仅 `departure`/`checkin` 减**；`deadline` 类 `T_target = T_action`（止检本身已含提前量，禁重复扣减）；`advance` 缺省（null）= 不减 |
+| `T_trigger` | `T_target − passLeadMinutes(120)` | 通关条浮现并高亮 |
+| `T_dismiss` | `T_action + passDismissAfterMinutes(30)` | `departure`/`checkout` 适用；**`deadline`/`checkin` 类 `T_dismiss = T_action`**（到点即收，止检后 30 分钟再提示无意义） |
+
+- 常量 `passLeadMinutes = 120` / `passDismissAfterMinutes = 30` 进 `lib/action/rules.dart` 的 `ArtifactRules`（与 `badgeMaxChars=12`、`heroMetricsMax=3` 同款单一出处），命令层/工具描述/UI 同引。
+- 例：D8724 发车 09:00、advance=45 → `T_target` 08:15、`T_trigger` 06:15、`T_dismiss` 09:30。
+
+### 9.2 裁决 2：rule 类凭证生效窗（V1.5）
+
+- **载体**=payload 内 `rule_scope: {"valid_from": "2026-10-01", "valid_to": "2026-10-07"}`（纯日期，YYYY-MM-DD）。**`kind=rule` 的锚所属凭证建档时必须显式给出二者**（单日规则两者相等），漏填 → `invalidRequest` + hint 驳回（与裁决 7 同款严进）。
+- **plans 表不加 `start_date`/`end_date`**——拒绝为红线预铺字段与 v5 迁移，原「缺省继承 Plan 行程窗」因无数据源而作废。
+- **不设「长期有效缺省」**——杜绝一年后同名计划被红线误杀。
+- **星期约束 100% 归 `constraints.forbidden_weekdays`**：原提案 `rule_scope.days_of_week` **坚决删除**，只留两个日期字段——同一条「周一闭馆」不得两处表达（第二真相，本草案一贯否决）。
+- **生效判定派生不入库**（读时算，与补给带同纪律）：超出 `[valid_from, valid_to]` 的 rule 凭证自动失活、不参与红线；不改 `state`、不需新增管家巡检。
+- **未归属（`plan_id=null`）凭证**：长期有效但**归属后才参与红线校验**——避免 AI 提议归属时效期突变。
+
+### 9.3 裁决 3：红线校验范围与星期归属（V1.5）
+
+- **范围**=目标 plan 及其**递归子树**（复用既有内存 `PlanTree`，深度 ≤3，与凭证区子树聚合**同源**，禁写第二套递归）。既不取「当日全部凭证」（防跨 plan 污染），也不限于孤立本 plan（父级旅行大方案下的通用凭证须对子行程生效）。
+- **校验集**=`state='structured'`（§8 约定 3 白名单照旧；raw/voided 不参与）。
+- **跨午夜块**：星期一律取块 `date`（开始日）的 weekday，**不因溢出次日改判**——10-26（周一）23:30→10-27 01:30 判周一。
+- **校验刻度不对称**：
+  - AI 通道（`propose_schedule` / `adjust_blocks`）命中 → `schedule_rejected`，拒绝体新增 `rejected_by_facts: [{artifact_id, title, reason}]` 逐条原因，并复用 `available_free_windows`（剔除冲突时段）与 `protection_manifesto`；
+  - **human 通道绝不阻断**（用户意志高于一切）：允许落盘，仅在块卡右上角亮琥珀角标「规则提醒：周一闭馆」。
+
+### 9.4 裁决 4：界面层序与日口径（分期二）
+
+```
+[今日页容器]
+├─ ① 系统级 / MCP 离线 Banner（发生时置顶）
+├─ ② 【临场通关条 Action Pass Bar】（处于 [T_trigger, T_dismiss] 时插入）
+├─ ③ 昨日遗留区（有未完结事项时展开）
+├─ ④ 双轨仪表盘（当日进度与工时水位）
+├─ ⑤ 今日主日程时间轴
+└─ ⑥ 补给带 / 放工明日概要
+```
+
+- 通关条是**高时效行动指引**，插在系统 Banner 下、遗留区上；**不挤掉双轨仪表盘**（拍板核心指标）。
+- **折叠纪律**：多条并存时按 `T_action` 最早者展开，其余折叠为胶囊角标「+2」，支持横滑切换。
+- **日口径=本地物理时钟判定**：`T_trigger ≤ now_local ≤ T_dismiss`，不依赖页面作息日切换——消除「凌晨 1 点页面显示昨天、通关条按日历日捞今天」的错层。**`date + min` 是本地墙钟，禁用 `toUtc()` 比较**（旅行跨时区场景会错位，恰恰是最高频使用场景）。
+- **跳转**：点「查看日程」定位该凭证所属 Block；Block 已删/voided → 兜底跳计划详情凭证子页。
+
+### 9.5 维护性隐患定案（5–8）
+
+- **5 多 span 比对选谁**：**重叠度贪心匹配**——优先比对与 Block 时间**重叠区间最大**的 span（重叠度按 §1.3 跨午夜绝对分钟轴折算同口径计算）；均不重叠时取起始最早的有效 span。实现现状（任一 span 命中即亮琥珀条）按此回改，防往返票/入住+索道两段 span 误报。
+- **6 一条凭证挂多块**：保持 `block_id` **1:1 单值**——往返票/联程票由 AI **初次解析即拆两条**结构化凭证，以 `parent_artifact_id` 关联（payload 内新增，`v` 保持 1、读侧缺省即可，**零迁移**）；`raw_text` 各存一份（原文永存）。**副作用需同步**：一条短信可产两条凭证 → 未归属计数、「N 条原文待提炼」文案与 playbook `facts.md` 一并改口径。
+- **7 raw→structured 严进**：`category` 与 `source_kind` **必填**，缺失 → `invalidRequest` + hint 驳回（复用枚举非法同款拒绝码，**不新增错误码**），严禁静默沿用 `verbal`/`verbal` 占位（否则永久挂「口头信息 · 待核实」角标，与 booking 凭证矛盾）。**边界写清**：严进防的是「漏填」，防不了「填错」——AI 拿不准时仍可填 `verbal`/`verbal`（合法组合），真正防线是 playbook 回显义务与工具描述，不得把本条当成「消灭口头标签」的保证。
+- **8 `delete_plan` 解挂**：**复用未归属池**（挂载 sheet 常驻组 + 计划列表提示行），**不新造「总凭证箱」**。按块生命周期分支：
+
+| 情形 | 处置 |
+|---|---|
+| Block 随 Plan 级联删除 | `plan_id = NULL`、`block_id = NULL`，降落未归属池 |
+| Block 被移出 / 保留 | `plan_id = NULL`、**保留 `block_id`**（🎫 微标不丢），降落未归属池但保留挂载 |
+| 日切物理删块的自然悬空 | **不写库清外键**，读侧查无此 Block 静默降级（不亮微标、不比对）——守 §1.1「凭证比块长寿」 |
+
+### 9.6 施工落点（分期标注）
+
+| 分期 | 落点 |
+|---|---|
+| 分期二（临场通关条） | 工具面 `role` 枚举化（moment 必填）+ `ArtifactRules` 增 120/30 常量 + 今日页通关条组件（层序/折叠/横滑/跳转）+ 文案先入 ui-spec §0.4 |
+| V1.5（硬红线） | `rule_scope` 写入口校验 + 派生失活判定 + `propose`/`adjust` 校验钩子 + `rejected_by_facts` 拒绝体 + human 通道琥珀角标 |
+| 回改（已落地项） | 多 span 贪心比对（`fact_sheet.dart`）/ raw→structured 必填（`command_handler.dart`）/ `delete_plan` 三分支（`command_handler.dart`） |
+| 测试 | 一测一文件照旧，repository/commands/tools/ui 各层增对应文件 |
