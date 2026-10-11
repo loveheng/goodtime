@@ -190,7 +190,9 @@ Map<String, Object?> backgroundToJson(Background b) => {
     };
 
 /// artifacts 快照 JSON（MCP 唯一序列化口径）：payload 契约 JSON 原样透出（单一
-/// 真相，槽位不再拍平复制——防快照内出现第二份）；plan_id/block_id 为投影列现值。
+/// 真相，槽位不再拍平复制——防快照内出现第二份）；plan_id 为投影列现值。
+/// 块绑定已反转至块侧（fact §9.5-6，v5）——快照不含 block_id，块侧挂载走
+/// schedule_blocks.artifact_id。
 Map<String, Object?> artifactToJson(Artifact a) => {
       'id': a.id,
       'category': a.category,
@@ -202,7 +204,6 @@ Map<String, Object?> artifactToJson(Artifact a) => {
       'payload': a.payload,
       'captured_by': a.capturedBy,
       'plan_id': a.planId,
-      'block_id': a.blockId,
       'version': a.version,
     };
 

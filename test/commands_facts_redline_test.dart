@@ -35,7 +35,7 @@ void main() {
       throwsA(isA<ActionException>().having((e) => e.code, 'code', code));
 
   /// 周一闭馆规则凭证（周一=2026-10-26）：rule 类 + 生效窗 + forbidden_weekdays[1]。
-  Future<String> _ruleFact(String planId) async {
+  Future<String> ruleFact(String planId) async {
     final a = await repo.addArtifact(Artifact(
       category: Artifact.categoryVenue,
       sourceKind: Artifact.sourceAnnouncement,
@@ -118,7 +118,7 @@ void main() {
   group('硬红线子树校验 + rejected_by_facts（§9.3）', () {
     test('AI 在周一闭馆日排块 → schedule_rejected 含 rejected_by_facts', () async {
       final plan = await repo.addPlan(Plan(title: '云南七天'));
-      await _ruleFact(plan.id!);
+      await ruleFact(plan.id!);
       await expectLater(
         handler.execute(
           ProposeScheduleCommand(
@@ -142,7 +142,7 @@ void main() {
 
     test('周二排块不触红线（星期归因正确）', () async {
       final plan = await repo.addPlan(Plan(title: '云南七天'));
-      await _ruleFact(plan.id!);
+      await ruleFact(plan.id!);
       final r = await handler.execute(
         ProposeScheduleCommand(
           date: '2026-10-27', // 周二

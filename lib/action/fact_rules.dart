@@ -162,17 +162,14 @@ List<ActionPass> computeActionPasses(List<Artifact> facts, DateTime nowLocal) {
       if (!FactRules.actionableRoles.contains(role)) continue;
       final tAction = _abs(raw['date'] as String?, raw['min'] as int?);
       if (tAction == null) continue;
-      // T_target：仅 departure/checkin 减 advance（止检本身已含提前量，禁重复扣减）
+      // T_target：全角色统一 T_action − (advance ?? 0)（2026-10-09 去 2×2 特判，§9.1）
       final advance = _advanceMin(f) ?? 0;
-      final tTarget = (role == 'departure' || role == 'checkin')
-          ? tAction.subtract(Duration(minutes: advance))
-          : tAction;
+      final tTarget = tAction.subtract(Duration(minutes: advance));
       final tTrigger =
           tTarget.subtract(Duration(minutes: ArtifactRules.passLeadMinutes));
-      // T_dismiss：仅 departure/checkout 行动后收折（deadline/checkin 到点即收）
-      final tDismiss = (role == 'departure' || role == 'checkout')
-          ? tAction.add(Duration(minutes: ArtifactRules.passDismissAfterMinutes))
-          : tAction;
+      // T_dismiss：全角色统一 T_action + 20min（2026-10-09 去 2×2 特判，§9.1）
+      final tDismiss =
+          tAction.add(Duration(minutes: ArtifactRules.passDismissAfterMinutes));
       if (!nowLocal.isBefore(tTrigger) && !nowLocal.isAfter(tDismiss)) {
         out.add(ActionPass(
           fact: f,

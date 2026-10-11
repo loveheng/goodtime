@@ -21,6 +21,9 @@ class Repository extends ChangeNotifier {
 
   Future<Database> _database() async => _db ??= await Db.instance();
 
+  /// 暴露底层句柄给协同仓储（[CollabBundleRepository]/[OutboxRepository] 注入用）。
+  Future<Database> get db => _database();
+
   int _revision = 0;
 
   /// 写入代次：每次 notify 自增，监听方据此感知「有新写入需重查」
@@ -271,10 +274,14 @@ class Repository extends ChangeNotifier {
   /// payload=整段契约 JSON 串（命令层经 Artifact.encodePayload 单点编码并保证与
   /// 投影列同源——双写铁律 §1.1）。
   static const _artifactPatchColumns = {
-    'title', 'badge', 'state', 'payload', 'plan_id', 'block_id', //
+    'title', 'badge', 'state', 'payload', 'plan_id', //
   };
 
-  Future<Artifact> addArtifact(Artifact art) async {
+  /// 新建凭证（升格流入口）：[bindBlockId] 非空时**同事务**写块侧绑定
+  /// （fact §9.5-6：升格流/排程流两入口同走命令层单点写块侧——凭证插行与块
+  /// 回填原子，杜绝「有凭证无挂载」半截态）。块已日切物理删除（悬空 id）时
+  /// 绑定静默跳过（软引用口径，读侧查无此块自然降级 §9.5-8）。
+  Future<Artifact> addArtifact(Artifact art, {String? bindBlockId}) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final a = Artifact(
       id: art.id ?? newId(),
@@ -288,13 +295,21 @@ class Repository extends ChangeNotifier {
       attachments: art.attachments,
       capturedBy: art.capturedBy,
       planId: art.planId,
-      blockId: art.blockId,
       createdAt: art.createdAt ?? now,
       updatedAt: now,
       version: 0,
     );
     final db = await _database();
-    await db.insert('artifacts', a.toMap());
+    await db.transaction((txn) async {
+      await txn.insert('artifacts', a.toMap());
+      if (bindBlockId != null) {
+        // 块侧绑定单点（v5 反转关联）：块行在才绑，version+1 守乐观锁纪律
+        await txn.rawUpdate(
+          'UPDATE schedule_blocks SET artifact_id = ?, version = version + 1, updated_at = ? WHERE id = ?',
+          [a.id, now, bindBlockId],
+        );
+      }
+    });
     notifyListeners();
     return a;
   }
@@ -337,25 +352,30 @@ class Repository extends ChangeNotifier {
   }
 
   /// 按关联块反查凭证（§2.1 入口 2 时间轴 🎫 微标 / 块浮层通关卡）：
-  /// block_id 软引用（无外键），最多一枚（删凭证不删块，§1.4）。voided 不进。
+  /// v5 反转关联后唯一落点=块侧 `schedule_blocks.artifact_id`（fact §9.5-6，
+  /// 1:N 软引用无外键）——块已被日切物理删除时 JOIN 无行，静默降级（§9.5-8）。
+  /// voided 不进（存证保留但不进卡面）；同块多凭证取最新一枚。
   Future<Artifact?> artifactForBlock(String blockId) async {
     final db = await _database();
-    final rows = await db.query(
-      'artifacts',
-      where: 'block_id = ? AND state != ?',
-      whereArgs: [blockId, Artifact.stateVoided],
-      limit: 1,
+    final rows = await db.rawQuery(
+      'SELECT a.* FROM artifacts a '
+      'JOIN schedule_blocks b ON b.artifact_id = a.id '
+      'WHERE b.id = ? AND a.state != ? '
+      'ORDER BY a.created_at DESC LIMIT 1',
+      [blockId, Artifact.stateVoided],
     );
     return rows.isEmpty ? null : Artifact.fromMap(rows.first);
   }
 
-  /// 未归属池（plan_id IS NULL；D2 宿主=挂载 sheet 常驻组+计划列表页派生入口）。
-  /// voided 不进卡面；created_at DESC 新者在前（管理面板先看刚分享进来的）。
+  /// 未归属池（口径收敛 §5.5：plan_id IS NULL **AND bundle_id IS NULL**；
+  /// D2 宿主=挂载 sheet 常驻组+计划列表页派生入口）。bundle_id=? 仅在该
+  /// Bundle 详情看板聚合，绝不污染未归属池。voided 不进卡面；created_at DESC
+  /// 新者在前（管理面板先看刚分享进来的）。
   Future<List<Artifact>> artifactsUnattributed() async {
     final db = await _database();
     final rows = await db.query(
       'artifacts',
-      where: 'plan_id IS NULL AND state != ?',
+      where: 'plan_id IS NULL AND bundle_id IS NULL AND state != ?',
       whereArgs: [Artifact.stateVoided],
       orderBy: 'created_at DESC',
     );

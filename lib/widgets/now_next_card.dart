@@ -83,6 +83,22 @@ class _NowNextCardState extends State<NowNextCard> {
   int _minuteKey = 0;
   Timer? _tick;
 
+  /// 查询结果缓存（同一「repo 代次 + 分钟」只发一次真实查库）。
+  /// 若 future 在 build 内现造，每次 rebuild（repo 通知 / 父级重绘 / 父级 setState）
+  /// 都会让 FutureBuilder 重订阅并重发一条 blocksInRange 真实 I/O（连带 sqflite
+  /// 事务锁的 10s 超时定时器），既浪费查询又污染测试异步环境。
+  Object? _futureKey;
+  Future<NowNextSnapshot>? _future;
+
+  Future<NowNextSnapshot> _futureFor() {
+    final key = '${AppServices.repo.revision}:$_minuteKey';
+    if (_future == null || _futureKey != key) {
+      _futureKey = key;
+      _future = _compute();
+    }
+    return _future!;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -145,7 +161,7 @@ class _NowNextCardState extends State<NowNextCard> {
       listenable: AppServices.repo,
       builder: (context, _) => FutureBuilder<NowNextSnapshot>(
         key: ValueKey('${AppServices.repo.revision}:$_minuteKey'),
-        future: _compute(),
+        future: _futureFor(),
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
             return const SizedBox.shrink();

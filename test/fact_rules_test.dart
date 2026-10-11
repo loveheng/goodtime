@@ -127,29 +127,49 @@ void main() {
           'constraints': {'advance_arrival_minutes': 45},
         },
       );
-      // 09:00 发车 +45 → 08:15 target −120 → 06:15 trigger；+30 → 09:30 dismiss
+      // 09:00 发车 +45 → 08:15 target −120 → 06:15 trigger；+20 → 09:20 dismiss（全角色统一）
       expect(computeActionPasses([fact], DateTime(2026, 10, 20, 8, 0)).length, 1);
       expect(computeActionPasses([fact], DateTime(2026, 10, 20, 5, 0)).isEmpty, isTrue);
       expect(computeActionPasses([fact], DateTime(2026, 10, 20, 10, 0)).isEmpty, isTrue);
+      // 收折边界钉死 20min（原 30min / 到点即收特判已废除）
+      expect(computeActionPasses([fact], DateTime(2026, 10, 20, 9, 20)).length, 1);
+      expect(computeActionPasses([fact], DateTime(2026, 10, 20, 9, 21)).isEmpty, isTrue);
     });
 
-    test('deadline 类不减 advance、到点即收（无 +30 收折）', () {
+    test('全角色统一公式：deadline 同样减 advance 且 +20 收折（去 2×2 特判）', () {
       final fact = _fact(
         state: Artifact.stateStructured,
         payload: {
           'time_anchors': [
             {'role': 'deadline', 'kind': 'moment', 'date': '2026-10-20', 'min': 525},
           ],
-          'constraints': {'advance_arrival_minutes': 45}, // 对 deadline 不生效
+          'constraints': {'advance_arrival_minutes': 45}, // 全角色统一生效
         },
       );
-      // T_action=08:45，T_trigger=06:45，T_dismiss=08:45（到点即收）
+      // T_action=08:45 −45 → T_target=08:00 −120 → T_trigger=06:00；+20 → T_dismiss=09:05
+      expect(computeActionPasses([fact], DateTime(2026, 10, 20, 5, 59)).isEmpty, isTrue);
+      expect(computeActionPasses([fact], DateTime(2026, 10, 20, 6, 0)).length, 1);
       expect(computeActionPasses([fact], DateTime(2026, 10, 20, 8, 45)).length, 1);
-      expect(computeActionPasses([fact], DateTime(2026, 10, 20, 8, 46)).isEmpty, isTrue);
+      expect(computeActionPasses([fact], DateTime(2026, 10, 20, 9, 5)).length, 1);
+      expect(computeActionPasses([fact], DateTime(2026, 10, 20, 9, 6)).isEmpty, isTrue);
+    });
+
+    test('min=null 纯日期锚不参与临场计算（v0.1.6 刚性前置）', () {
+      final fact = _fact(
+        state: Artifact.stateStructured,
+        payload: {
+          'time_anchors': [
+            {'role': 'checkin', 'kind': 'moment', 'date': '2026-10-17', 'min': null},
+          ],
+        },
+      );
+      expect(computeActionPasses([fact], DateTime(2026, 10, 17, 0, 0)).isEmpty, isTrue);
+      expect(computeActionPasses([fact], DateTime(2026, 10, 16, 22, 0)).isEmpty, isTrue,
+          reason: 'min 不得回退 0，否则前夜 22:00 误弹通关条');
     });
 
     test('信息类 role（arrival/reference）与未知中文 role 均不触发', () {
-      final f = (String role) => _fact(
+      Artifact f(String role) => _fact(
             state: Artifact.stateStructured,
             payload: {
               'time_anchors': [
@@ -180,7 +200,7 @@ void main() {
   group('常量与角色映射', () {
     test('ArtifactRules 临场常量单一出处', () {
       expect(ArtifactRules.passLeadMinutes, 120);
-      expect(ArtifactRules.passDismissAfterMinutes, 30);
+      expect(ArtifactRules.passDismissAfterMinutes, 20);
     });
     test('roleLabel 受控枚举→白话', () {
       expect(FactRules.roleLabel('departure'), '发车/起飞');

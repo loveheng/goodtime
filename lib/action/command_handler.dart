@@ -619,6 +619,9 @@ class CommandHandler {
             'artifacts',
             {
               'plan_id': null,
+              // bundle_id 一并置 null（fact §5.5）：未归属池口径=双 NULL，协同
+              // 协商期挂靠不随计划删除遗留半截态
+              'bundle_id': null,
               'payload': Artifact.encodePayload(
                   Artifact.payloadWithRefs(Artifact.decodePayload(r['payload'] as String?), planId: null)),
               'updated_at': now,
@@ -705,20 +708,23 @@ class CommandHandler {
           'raw_text': ?cmd.rawText,
         },
         planId: cmd.planId,
-        blockId: cmd.blockId,
       );
       _validateRuleScope(payload); // §9.2 Q-A：kind=rule 必须显式给出生效窗
-      final created = await _repo.addArtifact(Artifact(
-        category: cmd.category!,
-        sourceKind: cmd.sourceKind!,
-        state: cmd.state ?? Artifact.stateRaw,
-        origin: cmd.origin!,
-        title: cmd.title!,
-        badge: badge,
-        payload: payload,
-        planId: cmd.planId,
-        blockId: cmd.blockId,
-      ));
+      // 升格流（fact §9.5-6 v5 反转）：block_id 入参保留，命令层写**块侧**
+      // schedule_blocks.artifact_id——凭证插行与块回填同事务原子，凭证侧零绑定
+      final created = await _repo.addArtifact(
+        Artifact(
+          category: cmd.category!,
+          sourceKind: cmd.sourceKind!,
+          state: cmd.state ?? Artifact.stateRaw,
+          origin: cmd.origin!,
+          title: cmd.title!,
+          badge: badge,
+          payload: payload,
+          planId: cmd.planId,
+        ),
+        bindBlockId: cmd.blockId,
+      );
       final baseNote = created.state == Artifact.stateRaw ? '已记下原文（待 AI 提炼）' : '已记录凭证';
       return CommandResult(
         op: cmd.op,
@@ -762,7 +768,6 @@ class CommandHandler {
         'raw_text': ?rawText,
       },
       planId: cmd.planId ?? existing.planId,
-      blockId: cmd.blockId ?? existing.blockId,
     );
     _validateRuleScope(mergedPayload); // §9.2 Q-A：kind=rule 必须显式给出生效窗
     // 出生确认（§1.2 唯一例外）：raw 占位行首次转 structured 时允许定
@@ -778,11 +783,11 @@ class CommandHandler {
       if (birth) 'source_kind': cmd.sourceKind ?? existing.sourceKind,
       'payload': Artifact.encodePayload(mergedPayload),
       if (cmd.planId != null) 'plan_id': cmd.planId,
-      if (cmd.blockId != null) 'block_id': cmd.blockId,
     };
+    // 编辑路径升格回填（fact §9.5-6）：block_id 入参走块侧单点写（同事务，幂等）
+    final bindBlock = cmd.blockId != null;
     final demote = cmd.state == Artifact.stateVoided &&
-        existing.state != Artifact.stateVoided &&
-        existing.blockId != null;
+        existing.state != Artifact.stateVoided;
     final now = DateTime.now().millisecondsSinceEpoch;
     await _repo.transaction((txn) async {
       await txn.update(
@@ -791,11 +796,18 @@ class CommandHandler {
         where: 'id = ? AND version = ?',
         whereArgs: [cmd.id, existing.version],
       );
-      if (demote) {
-        // 关联块失去事实来源挂载 → 从 pinned 降格为普通可调块（绝不删块）
+      if (bindBlock) {
         await txn.rawUpdate(
-          'UPDATE schedule_blocks SET pinned = 0, version = version + 1, updated_at = ? WHERE id = ?',
-          [now, existing.blockId],
+          'UPDATE schedule_blocks SET artifact_id = ?, version = version + 1, updated_at = ? WHERE id = ?',
+          [cmd.id, now, cmd.blockId],
+        );
+      }
+      if (demote) {
+        // 反转关联（fact §9.5-6）：作废后**所有引用块**置空挂载并降格 pinned
+        // （1:N 软引用，绝不删块）；🎫 微标/一致性比对无源自熄
+        await txn.rawUpdate(
+          'UPDATE schedule_blocks SET pinned = 0, artifact_id = NULL, version = version + 1, updated_at = ? WHERE artifact_id = ?',
+          [now, cmd.id],
         );
       }
     });
@@ -827,13 +839,13 @@ class CommandHandler {
     var demoted = false;
     await _repo.transaction((txn) async {
       await txn.delete('artifacts', where: 'id = ?', whereArgs: [cmd.id]);
-      if (existing.blockId != null) {
-        final n = await txn.rawUpdate(
-          'UPDATE schedule_blocks SET pinned = 0, version = version + 1, updated_at = ? WHERE id = ?',
-          [DateTime.now().millisecondsSinceEpoch, existing.blockId],
-        );
-        demoted = n > 0;
-      }
+      // 反转关联（fact §9.5-6）：置空**所有引用块**的挂载并降格 pinned
+      // （1:N 软引用，绝不物理删块——§1.4 反向销毁防护）
+      final n = await txn.rawUpdate(
+        'UPDATE schedule_blocks SET pinned = 0, artifact_id = NULL, version = version + 1, updated_at = ? WHERE artifact_id = ?',
+        [DateTime.now().millisecondsSinceEpoch, cmd.id],
+      );
+      demoted = n > 0;
     });
     return CommandResult(
       op: cmd.op,

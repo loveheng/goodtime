@@ -5,6 +5,13 @@ import 'package:flutter/services.dart';
 
 import 'action/command_handler.dart';
 import 'action/commands.dart';
+import 'collab/account.dart';
+import 'collab/crypto/key_store.dart';
+import 'collab/crypto/secure_secret_store.dart';
+import 'collab/identity_store.dart';
+import 'collab/runtime.dart';
+import 'collab/relay/client.dart';
+import 'collab/relay_config.dart';
 import 'data/repository.dart';
 import 'models/artifact.dart';
 import 'service/housekeeper.dart';
@@ -28,6 +35,57 @@ class AppServices {
   static Repository get repo => _repo ?? (throw StateError('AppServices 未初始化'));
   static McpController get mcp => _mcp ?? (throw StateError('AppServices 未初始化'));
   static bool get ready => _repo != null;
+
+  /// 协同密钥托管（轻量惰性装配）。
+  ///
+  /// **只构造 KeyStore，不读安全区**：`KeyStore(SecureSecretStore())` 本身不触碰
+  /// FlutterSecureStorage，真实读写发生在 [KeyStore.ensureReady]（登录后由
+  /// [attachCollabLifecycle] 触发）。AppServices.init 的热路径（含单测）不碰平台插件。
+  static KeyStore get keys => _keys ??= KeyStore(SecureSecretStore());
+  static KeyStore? _keys;
+
+  /// 协同账号会话（登录态单一来源，惰性构造不触网）。
+  static AccountSession get account => _account ??= AccountSession(
+        dio: relayHttpClient(),
+        baseUrl: RelayConfig.fromEnvironment().baseUrl,
+        keyStore: keys,
+        identityStore: SecureIdentityStore(),
+        secrets: SecureSecretStore(),
+      );
+  static AccountSession? _account;
+
+  /// 协同常驻回路（App 级单例；冷启动挂引擎 Phase 4.3b）。
+  static CollabRuntime get collab => _collab ??= CollabRuntime();
+  static CollabRuntime? _collab;
+
+  /// 把协同回路与登录态绑定：登录即备钥，登出即停回路。
+  ///
+  /// 必须在 main 入口调用一次（构造不读安全区/不触网，冷启动零负担）；
+  /// 重复调用只挂一次监听。
+  static void attachCollabLifecycle() {
+    if (_collabBound) return;
+    _collabBound = true;
+    account.addListener(_onAccountChange);
+  }
+
+  static bool _collabBound = false;
+
+  static Future<void> _onAccountChange() async {
+    try {
+      if (account.isLoggedIn) {
+        // 登录即就绪 MSK（幂等）：后续 seal/open 不再等待。
+        await keys.ensureReady();
+        // 刻意不起 [collab.start]（常驻引擎 WSS/sync）。该路径此前在 App 里因
+        // rec==null 从未真正起过引擎，属未联调代码；好友页只依赖本地身份 +
+        // 登录态 RelaySession，不依赖常驻引擎，待引擎单独联调稳定后再恢复。
+      } else {
+        // 登出：停回路（目前引擎未起，stop 为空转安全调用）。
+        await collab.stop();
+      }
+    } catch (_) {
+      // 装配失败（中继不可达 / 库异常）不致命：下次登录或前台再试
+    }
+  }
 
   static Future<void> init() async {
     if (_repo != null) return;

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.0+28019
+version: 1.1.0+44028
 
 environment:
   sdk: ^3.13.4
@@ -53,6 +53,19 @@ dependencies:
   # mDNS 服务广播（M4 网络配对：shiguang-mcp._tcp；拾贝零实装，新集成 §12 ②）
   bonsoir: ^5.1.0
   url_launcher: ^6.3.3
+  cryptography: ^2.9.0
+  flutter_secure_storage: ^11.2.0
+  web_socket_channel: ^3.0.3
+  dio: ^5.11.1
+  protobuf: ^6.1.0
+  fixnum: ^1.1.1
+  async: ^2.13.0 # StreamQueue 单消费管道（collab-implementation §2.6）
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.2
+  permission_handler: ^13.0.2
+
+  # 联调配置：真 relay 地址从 config/relay.env 读取（不写进 flutter run 命令）。
+  flutter_dotenv: ^5.2.0
 
 dev_dependencies:
   flutter_test:
@@ -78,6 +91,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # 联调配置文件：真 relay 地址（RELAY_BASE_URL），启动时由 flutter_dotenv 读取。
+  assets:
+    - config/relay.env
 
   # To add assets to your application, add an assets section, like this:
   # assets:

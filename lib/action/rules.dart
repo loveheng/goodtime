@@ -84,7 +84,8 @@ abstract final class ArtifactRules {
   /// 与 badge/heroMetrics 同款「同源单一出处」——命令层/工具描述/UI 同引。
   static const int passLeadMinutes = 120;
 
-  /// 临场通关条收折延后量（§9.1/§9.4）：仅 departure/checkout 类 T_dismiss = T_action + 30min
-  /// （deadline/checkin 类到点即收，不叠加）；本地物理时钟口径。
-  static const int passDismissAfterMinutes = 30;
+  /// 临场通关条收折延后量（§9.1/§9.4，**2026-10-09 去 2×2 角色特判**）：
+  /// **全角色统一** T_dismiss = T_action + 20min——用户即便过点 10min 仍可能在找检票口/
+  /// 补票/改签，无需「分秒不差到点即收」；本地物理时钟口径（禁用 toUtc()）。
+  static const int passDismissAfterMinutes = 20;
 }

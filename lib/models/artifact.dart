@@ -7,10 +7,12 @@ import 'package:flutter/foundation.dart';
 /// 事实只做块的事实来源挂载显示）。
 ///
 /// 单一真相纪律（§1.1）：[payload] 内嵌契约 JSON（首字段 "v":1）是唯一真相，
-/// category/state/origin/title/badge/captured_by/plan_id/block_id 列均为提取投影，
-/// 命令层同源写入——**修改 plan_id/block_id 必须同步 payload 内对应字段**（双写
-/// 铁律，列与 JSON 矛盾=第二真相）。block_id 软引用无外键：凭证比块长寿，日切
-/// 删块/melted 不牵连凭证；删除处置（detach 至未归属池）归命令层。
+/// category/state/origin/title/badge/captured_by/plan_id 列均为提取投影，
+/// 命令层同源写入——**修改 plan_id 必须同步 payload 内对应字段**（双写铁律，
+/// 列与 JSON 矛盾=第二真相）。块-凭证关联已反转（fact §9.5-6，v5 落地）：凭证
+/// **不再持有 block_id**，绑定唯一落点=块侧 `schedule_blocks.artifact_id`（1:N，
+/// 升格流/排程流两入口同走命令层单点写块侧）；协同协商期挂靠走 bundle_id 弱
+/// 引用（§5.5）。删除处置（detach 至未归属池）归命令层。
 class Artifact {
   Artifact({
     this.id,
@@ -24,7 +26,6 @@ class Artifact {
     List<Object?>? attachments,
     this.capturedBy = capturedByMe,
     this.planId,
-    this.blockId,
     this.createdAt,
     this.updatedAt,
     this.version = 0,
@@ -73,7 +74,7 @@ class Artifact {
   /// 时间轴微标单值（05车12F）；仅 booking 类 AI 显式指定，命令层超 12 字符截断
   final String? badge;
 
-  /// 契约 JSON 单一真相（time_anchors/constraints/hero_metrics/raw_text/plan_id/block_id…）
+  /// 契约 JSON 单一真相（time_anchors/constraints/hero_metrics/raw_text/plan_id…）
   final Map<String, Object?> payload;
 
   /// 预留列：MVP 恒空数组，UI 见空忽略（§1.2 接口先立、逻辑不写）
@@ -83,8 +84,6 @@ class Artifact {
   /// null=未归属池（D2：宿主=挂载 sheet 常驻组+计划列表页派生入口）
   final String? planId;
 
-  /// 软引用不设外键——升格块的关联（一致性比对与 🎫 微标的数据源）
-  final String? blockId;
   final int? createdAt; // 毫秒；落库前可空，由仓库补
   final int? updatedAt; // 毫秒
   final int version; // 乐观锁：提炼回填/改挂/作废走 CAS
@@ -101,7 +100,6 @@ class Artifact {
         'attachments': jsonEncode(attachments),
         'captured_by': capturedBy,
         'plan_id': planId,
-        'block_id': blockId,
         if (createdAt != null) 'created_at': createdAt,
         if (updatedAt != null) 'updated_at': updatedAt,
         'version': version,
@@ -119,7 +117,6 @@ class Artifact {
         attachments: _decodeStringList(map['attachments'] as String?, 'attachments'),
         capturedBy: map['captured_by'] as String? ?? capturedByMe,
         planId: map['plan_id'] as String?,
-        blockId: map['block_id'] as String?,
         createdAt: map['created_at'] as int?,
         updatedAt: map['updated_at'] as int?,
         version: map['version'] as int? ?? 0,
@@ -133,12 +130,12 @@ class Artifact {
   static String encodePayload(Map<String, Object?> payload) =>
       jsonEncode({'v': payload['v'] ?? 1, ...payload});
 
-  /// 双写铁律的 payload 同步单点（§1.1）：命令层修改 plan_id/block_id 列时调用，
-  /// 返回同步了投影字段的 payload 副本（null=移除键；缺省=保持原值不改）。
+  /// 双写铁律的 payload 同步单点（§1.1）：命令层修改 plan_id 列时调用，返回同步
+  /// 了投影字段的 payload 副本（null=移除键；缺省=保持原值不改）。块绑定已反转
+  /// 至块侧（fact §9.5-6），payload 恒不含 block_id。
   static Map<String, Object?> payloadWithRefs(
     Map<String, Object?> payload, {
     Object? planId = _keep,
-    Object? blockId = _keep,
   }) {
     final out = Map<String, Object?>.of(payload);
     if (!identical(planId, _keep)) {
@@ -146,13 +143,6 @@ class Artifact {
         out.remove('plan_id');
       } else {
         out['plan_id'] = planId;
-      }
-    }
-    if (!identical(blockId, _keep)) {
-      if (blockId == null) {
-        out.remove('block_id');
-      } else {
-        out['block_id'] = blockId;
       }
     }
     return out;

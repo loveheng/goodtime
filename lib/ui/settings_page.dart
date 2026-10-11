@@ -13,6 +13,7 @@ import '../theme/tokens.dart';
 import '../update/remote_config_store.dart';
 import '../ui/update_page.dart';
 import '../util/schedule_day.dart';
+import 'account_page.dart';
 import 'exceptions_settings_page.dart';
 import 'mcp_settings_page.dart';
 import 'prefs_settings_page.dart';
@@ -68,7 +69,9 @@ class _SettingsPageState extends State<SettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([AppServices.repo, AppServices.mcp]),
+        // account 一并入监听：协同账号登录/退出后回本页，摘要行即时刷新。
+        listenable: Listenable.merge(
+            [AppServices.repo, AppServices.mcp, AppServices.account]),
         builder: (context, _) => FutureBuilder<Map<String, Object?>>(
           future: ScheduleQueries(AppServices.repo).getSettings(),
           builder: (context, snap) {
@@ -107,6 +110,17 @@ class _SettingsPageState extends State<SettingsPage> {
                 _appearanceSection(context, settings),
                 const SizedBox(height: 16),
                 _updateSection(context),
+                const SizedBox(height: 16),
+                _sectionTitle(context, '协同'),
+                _entryRow(
+                  context,
+                  icon: Icons.account_circle_outlined,
+                  title: '协同账号',
+                  subtitle: AppServices.account.isLoggedIn
+                      ? '已登录：${AppServices.account.username ?? ''}'
+                      : '登录后与好友协同日程',
+                  page: (_) => AccountPage(session: AppServices.account),
+                ),
                 const SizedBox(height: 16),
                 _exportSection(context),
               ],

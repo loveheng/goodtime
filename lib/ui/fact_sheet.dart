@@ -91,7 +91,9 @@ DateTime? _abs(String? date, int? min) {
 /// §1.4 一致性派生比对：span 锚与关联块起止（跨午夜按绝对时刻折算，严禁同日
 /// 直接比分钟）；不一致 → 卡顶琥珀条。派生不入库，关联块悬空自然不自检。
 bool factInconsistentWithBlock(Artifact a, ScheduleBlock? block) {
-  if (a.blockId == null || block == null) return false;
+  // 绑定已反转至块侧（fact §9.5-6）：调用方经块侧 artifact_id 配对传入，此处
+  // 只需判块在位——日切删块悬空时上游自然拿不到块，静默不检（§9.5-8）。
+  if (block == null) return false;
   for (final raw in _anchorList(a)) {
     if (raw is! Map || raw['kind'] != 'span') continue;
     DateTime? s0 = _abs(raw['date'] as String?, raw['start_min'] as int?);

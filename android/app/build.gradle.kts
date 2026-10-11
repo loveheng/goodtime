@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "app.shiguang.shiguang"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android 要求 compileSdk ≥ 37；AGP 9.2.0 支持 37
+    // （Flutter 3.47.5 支持 AGP 上限 9.2）。compileSdk 独立于 targetSdk/minSdk 上调。
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

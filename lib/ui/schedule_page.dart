@@ -4,6 +4,11 @@ import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 
 import '../action/command_handler.dart';
+import '../collab/crypto/bundle_key_source.dart';
+import '../collab/identity_store.dart';
+import '../collab/outbox.dart';
+import '../collab/relay_session.dart';
+import '../data/collab_repository.dart';
 import '../action/commands.dart';
 import '../action/fact_rules.dart';
 import '../action/queries.dart';
@@ -21,6 +26,7 @@ import 'action_pass_bar.dart';
 import 'block_sheet.dart';
 import 'fact_sheet.dart';
 import 'global_action_sheet.dart';
+import 'collab/member_calendar_page.dart';
 import 'mcp_settings_page.dart';
 
 /// 今日页（ui-spec §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
@@ -125,14 +131,67 @@ class _SchedulePageState extends State<SchedulePage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            child: SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'day', label: Text('日')),
-                ButtonSegment(value: 'week', label: Text('周')),
-                ButtonSegment(value: 'month', label: Text('月')),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'day', label: Text('日')),
+                      ButtonSegment(value: 'week', label: Text('周')),
+                      ButtonSegment(value: 'month', label: Text('月')),
+                    ],
+                    selected: {_viewMode},
+                    onSelectionChanged: (s) => setState(() => _viewMode = s.first),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.groups_outlined),
+                  tooltip: '协同日程',
+                  onPressed: () async {
+                    final db = await AppServices.repo.db;
+                    final me = await SecureIdentityStore().load();
+                    // 运行期 K_bundle 检索：collab_key_ring 信封 → KeyStore.open。
+                    // MSK 端侧自动托管，密钥恒就绪；未登录/无身份时装配方返回
+                    // null，UI 走既有空态引导，不抛。
+                    final source = BundleKeySource(db, AppServices.keys);
+                    if (!context.mounted) return;
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MemberCalendarPage(
+                          collabRepo: CollabBundleRepository(db),
+                          outboxRepo: OutboxRepository(db),
+                          currentUserId: me?.userId,
+                          bundleKey: (b, v) => source(b, v),
+                          // 登录态**现查不快照**：此前把 isLoggedIn 拍进闭包，
+                          // 用户先开过本页再去登录（或冷启动 restore 未完成），
+                          // 快照永远 false——好友/发起页怎么登录都提示登录。
+                          loadComposeKit: () async {
+                            await AppServices.account.ensureRestored();
+                            return AppServices.account.isLoggedIn
+                                ? buildBundleComposeKit(
+                                    db,
+                                    account: AppServices.account,
+                                    keyStore: AppServices.keys,
+                                  )
+                                : Future.value(null);
+                          },
+                          // 好友域：null 时协同日程页不显示「好友」入口。
+                          loadFriendsSession: () async {
+                            await AppServices.account.ensureRestored();
+                            return AppServices.account.isLoggedIn
+                                ? buildFriendsSession(
+                                    db,
+                                    account: AppServices.account,
+                                    keyStore: AppServices.keys,
+                                  )
+                                : Future.value(null);
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
-              selected: {_viewMode},
-              onSelectionChanged: (s) => setState(() => _viewMode = s.first),
             ),
           ),
           Expanded(

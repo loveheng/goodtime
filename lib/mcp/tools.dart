@@ -451,7 +451,7 @@ List<Map<String, Object?>> toolSchemas() => [
             'contact_phone': {'type': 'string', 'description': '联系电话（UI 转 tel: 拨号）'},
             'raw_text': {'type': 'string', 'description': '原文逐字永存（编辑传入不同原文=追加双段，不重发相同原文）'},
             'plan_id': {'type': 'string', 'description': '归属计划（编辑给定=改挂；缺省=未归属池）'},
-            'block_id': {'type': 'string', 'description': '升格生成的关联块 id（一致性比对/🎫 微标数据源）'},
+            'block_id': {'type': 'string', 'description': '升格生成的关联块 id（v5 反转关联：命令层写块侧 blocks.artifact_id，一致性比对/🎫 微标数据源）'},
             'expected_version': {'type': 'integer', 'description': '你看到的 version（编辑乐观锁，冲突回 latest）'},
           },
           'required': [],

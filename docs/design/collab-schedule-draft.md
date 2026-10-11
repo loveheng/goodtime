@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # 协同日程设计（collab-schedule-draft）
@@ -187,9 +187,10 @@ func CheckGatewayACL(sender_id, recipient_id, bundle_id, route) bool {
 | expires_at | 绝对过期时间（动态 TTL） |
 
 - **双通道唤醒（按前后台收敛，弃 3s 空等）**：**前台**依赖 WSS 双向通道，服务端检测 Heartbeat 正常才直推；**后台/断开**直接发系统标准推送（Wake Push，带计数提示）唤醒拉取。**不采用「推送后 3s 无 ACK 切静默推送」**——iOS 对 content-available 静默推送有严格电量预算（锁屏/低电量可延迟 15 分钟甚至丢弃），且锁屏下 TCP 早已挂起，3s 空等只是对死连接发呆、凭空加链路延迟。
+- **Wake Push 零知识载荷规范（v0.1.6 定盘）**：推送必经苹果/谷歌第三方服务器——**载荷零业务明文**（禁止「张三修改了日程」「您有一张动车票」类文案），仅允许 §10.3-2 的 3 个无特征路由字段（`push_type`/`bundle_id`/`latest_seq_id`）。平台静默参数：**iOS/APNs**=`content-available: 1` + Header `apns-push-type: background` + `apns-priority: 5`，不配 alert/title/body；**Android/FCM**=纯 `data` 消息、绝不配 `notification` 块。端侧被静默唤醒后走本地管道拉密文、沙盒内解密，通知文案 **100% 由客户端本地生成**后弹系统通知栏。
 - **端侧单一消费网关（Single Consumer Pipeline，防并发重放竞态）**：WSS 推来的增量事件与 HTTP `/sync` 拉回的事件**统一进本地同一条串行 FIFO 队列**，由单一 EventDispatcher 按 seq_id 去重、排序后驱动 SQLite 事务——弱网恢复瞬间两路密文同时涌入时，从代码结构上消灭唯一键冲突与重放错乱。
 - **指数退避**：5s → 30s → 2m → 10m → 30m。
-- **主动拉齐**：B 端重连即 `SYNC_PENDING` 批量拉走全部未过期密文。
+- **主动拉齐**：B 端重连/冷启动即 `GET /v1/relay/pending` 批量拉走全部未过期密文，解密后 `POST /v1/relay/ack {message_ids}` 触发阅后即焚。
 - **动态 TTL**：即时/当日日程 30min–2h；跨天/预约类 24h–72h。超时置 FAILED、物理清密文，并向 A 回发 `MESSAGE_DELIVERY_FAILED` 系统信令；A 端日程块标感叹号，支持【重新发送】/【取消排程】。
 
 ### 2.3 元数据泄露防护（Padding 补齐，拍板定稿 §7.1）
@@ -434,6 +435,7 @@ RETURNING max_seq_id;
 - **单主设备交付（多设备 X3DH 歧义防线，评审补齐）**：PreKey 绑定具体设备，A 若随意拉 B 某台设备的 PreKey，B 换另一台设备即无法解密。定稿：X3DH **只在发起人与成员主设备间完成初次交付**；成员首台设备解出 K_bundle 后**立即**用自己 MSK 加密追加 `key_envelope` 入 `user_key_envelopes`（§5.3）——B 的 iPad 登录时直接从自己的增量信封表拉取解开，彻底规避多设备 X3DH 密钥爆炸。
 
 - **不用双棘轮**：协同日程为低频广播式信令（单 Bundle 生命周期 5–20 次交互），双棘轮的多端棘轮步进同步复杂且离线漏步即解密失败，X3DH 初始分发 + 对称加密已满足需求。
+- **OPK 耗尽降级（v0.1.6，Signal 标准口径）**：并发建包可能耗尽对方 OPK 池——服务端**不报错**：`GET /v1/users/{id}/prekey` 恒 200，OPK 字段为空即触发端侧自动降级 **4-DH → 3-DH**（仅 IK+SPK 参与 DH，弱化一次性前向安全但仍安全）；服务端同时向存量方发静默补仓通知。注意 X3DH 发生在 PROPOSE 建包时——扫码握手只用 SPK 做 ECIES 自报家门，不消耗 OPK。
 - **成员变更触发 REKEY**：踢出成员/成员退组时，发起人发 `REKEY` 事件——以剩余成员公钥派发 `K_bundle_v2`，后续事件全部改用新密钥；被移除者持旧密钥仅能解其离线前历史，无法读后续信令（前向安全）。
 - **Key Ring 密钥环（防历史回放阻断）**：REKEY 会产生密钥版本链，回放引擎必须能解任意 seq 的事件。每个 Bundle 在客户端本地维护 `key_ring: {v1: K_bundle_v1, v2: K_bundle_v2, ...}`；事件信令携带 `key_ver` 标注加密版本，回放时按版本查环解密。新设备恢复路径：密钥环随主私钥 recovery_vault（§5.3）整体加密备份，Vault 还原即全链还原；REKEY 时发起人向在册成员包裹分发的也是**当前有效密钥链**而非仅最新密钥。无对应版本密钥且 Vault 无法还原 → 该段历史标记「无法解密」灰显，FSM 跳过其内容但骨架状态仍可推进（动作枚举明文在场）。
 
@@ -452,6 +454,42 @@ RETURNING max_seq_id;
   - **Timed Slot（具体时刻）**：强制 UTC RFC3339 绝对时间（如 `2026-10-24T02:00:00Z`），仅 UI 渲染时转设备时区——跨时区/夏令时防线；
   - **Floating Date（纯日期/All-Day/跨天日程）**：**禁止**折算 UTC 零点（否则纽约用户会把「10月24日」解成本地 23 日 20:00，整天活动漂移到前一晚），一律采用无时区浮动日期字符串 `"2026-10-24"`，任何时区用户打开都是本地日历上的同一天。FreeMask 探测与幽灵预占对 All-Day 时段同样按浮动日期整日计。
 
+### 5.3.1 分层密钥体系与生命周期（v0.1.5 定盘，团队 E2EE 总纲）
+
+> **定位**：多人/团队场景端到端加密的机制总纲——与 §5.2（X3DH 初始分发）、§5.3（换机金库）、§9.2（REKEY 密钥环）互为引用而非重复；在服务端纯盲（Zero-Knowledge）前提下实现 **O(1) 内容广播**与端侧毫秒级解密。2026-10-09 用户拍板：中途加人=看全量历史（零 REKEY）；成员信封落表 `bundle_members`（第 10 表）。
+
+**三原则**：
+
+1. **混合信封加密**：业务载荷（日程/事实/表决）只用一把对称钥加密一次；`K_bundle` 经各成员公钥分别封包为专属信封——广播开销与成员数解耦为 O(1)。
+2. **事项绑定（Ad-hoc Bundle Isolation）**：密钥只绑定具体方案包，随 PROPOSE 而生、随生命周期终而退役，杜绝跨事项权限泄露。
+3. **服务端纯盲**：服务端仅存密文信封（`bundle_members.encrypted_bundle_key`）与密文流水，永远无法触碰 `K_bundle` 与排程明文。
+
+**用户密码学资产清单**（各司其职，无万能钥匙）：
+
+| 密钥 | 算法 | 存储宿主 | 职责 |
+|---|---|---|---|
+| 身份密钥 IK | Ed25519 | 私钥本地安全区 / 公钥服务端公开 | 登录 PoP、签发 Ticket、事件验签（**仅签名，禁做 ECIES**，v0.1.4） |
+| 签名预密钥 SPK | X25519 | 私钥本地 / 公钥服务端 | 异步 X3DH 握手 + Ticket 自报家门 ECIES（v0.1.4） |
+| 一次性预密钥 OPK | X25519 | 服务端池（用完即焚） | X3DH 前向安全（prekey 端点原子弹出，低位补仓） |
+| 主存储密钥 MSK | AES-256 | 本地 Keystore/内存 | **CSPRNG 生成，绝不从密码派生**；密码仅派生 KEK 包装它（§5.3，改密 O(1)） |
+| 方案包密钥 K_bundle | AES-256-GCM | 仅合法成员端侧 Key Ring | 绑定具体 Bundle；**保留至 bundle 生命周期终**（不随 CONFIRMED 销毁——离线端补拉与金库还原都依赖它），金库信封长期留存 |
+
+**三阶段生命周期**：
+
+- **A 建包分发（O(N) 封装，O(1) 分发）**：发起人生成 K_bundle → `GET /v1/users/{id}/prekey` 逐一拉各成员 PreKeyBundle → X3DH 包裹出专属信封 → 随 **`PROPOSE`**（无独立 CREATE_BUNDLE，v0.1.0 冻结）事件明文外层 `member_key_envelopes` 提交，服务端同事务落 `bundle_members`。
+- **B 事件通信（O(1) 广播）**：成员本地 AES-256-GCM(K_bundle) 加密（512B 等长填充）→ 服务端行锁自增 `max_seq_id` 写流水 → WSS 广播；信令外层明文携带 `key_ver` 供解密前选钥（v0.1.5 补字段，收口「先有钥还是先有版本」死锁）。
+- **C 敲定下沉与退役**：CONFIRMED → 各端单事务下沉物化 plans/blocks/artifacts；服务端信封与流水按 §5.7 TTL（30–90 天）物理清除，各成员本地数据与金库信封独立存留。
+
+**成员变更与轮转**：
+
+- **中途加人 `ADD_MEMBER`（v0.1.5 新枚举）**：管理员拉新成员 PreKeyBundle，用**现役** K_bundle 包一份新信封随 `ADD_MEMBER` 提交（落 `bundle_members`，`key_ver` 不变）——新成员可看全量历史（2026-10-09 拍板），零 REKEY 成本。
+- **踢出/退出 REKEY（§9.2）**：管理员生成 `K_bundle_{key_ver+1}`，完全排除被剔除者全员重裹（`bundle_members` 追加新版本信封行，旧版本行保留供离线端回放），`bundles.key_version` +1，此后事件外层 `key_ver` 全标新版本——被剔除者对后续事件物理失明（前向安全）。
+
+**信封投递与补拉双通道**：
+
+- **实时通道**：信封随 PROPOSE / ADD_MEMBER / REKEY 事件明文外层投递（WSS 广播即达）。
+- **补拉通道**：`GET /v1/bundles/{bundle_id}/key-envelopes` 一次性拉取**本成员**全版本信封（换机冷启动 / REKEY 掉线补拉）；服务端按 `bundle_members(bundle_id, user_id=me)` 返回，纯盲无感知。
+
 ### 5.4 客户端同步流
 
 ```mermaid
@@ -465,7 +503,7 @@ sequenceDiagram
 ```
 
 - 断网重连/启动时按 `since_seq` 增量拉取，跳号即触发补拉，绝不脱节。
-- **并发防护（区分「时序追加」与「因果冲突」，防假性冲突惊群）**：全局 `seq_id` **仅用于事件绝对定序**——无冲突动作直接顺序入库，**不拒绝**；`base_revision` 乐观锁仅作用于**靶向实体**：仅当同一 `step_id` 被并发修改（如 B 拒绝步骤 1 与 A 改步骤 1 时间竞态）才触发 `STALE_REVISION` 打回；发起人整体重构时才校验 `bundle_revision`。否则 B 同意步骤 1、C 同意步骤 2 的互不相干操作会因全局序号递增互相打回，引发多人协作下的重试惊群风暴。
+- **并发防护（区分「时序追加」与「因果冲突」，防假性冲突惊群）**：全局 `seq_id` **仅用于事件绝对定序**——无冲突动作直接顺序入库，**不拒绝**；`base_revision` 乐观锁仅作用于**靶向实体**：仅当同一 `step_id` 被并发修改（如 B 拒绝步骤 1 与 A 改步骤 1 时间竞态）才触发 `STALE_REVISION` 打回；发起人整体重构时才校验 `bundle_revision`。否则 B 同意步骤 1、C 同意步骤 2 的互不相干操作会因全局序号递增互相打回，引发多人协作下的重试惊群风暴。**`ATTACH_FACT` / `UPDATE_FACT` / `DETACH_FACT` 显式豁免（v0.1.3）**：三类事实动作不校验、不递增 `base_revision`，仅原子自增 `max_seq_id` 入流水——事实是静态凭证挂载，与日程起止/步骤重构互不竞态，否则 B 挂大巴票、C 挂门票会假性 `409 STALE_REVISION` 互打回（详见 fact 草案 §5.2）。
 
 ### 5.5 三层存储容灾（BYOS）
 
@@ -634,6 +672,8 @@ flowchart TB
 
 ### 10.1 补齐后的核心三表
 
+> **DDL 唯一出处（v0.1.4 定盘）**：本节为设计口径，建库一律以 `shiguang-relay/schema.sql` 为准——`bundles` 已按「schema.sql 骨架 + 本节仲裁列并集」合流（FSM `status` 与存储 `lifecycle` 双列、UUID 类型体系、`participant_uids` GIN 索引）；`bundle_skeletons` 保持骨架形态，步骤级仲裁字段（`required_uids`/`threshold`/`step_status`/`votes`）定盘进 `topology` JSONB 内部结构。**本节 SQL 不再单独维护，防双源漂移。**
+
 ```sql
 -- 1. 方案包根表（母状态机实体，解决：类型/主状态/并发检查/TTL 扫描）
 CREATE TABLE bundles (
@@ -676,16 +716,61 @@ CREATE TABLE bundle_member_cursors (
 |---|---|---|
 | 发现 | `GET /v1/bundles/participating?status=active` | 当前用户参与的全部未归档方案及 `max_seq_id`（换机/新装冷启动先发现再拉取） |
 | 同步 | `GET /v1/schedule/sync?bundle_id=...&since_seq=...` | 流式增量事件（离线重连、跳号补拉） |
-| 动作 | `POST /v1/schedule/action` | ACCEPT/REJECT/PATCH/VOTE/ADD_SLOT——单事务内更新 bundles + skeletons + 写流水 |
-| 确认 | WSS `CLIENT_ACK {bundle_id, ack_seq}` | 更新游标，避免向在线前台设备重复发 Push |
+| 动作 | `POST /v1/schedule/action` | ACCEPT/REJECT/PATCH/VOTE/ADD_SLOT/ADD_MEMBER——单事务内更新 bundles + skeletons + 写流水（`ATTACH_FACT`/`UPDATE_FACT`/`DETACH_FACT` 绕过 base_revision，仅自增 max_seq_id） |
+| 确认 | WSS `CLIENT_ACK {bundle_id, ack_seq}` | 更新游标（落 `bundle_member_cursors.last_acked_seq`），避免向在线前台设备重复发 Push |
+| 密钥握手·拉取 | `GET /v1/users/{user_id}/prekey` | 拉取对方 PreKeyBundle（服务端原子弹出 1 个 OPK，消耗即删），供 PROPOSE 前 X3DH 包裹 K_bundle |
+| 密钥握手·补仓 | `POST /v1/users/me/prekeys` | OPK 存量低于阈值时后台静默批量补传 20~50 个 |
+| 密钥信封·补拉 | `GET /v1/bundles/{bundle_id}/key-envelopes` | 拉取**本成员**全版本 K_bundle 信封（换机/REKEY 补拉；服务端落 `bundle_members` 表，纯盲） |
+| 瞬时信令·拉取 | `GET /v1/relay/pending` | 离线/冷启动唤醒后批量拉走本用户全部未过期暂存 `relay_messages`（在线由 WSS ServerFrame.relay 直推，无需此端点） |
+| 瞬时信令·确认 | `POST /v1/relay/ack {message_ids}` | 已解密消费即回，服务端物理 DELETE（阅后即焚，relay_messages.status='acked'） |
+| 密钥金库·上传 | `POST /v1/vault/envelopes` | 追加上传 MSK 封送的 K_bundle 增量信封入 `user_key_envelopes`（换机恢复，Append-Only 防 LWW） |
+| 密钥金库·拉取 | `GET /v1/vault/envelopes?since_version=...` | 换机冷启动一次性拉取该用户全量历史密钥信封 |
 | 推送 | 系统级 Wake Push | WSS 离线时自动触发精准唤醒（§10.3 Payload 规范） |
 
 ### 10.3 四大交互缺口闭环
 
 1. **发现机制（Bootstrap Gap）**：新装/换机登录后先调 `participating` 拿 bundle 列表，再并发 `sync` 拉增量——否则 B 根本不知道自己在 b_1001 里。
 2. **推送游标失配**：服务端按 `bundle_member_cursors.last_acked_seq` 判定谁漏了事件，只对落后者发 Wake Push；**Payload 必须携带寻址元数据**（不得只说「你有新消息」）：`{"push_type": "BUNDLE_EVENT_WAKE", "bundle_id": "b_1001", "latest_seq_id": 5}`——客户端唤醒后直接投单消费管道精准拉取。
-3. **双密钥通道（不再混淆）**：**伙伴协商通道**=K_bundle 经各成员 X3DH 公钥包裹，随 PROPOSE 事件明文外层 `member_key_envelopes` 投递，成员首拉 seq:1 即解出入 Key Ring；**自我备份通道**=各成员解出 K_bundle 后，自行用 K_master 加密一份异步追加写入 `user_key_envelopes`（§5.3），专供自己换机——两通道物理分离，前者对他人、后者对自己。
+3. **双密钥通道（不再混淆）**：**伙伴协商通道**=K_bundle 经各成员 X3DH 公钥包裹，随 PROPOSE/ADD_MEMBER 事件明文外层 `member_key_envelopes` 投递并同事务落 `bundle_members` 表（补拉走 `GET /v1/bundles/{id}/key-envelopes`，§5.3.1），成员首拉 seq:1 即解出入 Key Ring；**自我备份通道**=各成员解出 K_bundle 后，自行用 K_master 加密一份异步追加写入 `user_key_envelopes`（§5.3），专供自己换机——两通道物理分离，前者对他人、后者对自己。
 4. **Consensus 三值仲裁**：`votes JSONB` 存每成员对各 slot 的投票等级（PREFER/OK/NO）；VOTE 动作到达时服务端按门限规则（如某 slot 的 `(PREFER + OK) >= threshold`）自动判定共识，推进 CONFIRMED——Directive 的 ACCEPT/REJECT 与 Consensus 的三值向量共用骨架表，各取所需。
+
+### 10.4 防爆仓硬配额与全局错误码字典（v0.1.6 定盘，工程常量）
+
+> **定位**：拾光=亲密圈/家庭/小团队工具，配额是**资源耗尽防线**而非功能限制；阈值全部钉为代码常量（服务端网关 + FSM 仲裁层单一出处，双端不各写一份）。
+
+**防爆仓硬配额**：
+
+| 维度 | 硬上限 | 拦截点 | 超限错误码 |
+|---|---|---|---|
+| 单 Bundle 成员数 | ≤16（可配放宽至 32） | `PROPOSE` / `ADD_MEMBER` | `EXCEED_MAX_MEMBERS` |
+| 单用户活跃方案包 | ≤20 | `PROPOSE` 创建时 | `EXCEED_ACTIVE_BUNDLES`（引导归档/退出旧包） |
+| 单 Bundle 累计流水 | ≤2000 条 | `POST /v1/schedule/action` | `EVENT_QUOTA_EXCEEDED`（引导发起人 FORCE_FINALIZE / 归档） |
+| 单消息 Payload | ≤256KB | Nginx/Caddy `client_max_body_size 256k` + 网关 | HTTP 413 `ATTACHMENT_OVERSIZE` |
+| 单用户待审批邀请 | ≤50 | `POST /v1/friends/invite`（按被邀方 pending 计数） | `EXCEED_PENDING_INVITES`（防扫码灌爆 Pending 列表） |
+
+**全局错误码字典**（统一响应体；HTTP 状态码只做大类，`error_code` 承载精确阻断原因）：
+
+```json
+{
+  "error_code": "STALE_REVISION",
+  "message": "Step revision conflict detected",
+  "detail": { "current_seq": 18, "expected_seq": 17 }
+}
+```
+
+> **零明文红线**：`message` 恒为服务端固定英文串（不含任何用户内容）；`detail` 仅含 UUID/seq 等结构值——错误通道同样过零知识审计。
+
+| error_code | HTTP | 场景 |
+|---|---|---|
+| `POW_SOLUTION_INVALID` | 401 | Hashcash 解错误或超时 |
+| `TICKET_EXPIRED` / `TICKET_SIGNATURE_INVALID` | 400 / 401 | 好友名片凭证失效或被篡改 |
+| `RECIPIENT_NOT_FRIEND` | 403 | 向非双向好友发起非白名单瞬时信令 |
+| `RELATION_TERMINATED` | 403 | 单向删除/拉黑（§1.2 既有） |
+| `BUNDLE_CONFIRMED_IMMUTABLE` | 409 | 方案包已敲定，禁止再提交协同 Action |
+| `STALE_REVISION` | 409 | 同步骤因果冲突乐观锁命中（事实三动作豁免，v0.1.3） |
+| `EXCEED_MAX_MEMBERS` / `EXCEED_ACTIVE_BUNDLES` / `EVENT_QUOTA_EXCEEDED` / `EXCEED_PENDING_INVITES` | 400 | 上表配额族 |
+| `ATTACHMENT_OVERSIZE` | 413 | 密文包超 256KB |
+| `OPK_EMPTY_WARNING` | —（业务随行提示） | OPK 存量低，随 prekey 响应静默提示（§5.2 降级） |
 
 ## 11. 客户端架构与页面设计（2026-10-08 评审定稿）
 
@@ -741,6 +826,7 @@ flowchart TB
 
 1. **source 枚举扩值**：`source` 现仅 human/ai——下沉块需扩 `'collab'` 枚举值（db v5 迁移；单机排程算法与 BlockRenderer 按 source 分管的逻辑须同步认得第三值）；
 2. **collab_ref 落点**：blocks 表**不加列**（避免污染单机核心表），新增幂等补齐的 `collab_block_refs` 映射表（block_id → bundle_id/step_id，v5 同批）——单机表零改动，映射表独立演进。
+3. **凭证下沉绑定（2026-10-09 对齐 fact 草案 §5.5）**：CONFIRMED 下沉时，Bundle 内 `ATTACH_FACT` 物化的本地凭证（持 `target_step_ref`=bundle step_uid）经 `collab_block_refs.step_id` 反查目标 block，单事务回填 `blocks.artifact_id`（块-凭证关联已反转，凭证不再持 `block_id`）；无 `target_step_ref` 时按 time_anchor 与 block 时间重叠贪心匹配。凭证本体 `plan_id` 同步置为下沉生成的 plan。
 
 ### 11.4 客户端技术栈定稿
 
@@ -767,7 +853,7 @@ Phase 0 协议契约冻结（信封/枚举/base_revision/DDL 脚本）
 
 | Phase | 交付物 | 验收线 |
 |---|---|---|
-| 0 契约冻结 | 信封 JSON Schema（`encrypted_payload`/`action_type` 枚举/`seq_id`/`base_revision`/`key_ver` + **`proposal_type` 双模标识** + **骨架 `threshold` 门限字段** + **Consensus 投票信令**（AVAILABILITY/ADD_SLOT/REOPEN/**FORCE_FINALIZE**）+ **Directive 增信令**（NUDGE/BYPASS/PENDING_RECHECK）+ `topology_skeleton` + **`member_key_envelopes` 伙伴密钥通道** + **拒绝理由 `visibility` 字段**（PUBLIC/INITIATOR_ONLY，后者 IK 单向加密）+ **Briefing Sticky / Step Note 密文载体** + **FreeMask 量化桶掩码信令**（靶向区间+30min 位串+IK_A 加密）+ **`client_msg_id` 防重放字段**）+ PG 初始化 SQL（**五表基线=§10.1**：bundles/bundle_skeletons/bundle_member_cursors/team_schedule_events/user_key_envelopes；**seq_id 取号=§5.1 行锁 UPDATE RETURNING**）+ **接口清单=§10.2**（participating 发现/sync/action/CLIENT_ACK/Wake Push）+ **端侧 v5 迁移**（source 扩 'collab' + collab_block_refs/local_outbox_events 两表） | 契约评审通过，DDL 本地可跑 |
+| 0 契约冻结 | 信封 JSON Schema（`encrypted_payload`/`action_type` 枚举/`seq_id`/`base_revision`/`key_ver` + **`proposal_type` 双模标识** + **骨架 `threshold` 门限字段** + **Consensus 投票信令**（AVAILABILITY/ADD_SLOT/REOPEN/**FORCE_FINALIZE**）+ **Directive 增信令**（NUDGE/BYPASS/PENDING_RECHECK）+ `topology_skeleton` + **`member_key_envelopes` 伙伴密钥通道** + **拒绝理由 `visibility` 字段**（PUBLIC/INITIATOR_ONLY，后者 IK 单向加密）+ **Briefing Sticky / Step Note 密文载体** + **FreeMask 量化桶掩码信令**（靶向区间+30min 位串+IK_A 加密）+ **`client_msg_id` 防重放字段**）+ PG 初始化 SQL（**全量 10 表=shiguang-relay/schema.sql**：底座 4 + 协同 6，含 `bundle_members` 密钥信封与 `bundle_member_cursors` 游标；DDL 唯一出处声明=§10.1 注；**seq_id 取号=§5.1 行锁 UPDATE RETURNING**）+ **接口清单=§10.2**（participating 发现/sync/action/CLIENT_ACK/Wake Push）+ **端侧 v5 迁移**（source 扩 'collab' + collab_block_refs/local_outbox_events 两表） | 契约评审通过，DDL 本地可跑 |
 | 1 服务端骨架 | `shiguang-relay` 仓：register/friends/schedule-action/sync/WSS 接入 | Docker 本地起服，curl 发密文入库、seq 自增、广播可达 |
 | 2 通信管道 | Flutter 集成密码学库；WSS 自动重连退避；发信自动 512B Padding | 双机对测：A 发密文 → 服务端入库 → B 收到并解密 |
 | 3 本地状态机 | 本地表（plan_bundles/steps/local_events）+ FSM 回放纯函数 | 离线回放：连续注入 5 条事件，本地状态符合 §4.3 转移表 |

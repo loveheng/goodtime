@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'app_services.dart';
 import 'data/settings.dart';
@@ -7,8 +8,18 @@ import 'ui/app_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 联调配置：从 config/relay.env 读取真 relay 地址（RELAY_BASE_URL），
+  // 不必写进 flutter run 命令；--dart-define 仍可临时覆盖。
+  await dotenv.load(fileName: 'config/relay.env');
   await AppServices.init();
   await AppServices.initFlutter();
+  // 协同回路随登录态起停：登录即备钥、登出即停（Phase 4.3b；2026-10-11 起
+  // 门禁=登录态）。account 构造不读安全区/不触网，冷启动零负担。
+  AppServices.attachCollabLifecycle();
+  // 冷启动恢复登录态（只读安全区，不触网）：协同各入口门禁现查
+  // isLoggedIn——不先 restore 会把已登录误判成未登录，先进好友页就被
+  // 引导去「登录」，其实会话一直在。
+  await AppServices.account.restore();
   runApp(const ShiguangApp());
 }
 

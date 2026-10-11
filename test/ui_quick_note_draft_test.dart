@@ -63,8 +63,9 @@ void main() {
     await closeDrawer(tester);
     await waitFor(tester, () async => !QuickNoteDraft.hasDraft.value);
     expect(draftDot(), findsNothing);
-    // 收尾冲刷：退掉一切残余 Timer（SnackBar/防抖尾巴），防 pending-timer 断言偶发
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pump(const Duration(seconds: 1));
+    // 收尾冲刷：NowNextCard 的查库走真实 sqflite（事务锁带 10s 超时 Timer），
+    // 纯 fake-async 的 pump 推不动真实 I/O——必须留 runAsync 窗口让查询完成并撤销锁
+    // Timer，否则 teardown 命中 pending-timer 断言（pumpFlush 内含 runAsync 窗口）。
+    await pumpFlush(tester);
   });
 }
