@@ -30,11 +30,11 @@ description: shiguang（Flutter Android 日程台账 + 内嵌 MCP 服务端）�
 | `node mcp-bridge/e2e-check.mjs` | 桥接端到端自检（mock 上游） | ✓ E2E PASS（5 项，2026-10-05） |
 | `toolbox run arch-guard`（别名 ag） | 架构硬约束护栏（6 条：UI 禁直连 repo 写/禁内联 JSON/禁平台分支/禁直连 Db、mcp+action 禁 import UI、禁弃用 textScaleFactor） | ✓ 6/6 通过（2026-10-06，自检金丝雀 PASS） |
 | `toolbox run pre-commit-gate`（别名 pcg） | 提交前门禁：lib/ 改动→arch-guard、docs/ 改动→docs-lint | ✓ 实战通过（2026-10-06）；git 钩子已装自动拦截 |
-| `toolbox run build-apk`（别名 apk） | APK 编译（analyze 门槛+ABI 分包+产物校验+`--install` 真机装包） | ✓ 真机 release 分包实测通过（2026-10-06，arm64 19M，aapt+sha256 产物校验过） |
+| `toolbox run build-apk`（别名 apk） | APK 编译（analyze 门槛+产物校验+`--install` 真机装包；默认 debug 包，`--release` 切 arm64 分包，`--fat` 整包） | ✓ 真机 release 分包实测通过（2026-10-06，arm64 19M，aapt+sha256 产物校验过） |
 | `toolbox run bump-version`（别名 bump） | pubspec 版本更新+设备防降级守卫（包名 app.shiguang.shiguang） | ✓ --json 读 1.0.0+1 |
 | `flutter run` | 真机/模拟器运行 | 未实测（无设备连接时跳过） |
 
-构建（APK）：一律走 `toolbox run build-apk`（analyze 门槛+产物校验+可选 `--install`），勿裸跑 flutter build apk
+构建（APK）：一律走 `toolbox run build-apk`（analyze 门槛+产物校验+可选 `--install`），勿裸跑 flutter build apk。默认打 debug 包；release 分包加 `--release`（`--abi` 换平台），自更新兜底用 `--fat` 整包
 
 ## 模块结构（现状）
 

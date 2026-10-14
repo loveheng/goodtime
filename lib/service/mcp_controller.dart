@@ -8,8 +8,11 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../data/repository.dart';
 import '../data/settings.dart';
 import '../mcp/mcp_server.dart';
+import 'http_transport.dart';
+import 'relay_client.dart';
+import 'weather.dart';
 import '../update/remote_config_store.dart';
-import '../util/lan_ip.dart';
+import 'lan_ip.dart';
 import 'foreground_task_init.dart';
 
 /// MCP 服务总控（抄改自拾贝 mcp_controller，§12）：token 与开关持久化 + 内嵌 HTTP server。
@@ -34,12 +37,14 @@ class McpController extends ChangeNotifier {
   static const _keyEnabled = 'mcp_enabled';
 
   McpServer? _server;
+  HttpTransport? _transport;
+  RelayClient? _relay;
   BonsoirBroadcast? _mdns;
   String? _token;
   String? _lastError;
 
-  bool get running => _server?.running ?? false;
-  int get port => _server?.port ?? defaultPort;
+  bool get running => _transport?.running ?? false;
+  int get port => _transport?.port ?? defaultPort;
   String? get token => _token;
   String? get lastError => _lastError;
 
@@ -95,6 +100,8 @@ class McpController extends ChangeNotifier {
       _server ??= McpServer(
         repo: repo,
         tokenProvider: () => _token,
+        // 注入真实天气后端（dart:io 网络在 lib/service，内核不沾）
+        weather: weatherService,
         // AI 经 suggest_user_setting 推送建议时，广播给 app UI 弹提示
         onSuggestion: (args) {
           if (!_suggestionController.isClosed) _suggestionController.add(args);
@@ -115,7 +122,8 @@ class McpController extends ChangeNotifier {
           return base;
         },
       );
-      await _server!.start(port: defaultPort);
+      _transport ??= HttpTransport(server: _server!);
+      await _transport!.start(port: defaultPort);
       // mDNS 广播（§10/§11 网络配对：消灭「Connection Refused」在用户修网络之前）。
       // UNCERTAIN: bonsoir 新集成未真机实证；不可用时静默降级走手动 IP 兜底（拍板真）。
       try {
@@ -133,6 +141,9 @@ class McpController extends ChangeNotifier {
         // DEGRADE: [mdns_unavailable] mDNS 广播不可用（VM 测试/权限/网络）——手动 IP 兜底
         debugPrint('[DEGRADE][mdns_unavailable] mDNS 广播未启动: $e');
       }
+      // relay 传输（轴 C）：配置齐全才挂载——与 HTTP 并列的第二种传输，fail-open
+      // （relay 不可达不阻断 LAN HTTP 通道；schedule-app.md:331「手机不在线 AI 失联」同口径）。
+      await _startRelay();
       await repo.settingsSet({_keyEnabled: '1'});
     } catch (e) {
       _lastError = '$e';
@@ -152,12 +163,36 @@ class McpController extends ChangeNotifier {
 
   Future<void> _shutdown() async {
     try {
-      await _server?.stop();
+      await _transport?.stop();
     } catch (_) {/* 服务可能已停止 */}
+    _transport = null;
     _server = null;
+    try {
+      await _relay?.stop();
+    } catch (_) {/* relay 可能已断开 */}
+    _relay = null;
     try {
       await _mdns?.stop();
     } catch (_) {/* 广播可能已停止 */}
     _mdns = null;
+  }
+
+  /// relay 通道装配：读取 app_settings 配置（RelayKeys），齐全才建连。
+  Future<void> _startRelay() async {
+    if (await repo.settingsGet(RelayKeys.enabled) != '1') return;
+    final cfg = RelayConfig(
+      endpoint: await repo.settingsGet(RelayKeys.endpoint) ?? '',
+      username: await repo.settingsGet(RelayKeys.username) ?? '',
+      password: await repo.settingsGet(RelayKeys.password) ?? '',
+    );
+    if (!cfg.isComplete) return;
+    _relay ??= RelayClient(
+      handleJsonRpc: _server!.handleJsonRpc,
+      mcpToken: () => _token,
+      config: () => cfg,
+    );
+    await _relay!.start();
+    // 重连 drain：清掉离线期间积压的 mcp 单（发方已按 delivered_online 判败）
+    await _relay!.drainPending();
   }
 }

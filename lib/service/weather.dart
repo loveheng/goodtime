@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../mcp/weather_provider.dart';
+
 /// 天气投影（schedule-app.md §11 拍板）：无 key JSON 源（Open-Meteo）+ 内存 TTL
 /// 缓存不落库（照抄日历投影模式）；经 get_schedule 返回体搭载三日结构化预报。
 /// **机械层（校验/管家/水位线）对天气无感**——天气只进提案推理与态势句；
 /// 户外敏感块是 playbook 启发式不加字段；获取失败静默降级（AI 可改口问用户）。
-class WeatherService {
+class WeatherService implements WeatherProvider {
   WeatherService({Future<String> Function(Uri url)? fetch})
       : _fetch = fetch ?? _defaultFetch;
 
@@ -33,6 +35,7 @@ class WeatherService {
   }
 
   /// 三日结构化预报；城市为空或任一步失败 → null（静默降级，不抛）。
+  @override
   Future<Map<String, Object?>?> forecast3(String city, {DateTime? now}) async {
     if (city.trim().isEmpty) return null;
     final at = now ?? DateTime.now();

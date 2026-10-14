@@ -6,6 +6,7 @@ import 'package:shiguang/data/db.dart';
 import 'package:shiguang/data/repository.dart';
 import 'package:shiguang/mcp/jsonrpc.dart';
 import 'package:shiguang/mcp/mcp_server.dart';
+import 'package:shiguang/service/http_transport.dart';
 import 'package:shiguang/util/schedule_day.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -25,11 +26,12 @@ void main() {
     await db.delete('app_settings');
   });
 
-  Future<({McpServer server, HttpClient client, String base})> spinUp({String? token}) async {
+  Future<({McpServer server, HttpTransport transport, HttpClient client, String base})> spinUp({String? token}) async {
     final server = McpServer(repo: Repository(), tokenProvider: () => token);
-    await server.start(port: 0);
+    final transport = HttpTransport(server: server);
+    await transport.start(port: 0);
     final client = HttpClient();
-    return (server: server, client: client, base: 'http://127.0.0.1:${server.port}');
+    return (server: server, transport: transport, client: client, base: 'http://127.0.0.1:${transport.port}');
   }
 
   Future<({int status, Map<String, Object?>? body})> rpc(
@@ -71,7 +73,7 @@ void main() {
     final r2 = await rpc(env.client, env.base, 2, 'initialize', {'protocolVersion': '1999-01-01'});
     expect(resultOf(r2.body)['protocolVersion'], McpProtocol.latestVersion);
     env.client.close();
-    await env.server.stop();
+    await env.transport.stop();
   });
 
   test('通知 202 / GET 405 / token 鉴权', () async {
@@ -89,7 +91,7 @@ void main() {
     expect(auth.status, 200);
     expect(resultOf(auth.body), isEmpty, reason: 'ping 回空对象');
     env.client.close();
-    await env.server.stop();
+    await env.transport.stop();
   });
 
   test('M1 全链路（HTTP）：引导播种 → 排程提案 → 确认 → 勾选 → get_history 聚合', () async {
@@ -139,7 +141,7 @@ void main() {
     expect(totals['day_spark_done'], 1);
 
     env.client.close();
-    await env.server.stop();
+    await env.transport.stop();
   });
 
   test('propose 被拒：HTTP 错误体携带逐条明细与空窗', () async {
@@ -161,7 +163,7 @@ void main() {
     expect(errData, containsPair('code', 'schedule_rejected'));
     expect(errData['available_free_windows'] as List, isNotEmpty);
     env.client.close();
-    await env.server.stop();
+    await env.transport.stop();
   });
 
   test('tools/list 注册十四工具，prompts 先空实现', () async {
@@ -174,6 +176,6 @@ void main() {
     final prompts = await rpc(env.client, env.base, 2, 'prompts/list');
     expect(resultOf(prompts.body)['prompts'], isEmpty);
     env.client.close();
-    await env.server.stop();
+    await env.transport.stop();
   });
 }

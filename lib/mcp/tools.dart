@@ -6,10 +6,10 @@ import '../action/queries.dart';
 import '../data/repository.dart';
 import '../models/artifact.dart';
 import '../models/background.dart';
-import '../service/weather.dart';
 import '../util/schedule_day.dart';
 import '../data/settings.dart';
 import 'jsonrpc.dart';
+import 'weather_provider.dart';
 
 /// MCP 工具面（schedule-app.md §6 原十排程工具 + suggest_user_setting 建言通道 +
 /// 背景双工具 upsert_background/merge_backgrounds（背景草案 §2/§4）+
@@ -444,8 +444,9 @@ List<Map<String, Object?>> toolSchemas() => [
 Future<List<Map<String, Object?>>> callTool(
   String name,
   Map<String, Object?> args,
-  Repository repo,
-) async {
+  Repository repo, {
+  WeatherProvider weather = const NullWeatherProvider(),
+}) async {
   final handler = CommandHandler(repo);
   final queries = ScheduleQueries(repo);
   switch (name) {
@@ -555,7 +556,7 @@ Future<List<Map<String, Object?>>> callTool(
       final settings = await queries.getSettings();
       final location = settings['weather_location'] as String?;
       if (location != null && location.isNotEmpty) {
-        final wf = await weatherService.forecast3(location);
+        final wf = await weather.forecast3(location);
         if (wf != null) schedule['weather'] = wf;
       }
       return [_text(jsonEncode(schedule))];

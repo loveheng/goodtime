@@ -54,7 +54,15 @@ dependencies:
   bonsoir: ^5.1.0
   url_launcher: ^6.3.3
 
+  # relay 传输（轴 C：MCP over relay）——契约副本在 lib/relay_proto/（随仓拷贝，
+  # 源出 shiguang-relay gen/dart v0.1.8，proto 变更后须重拷）；WSS 客户端通道
+  protobuf: ^6.1.0
+  fixnum: ^1.1.0
+  web_socket_channel: ^3.0.0
+
 dev_dependencies:
+  # relay 单测的 fake 通道 mixin（web_socket_channel 的传递依赖，测试直引需声明）
+  stream_channel: ^2.1.4
   flutter_test:
     sdk: flutter
 

@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'app_services.dart';
+// Binder 插件后台入口（headless FlutterEngine 经 ShiguangMcpBinderService 拉起）。
+// 必须 import 以使该库编译进 app kernel，否则 DartEntrypoint 解析不到 mcpBinderMain。
+// （已标 @pragma('vm:entry-point') 防 tree-shake，静态无直接引用 → 忽略 unused_import）
+// ignore: unused_import
+import 'mcp_binder_entrypoint.dart';
 import 'data/settings.dart';
 import 'theme/tokens.dart';
 import 'ui/app_gate.dart';

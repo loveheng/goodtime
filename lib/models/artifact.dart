@@ -1,6 +1,5 @@
 import 'dart:convert';
-
-import 'package:flutter/foundation.dart';
+import 'dart:developer';
 
 /// artifacts 表实体（fact-user-relay-draft.md §1.1/§1.2）：硬事实凭证=现实存证——
 /// 车票/门票/酒店/场馆通知/口信结构化入册，**永不直接上时间轴**（锚点驱动块生成，
@@ -187,6 +186,6 @@ class Artifact {
 
   // DEGRADE: [artifacts_read_malformed] 读侧兜底丢弃，不挡主路径
   static void _logDegrade(String detail) {
-    debugPrint('[DEGRADE][artifacts_read_malformed] $detail');
+    log('[DEGRADE][artifacts_read_malformed] $detail');
   }
 }
