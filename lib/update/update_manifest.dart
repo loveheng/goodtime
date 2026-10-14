@@ -35,6 +35,7 @@ class UpdateManifest {
     required this.apkUrl,
     this.sha256,
     this.changelog,
+    this.applicationId,
     this.config = RemoteConfig.empty,
   });
 
@@ -53,6 +54,7 @@ class UpdateManifest {
       versionName: versionName,
       apkUrl: apkUrl,
       sha256: json['sha256'] as String?,
+      applicationId: json['applicationId'] as String?,
       changelog: json['changelog'] as String?,
       config: json['config'] is Map<String, Object?>
           ? RemoteConfig.fromJson(json['config'] as Map<String, Object?>)
@@ -67,6 +69,7 @@ class UpdateManifest {
   final String versionName;
   final String apkUrl;
   final String? sha256;
+  final String? applicationId;
   final String? changelog;
   final RemoteConfig config;
 

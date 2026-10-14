@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'update_manifest.dart';
@@ -61,7 +62,17 @@ class UpdateService {
         throw UpdateException('清单拉取失败：HTTP ${res.statusCode}');
       }
       final body = await utf8.decoder.bind(res).join();
-      return UpdateManifest.parse(body);
+      final manifest = UpdateManifest.parse(body);
+      // 包身份校验：清单声明 applicationId 时须与本机包名一致，
+      // 防止多 app 共用统一更新源时串包（下到/装到别人的包或拉到别人的配置）。
+      if (manifest.applicationId != null) {
+        final pkg = await PackageInfo.fromPlatform();
+        if (pkg.packageName != manifest.applicationId) {
+          throw UpdateException(
+              '更新包身份不符（疑似串包，已拒绝）：清单=${manifest.applicationId} 本机=${pkg.packageName}');
+        }
+      }
+      return manifest;
     } on FormatException catch (e) {
       throw UpdateException('清单格式错误：${e.message}');
     } on UpdateException {

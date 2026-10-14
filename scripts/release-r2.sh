@@ -68,6 +68,8 @@ command -v flutter >/dev/null 2>&1 || command -v "$HOME/flutter/bin/flutter" >/d
 VERSION_LINE="$(grep -m1 '^version:' pubspec.yaml)"
 VERSION_NAME="$(echo "$VERSION_LINE" | sed -E 's/.*:\s*([0-9.]+)\+.*/\1/')"
 VERSION_CODE="$(echo "$VERSION_LINE" | sed -E 's/.*\+([0-9]+).*/\1/')"
+# 应用包名：从 gradle 取，作为串包防御写入清单（缺失时留空，客户端宽容跳过）
+APP_ID="$(grep -m1 'applicationId' android/app/build.gradle.kts | sed -E 's/.*applicationId[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')"
 [ -z "$CHANGELOG" ] && CHANGELOG="$(git log -1 --pretty=%s 2>/dev/null || echo '')"
 # 转义 json 字符串中的反斜杠与双引号
 CHANGELOG_ESC="${CHANGELOG//\\/\\\\}"
@@ -107,6 +109,7 @@ cat > updates/shiguang-update.json <<EOF
 {
   "versionCode": ${VERSION_CODE},
   "versionName": "${VERSION_NAME}",
+  "applicationId": "${APP_ID}",
   "apkUrl": "${APK_URL}",
   "sha256": "${SHA}",
   "changelog": "${CHANGELOG_ESC}"
