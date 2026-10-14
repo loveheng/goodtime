@@ -1,7 +1,7 @@
 {
   "versionCode": 28019,
-  "versionName": "1.1.0",
+  "versionName": "1.2.0",
   "apkUrl": "https://r2.oklhj.eu.org/updates/app-release.apk",
-  "sha256": "279e2e3b9b92c6437f804060270bf22a815e026a4b6323d3f415aedb777a8bd9",
-  "changelog": "修复应用内自更新安装：改用系统 PackageInstaller 会话 API 直接写入安装会话，解决 Android 14+ 拉起安装时报「软件包无效」的问题"
+  "sha256": "d2e7bc462f185d17a1c66a4540cc5cc7bd311131b092e592aae24957b53582e7",
+  "changelog": "chore(release): v1.2.0+28019 发布——多通道 MCP 拆分+内核纯 Dart 化"
 }
