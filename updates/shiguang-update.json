@@ -1,7 +1,8 @@
 {
   "versionCode": 28019,
   "versionName": "1.2.0",
-  "apkUrl": "https://r2.oklhj.eu.org/updates/app-release.apk",
-  "sha256": "d2e7bc462f185d17a1c66a4540cc5cc7bd311131b092e592aae24957b53582e7",
-  "changelog": "chore(release): v1.2.0+28019 发布——多通道 MCP 拆分+内核纯 Dart 化"
+  "applicationId": "app.shiguang.shiguang",
+  "apkUrl": "https://r2.oklhj.eu.org/updates/shiguang/app-release.apk",
+  "sha256": "e3960ca4148c2df046604d27f7999dd6e3728399c6064e6c57c8f3a7b445fccb",
+  "changelog": "fix(update): 清单加 applicationId + 客户端包名校验，防多 app 共用更新源串包"
 }
