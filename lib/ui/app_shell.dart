@@ -34,8 +34,8 @@ class _AppShellState extends State<AppShell> {
         content: Text('AI 建议修改「$key」：$reason'),
         action: SnackBarAction(
           label: '去设置',
-          onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute<void>(builder: (_) => const SettingsPage())),
+          // 直接跳设置 Tab，不再全页 push（全页路由至此彻底退役，2026-10-15）
+          onPressed: () => setState(() => _tab = 2),
         ),
         duration: const Duration(seconds: 8),
       ));

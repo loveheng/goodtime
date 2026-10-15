@@ -4,7 +4,7 @@ format: v1
 epic: online
 status: active
 pairs_with: "goodhub-local-plugin（Binder 嵌入对接域，见 context/epics/goodhub-local-plugin/memory.md）"
-breakpoint: "MCP 暴露面收口已实装（2026-10-15：HTTP 仅回环+设置页隐藏入口+mDNS/配对卡摘除+relay 收起，analyze 0/202 全绿/arch-guard 6/6）；下一步：真机验证（隐藏入口手势+adb reverse 回环可达+宿主仍可 bind）或轴 B 第二段 `shiguang_mcp` 纯 Dart 包（待宿主驱动）"
+breakpoint: "MCP 暴露面收口已实装并发布 R2 v1.2.1 (28020)（2026-10-15，远端清单/APK 核验过）；下一步：真机验证（app 内自更新到 28020 → 验自更新+隐藏入口+adb reverse 回环+宿主 bind）或轴 B 第二段 `shiguang_mcp` 纯 Dart 包（待宿主驱动）"
 ---
 
 # ⚡ 给「拾光」AI 代理的整体改造提示词（让它自己完成拆分化）
@@ -226,3 +226,7 @@ Future<String> handleJsonRpc(String rawBody) async {
     workflow/index skill + README/mcp-bridge README + ui-spec §0.4 两行 + schedule-app
     §11「MCP 暴露面」新行同步。
   - **遗留**：真机验证未跑（装包+隐藏入口手势+adb reverse 回环可达+宿主仍可 bind 核验）。
+- [x] **R2 发布 v1.2.1 (28020)（2026-10-15）**：MCP 暴露面收口内容发布（基线 68e201a + 版本抬升 8fd5568 + 清单 e9f56d6）；
+  `release-r2.sh --commit` 全流程过（analyze 0 → arm64 release 21.0MB → sha256 e63de6e8… → R2 公开域）。
+  远端核验：公开清单 GET 过（五字段齐）+ APK HEAD 200（20,964,788 字节与构建产物一致）。
+  **遗留**：真机自更新流程未验（app「检查更新」→ 装 28020 → 隐藏入口/回环/宿主 bind 一并核）。

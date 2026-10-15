@@ -24,6 +24,8 @@ import 'rhythm_settings_page.dart';
 /// 编辑器迁出：rhythm/exceptions/prefs 子页承载；MCP 服务子页改隐藏入口
 /// （长按「关于」标题唤出调试菜单→「MCP 调试服务」，照 goodshare 范本，
 /// 2026-10-15 拍板：MCP 不对外展示、仅内部调试）。
+/// 本页内嵌 AppShell 第三 Tab（2026-10-08 拍板）：无自有 AppBar，标题栏由外壳
+/// 提供（原全页路由遗留的自有标题栏 2026-10-15 随双「设置」标题修复摘除）。
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -67,8 +69,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 无自有 AppBar：标题栏由 AppShell 三 Tab 提供（设置 Tab=「设置」），
+    // 原全页路由已退役，遗留自有标题栏 2026-10-15 摘除（双「设置」叠杠修复）。
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
       body: ListenableBuilder(
         listenable: Listenable.merge([AppServices.repo, AppServices.mcp]),
         builder: (context, _) => FutureBuilder<Map<String, Object?>>(
@@ -323,23 +326,24 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 关于区（照 goodshare 范本，2026-10-15）：长按「关于」标题唤出调试菜单。
-  /// MCP 调试服务不进常规设置树，开发者由此进入。
+  /// 关于区（照 goodshare 范本，2026-10-15）：长按唤出调试菜单。
+  /// MCP 调试服务不进常规设置树，开发者由此进入。长按目标=整卡：
+  /// 真机实测（2026-10-15）标题小目标手指微移即被列表滚动抢走手势，整卡容错。
   Widget _aboutSection(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onLongPress: () => _showDebugSheet(context),
-              child: _sectionTitle(context, '关于'),
-            ),
-            Text('用户本地持有的日程台账。',
-                style: TextStyle(fontSize: 11, color: StColors.textSecondary)),
-          ],
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _showDebugSheet(context),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionTitle(context, '关于'),
+              Text('用户本地持有的日程台账。',
+                  style: TextStyle(fontSize: 11, color: StColors.textSecondary)),
+            ],
+          ),
         ),
       ),
     );
