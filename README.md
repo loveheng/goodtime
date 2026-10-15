@@ -11,12 +11,12 @@
 ## 核心特性
 
 - **三表台账**：`plans`（愿望清单，唯一的「家」）/ `fixed_slots`（固定占用，约束而非愿望）/ `schedule_blocks`（日程块实例）。本体（plan）与肉身（block）解耦，承认「一件事 ≠ 一个日程块」。
-- **MCP 服务**：手机 app 作为 MCP 服务端，桌面 AI 客户端（如 ZCode）连接后读写台账、排程、复盘。十工具面：`list_plans` / `add_plan` / `update_plan` / `get_settings` / `update_settings` / `update_fixed_slots` / `propose_schedule` / `adjust_blocks` / `get_schedule` / `get_history`。
+- **MCP 服务**：手机 app 作为 MCP 服务端。生产通道 = Binder 宿主进程内嵌入（同签名零弹窗，2026-10-14 真机闭环）；HTTP 服务仅绑本机回环供 `adb reverse` 内部调试（2026-10-15 拍板，不对外暴露）。十工具面：`list_plans` / `add_plan` / `update_plan` / `get_settings` / `update_settings` / `update_fixed_slots` / `propose_schedule` / `adjust_blocks` / `get_schedule` / `get_history`。
 - **确定性中央管家（Housekeeper）**：无 LLM，只做时间驱动的状态迁移（日切、顺延记账、晨间聚合、断流静默保护）。
 - **减震器哲学**：填充率红线、呼吸律缓冲、黄金火种、水流模型、中性语言复盘——AI 是用户的减震器，不是工头。
 - **应用内自更新**：SHA-256 校验 + 系统安装器 + 更新源持久化（`lib/update/`）。
 - **前台保活**：`flutter_foreground_task` 保证 Doze 下 MCP 应答可达。
-- **网络配对**：mDNS 自动发现（`shiguang.local`）+ 手动 IP 兜底。
+- **暴露面收口**（2026-10-15 拍板）：MCP 不对外暴露——mDNS 广播与 LAN 直连退役，HTTP 仅 `127.0.0.1` 回环（`adb reverse` 调试）；生产通道走 Binder 宿主。
 
 ## 技术栈
 
@@ -26,7 +26,7 @@
 | 存储 | `sqflite` + `path`（三表台账，分段迁移） |
 | 自更新 | `crypto` / `open_filex` / `package_info_plus` / `path_provider` / `shared_preferences` |
 | 保活 | `flutter_foreground_task` |
-| 配对 | `bonsoir`（mDNS）/ `url_launcher` |
+| 其它 | `url_launcher`（链接唤起） |
 | 测试 | `flutter_test` + `sqflite_common_ffi`（VM 单测 sqlite 夹具） |
 
 ## 项目结构
@@ -40,7 +40,7 @@ lib/
   service/   前台任务保活 / MCP 控制器 / 管家调度
   ui/        双/三 Tab（日程/清单/设置）、时间轴、块浮层、确认卡
   update/    应用内自更新与安装器
-  util/      局域网 IP 探测等
+  util/      作息日几何（schedule_day）
   widgets/   通用组件（快记抽屉、凭证卡、背景区 ...）
   main.dart  入口
 mcp-bridge/  stdio-bridge.mjs（桌面桥接）+ e2e-check.mjs

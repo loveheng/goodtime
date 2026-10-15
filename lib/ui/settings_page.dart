@@ -19,9 +19,11 @@ import 'prefs_settings_page.dart';
 import 'rhythm_settings_page.dart';
 
 /// 设置页（ui-spec §1 子页化 2026-10-08 拍板）：目录形态——本页只留高频项
-/// （作息边界/外观）+ AI 建议 + 编辑器簇入口行（一周节奏/假期与出行/排程偏好/
-/// MCP 服务=独立子页，对齐 §1「SET→MCPG/EXC/SLOTS」原 IA）+ 应用更新/数据出口。
-/// 编辑器全量迁出：rhythm/exceptions/prefs/mcp_settings_page 四子页承载。
+/// （作息边界/外观）+ AI 建议 + 编辑器簇入口行（一周节奏/假期与出行/排程偏好，
+/// 对齐 §1「SET→EXC/SLOTS」原 IA）+ 应用更新/数据出口 + 关于。
+/// 编辑器迁出：rhythm/exceptions/prefs 子页承载；MCP 服务子页改隐藏入口
+/// （长按「关于」标题唤出调试菜单→「MCP 调试服务」，照 goodshare 范本，
+/// 2026-10-15 拍板：MCP 不对外展示、仅内部调试）。
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -98,17 +100,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     title: '排程偏好',
                     subtitle: '粒度/排量/填充率/我的偏好',
                     page: (_) => const PrefsSettingsPage()),
-                _entryRow(context,
-                    icon: Icons.lan_outlined,
-                    title: 'MCP 服务',
-                    subtitle: AppServices.mcp.running ? '运行中' : '已停止',
-                    page: (_) => const McpSettingsPage()),
                 const SizedBox(height: 16),
                 _appearanceSection(context, settings),
                 const SizedBox(height: 16),
                 _updateSection(context),
                 const SizedBox(height: 16),
                 _exportSection(context),
+                const SizedBox(height: 16),
+                _aboutSection(context),
               ],
             );
           },
@@ -315,6 +314,61 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 关于区（照 goodshare 范本，2026-10-15）：长按「关于」标题唤出调试菜单。
+  /// MCP 调试服务不进常规设置树，开发者由此进入。
+  Widget _aboutSection(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPress: () => _showDebugSheet(context),
+              child: _sectionTitle(context, '关于'),
+            ),
+            Text('用户本地持有的日程台账。',
+                style: TextStyle(fontSize: 11, color: StColors.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 调试菜单（长按「关于」唤出，照 goodshare 范本）：收纳不进常规设置树的内部调试入口。
+  Future<void> _showDebugSheet(BuildContext context) {
+    final mcp = AppServices.mcp;
+    return showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('调试菜单', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.developer_mode),
+              title: const Text('MCP 调试服务'),
+              subtitle: Text(
+                mcp.running ? '运行中 · 端口 ${mcp.port}' : '未运行（仅 loopback，内部调试用）',
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  ctx,
+                  MaterialPageRoute<void>(builder: (_) => const McpSettingsPage()),
                 );
               },
             ),

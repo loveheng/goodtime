@@ -5,9 +5,10 @@ import '../app_services.dart';
 import '../service/relay_client.dart';
 import '../theme/tokens.dart';
 
-/// MCP 服务设置页（ui-spec §1「SET→MCPG 独立配对页」原 IA 形态，2026-10-08
-/// 子页化落地）：服务开关/连接地址/访问令牌/配对说明。自 settings_page
-/// 大平铺迁出（目录页只留入口行）。
+/// MCP 服务设置页（隐藏入口：设置页长按「关于」标题唤出调试菜单→「MCP 调试服务」，
+/// 照 goodshare 范本，2026-10-15 拍板）：
+/// 服务开关/连接地址（回环）/访问令牌/relay 区。仅内部调试用——生产通道走
+/// Binder 宿主进程内嵌入（mcp_binder_entrypoint），不经本页。
 class McpSettingsPage extends StatelessWidget {
   const McpSettingsPage({super.key});
 
@@ -54,26 +55,21 @@ class McpSettingsPage extends StatelessWidget {
                   }
                 },
               ),
-              FutureBuilder<String>(
-                future: mcp.endpoint(),
-                builder: (context, snap) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('连接地址'),
-                  subtitle: Text(snap.data ?? '…'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.copy, size: 18),
-                    tooltip: '复制',
-                    onPressed: snap.data == null
-                        ? null
-                        : () {
-                            Clipboard.setData(ClipboardData(text: snap.data!));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('已复制'),
-                                  duration: Duration(seconds: 1)),
-                            );
-                          },
-                  ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('连接地址'),
+                subtitle: Text(mcp.endpoint),
+                trailing: IconButton(
+                  icon: const Icon(Icons.copy, size: 18),
+                  tooltip: '复制',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: mcp.endpoint));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('已复制'),
+                          duration: Duration(seconds: 1)),
+                    );
+                  },
                 ),
               ),
               ListTile(
@@ -105,7 +101,7 @@ class McpSettingsPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text('桌面 AI 用此地址配对（USB 场景先 adb reverse tcp:8765 tcp:8765）',
+              Text('仅内部调试：服务只监听本机回环，不暴露局域网。桌面 AI 先执行 adb reverse tcp:8765 tcp:8765，再用上方地址接入。',
                   style: TextStyle(fontSize: 11, color: StColors.textSecondary)),
               const SizedBox(height: 16),
               const _RelaySection(),
@@ -119,6 +115,7 @@ class McpSettingsPage extends StatelessWidget {
 
 /// relay 中转区（轴 C）：外网可达的第二种传输——手机与桌面各持 relay 账号且互为好友，
 /// MCP 请求经 relay 定向中转（好友 ACL + 本页访问令牌双保险；契约 v0.1.8）。
+/// 默认不启用；本页随 MCP 隐藏入口一并收起（2026-10-15 拍板）。
 /// 配置保存后于下次「打开服务」生效。
 class _RelaySection extends StatefulWidget {
   const _RelaySection();

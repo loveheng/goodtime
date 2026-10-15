@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-08
+updated: 2026-10-15
 ---
 
 # 拾光（shiguang）——MCP 日程 app 设计
@@ -344,7 +344,7 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | 反压迫机制 | get_history 三组校准指标（膨胀系数/时段热力/耐受阈值）+ 呼吸律（>45min 块后 15min 缓冲）+ 时长乘数补正 + 提案附理由（2026-10-05 拍板） |
 | user_rules | settings 新增可空偏好文本，AI 经 update_settings 维护；优先级高于统计推断（2026-10-05 拍板） |
 | 断流复苏 | Clean Slate：Housekeeper 静默保护（archived 中性态，不进聚合）+ AI recovery SOP（禁盘问/一键赦免/极简重启）+ 断流定义=连续 3 作息日无交互或 missed≥5（2026-10-05 拍板） |
-| 网络配对 | mDNS 自动发现（shiguang.local，bridge+Android NSD）+ 设置页状态灯/一键唤醒；手动 IP 兜底（2026-10-05 拍板）；拾贝零 mDNS 实装代码，新集成（§12 盘点） |
+| 网络配对 | ~~mDNS 自动发现（shiguang.local，bridge+Android NSD）+ 设置页状态灯/一键唤醒；手动 IP 兜底~~ **已废弃（2026-10-15，见「MCP 暴露面」行）**（2026-10-05 拍板）；拾贝零 mDNS 实装代码，新集成（§12 盘点） |
 | 确认分级 | 提案确认分级折叠：仅突出 Q2 任务+理由+缓冲，Routine 折叠防盲签（2026-10-05 拍板） |
 | 心流保护 | 打卡不实时强制：宽容视窗至次 wake_time+晚间批量补勾；「沉浸中」复用顺延微调（2026-10-05 拍板） |
 | 现实熔断 | 日程页一键：未开始 AI 块整体撤回愿望池（无负罪感标记）或暂缓 2h；human 块不动；命令层原子执行（2026-10-05 拍板） |
@@ -394,6 +394,7 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | 三批 UX 拍板回归（UI 走查拍板） | spec 拍板未落地项回归+走查补强（2026-10-08 用户拍板开工，六项）：①**D6 换乘抽屉**=左滑过 35% 卡点不再自动换第一候选，呼出「换件轻松的？」候选列表（swapCandidatesFor：light/anywhere 时长相近优先）显式挑选经 SwapBlockCommand(targetPlanId) 换入，空池轻提示不开抽屉（§6.4 拍板形态回归）；②**D7 否决原因**=块浮层否决+确认卡「全部否决」均先弹可选原因框（留空=不带原因；原因入 RejectBlockCommand.reason 回传 AI 下轮参考，§3.4 回归）；③**S1 确认卡滚动坍缩**=时间轴下滑浏览自动收为 44dp 吸顶胶囊（NotificationListener 驱动，回滚至顶恢复展开；状态上提 _SchedulePageState、日切复位；_TieredConfirmCard 改受控组件，§3.4 回归）；④**S2 MCP 未连接卡**=今日页仪表盘下常驻「桌面 AI 未连接——配对后可让 AI 排程」卡→MCP 服务子页，启动后消失（§9 空态表回归）；⑤**S3 放工明日概要**=静默视图补第二行明日块数+最早一块（label 解析同块浮层口径，§3.7 回归）；⑥**N1 清单搜索**=页顶搜索框标题子串过滤（含冷藏池；归属判定仍按块日期；查询非空隐藏「记一笔」空态出口）。零命令层/schema 变更（RejectBlockCommand.reason 通道原有，仅 UI 接通）；文案六条入 ui-spec §0.4；新增测试两文件（一测一文件约定：ui_swap_sheet_test/ui_reject_reason_test）。随三批一并提交 |
 | 设置入口迁底部第三 Tab（IA 变更） | 用户提出「设置按钮放下边是不是更好」，给过三选项（保持右上角/AppBar 左侧/底部 Tab）后用户拍板**底部第三个 Tab**（2026-10-08）：AppShell 底部导航扩为「日程｜清单｜设置」三 Tab，SettingsPage 内嵌 Tab 页（替代原 Navigator.push 全页路由），AppBar 右上角设置钮退役。**「双 Tab 拍板结构不动」就此修订**（原拍板语境=凭证 UI 不加第四 Tab，设置迁入为用户明示决策， ui-spec §0.4/§1 导航行与导航图同步改三 Tab）；快记 FAB 两内容 Tab 常驻口径不变。测试两文件适配（ui_theme/ui_settings_editor 改点「设置」Tab） |
 | 事实挂载二期裁决（临场通关条 / 硬红线） | 定稿评估报告出 4 项开工 Blocker + 4 项维护性隐患，2026-10-08 用户逐条拍板，契约=`fact-user-relay-draft.md` §9：①**临场判据**=`role` 受控枚举（departure/deadline/checkin/checkout=行动类触发，arrival/reference=信息类忽略；存量中文 role 读侧容错按 reference+[DEGRADE]、不迁移）+**分层时相推进**公式（`T_target=T_action−advance` 仅 departure/checkin 减、`T_trigger=T_target−120`、`T_dismiss=T_action+30` 仅 departure/checkout，常量进 `ArtifactRules`）；②**rule 生效窗**=payload `rule_scope{valid_from,valid_to}` 建档**必填**（漏填 invalidRequest），**plans 不加 start_date/end_date、不设长期有效缺省**，**星期约束 100% 归 `constraints.forbidden_weekdays`**（原 `days_of_week` 删除防第二真相），生效判定派生不入库；③**红线范围**=本 plan 及递归子树（复用内存 PlanTree，深度 ≤3）+ 跨午夜取块 `date` 的 weekday + 校验集仅 structured，AI 通道 `schedule_rejected` 附 `rejected_by_facts` 逐条原因并复用 available_free_windows/protection_manifesto、**human 通道绝不阻断**仅亮琥珀「规则提醒：周一闭馆」；④**界面与日口径**=通关条插在系统 Banner 下、遗留区上（不挤掉双轨仪表盘），多条折「+2」横滑，**本地物理时钟判定禁用 toUtc()**；维护性四项=多 span 重叠度贪心比对 / 往返票拆两条凭证+`parent_artifact_id`（block_id 保持 1:1）/ raw→structured 严进 category+source_kind 必填（防漏填不防填错）/ `delete_plan` 解挂**复用未归属池不新造总凭证箱**且 `block_id` 按块生命周期分支（块随删则清、块保留则留、日切悬空不写库）。**分期**：①②④ 属分期二/V1.5 未开工，⑤⑧ 为已落地项回改；文案六条入 ui-spec §0.4 |
+| MCP 暴露面 | 生产通道 = **Binder 宿主进程内嵌入**（goodhub 同款 AIDL IMcpChannel + 同签名零弹窗，`mcp_binder_entrypoint` 独立装配不经 AppServices；2026-10-14 真机 e2e 闭环）；HTTP 服务**仅绑 127.0.0.1 回环**（`InternetAddress.loopbackIPv4`）供 `adb reverse tcp:8765 tcp:8765` 内部调试——mDNS 广播退役（bonsoir 依赖摘除）、LAN 端点展示退役（lan_ip 删除）、设置页 MCP 入口行改**「关于」长按调试菜单**（页尾「关于」区长按标题唤出「调试菜单」→「MCP 调试服务」带运行态，照 goodshare 范本）、今日页「桌面 AI 未连接」配对卡退役（对外配对面整体收口）；relay（轴 C）代码保留但随隐藏入口一并收起，默认不启用、显式配置才挂载；token 鉴权保留（Android 同设备回环不隔离）；前台服务保活保留（Binder 与调试均需进程存活）（2026-10-15 用户拍板：MCP 服务隐藏、不对外开放、只内部调试，机制全部走 bind；修订 2026-10-05「网络配对」行） |
 
 ## 12. 复用清单（自拾贝 goodshare，2026-10-05 全仓盘点校准）
 

@@ -10,15 +10,15 @@ description: shiguang（Flutter Android 日程台账 + 内嵌 MCP 服务端）�
 ## 技术栈
 
 - Flutter 3.47.5 stable / Dart 3.13.4
-- 目标平台：**仅 Android**（`--platforms android` 创建；拓扑=手机 app 当 MCP 服务端 + 桌面 AI 连接）
+- 目标平台：**仅 Android**（`--platforms android` 创建；拓扑=手机 app 当 MCP 服务端：生产通道=Binder 宿主进程内嵌入（2026-10-14 真机闭环）+ HTTP 仅回环调试（2026-10-15 拍板））
 - 包名：`app.shiguang.shiguang`
-- 核心依赖（M1–M4）：sqflite（三表台账）、内嵌 MCP server（自拾贝 `lib/mcp/` 搬运）、flutter_foreground_task（管家前台服务）、bonsoir（mDNS 广播 fail-open，升级挂账 `context/todos.md`）
+- 核心依赖（M1–M4）：sqflite（三表台账）、内嵌 MCP server（自拾贝 `lib/mcp/` 搬运）、flutter_foreground_task（管家前台服务）（bonsoir mDNS 依赖 2026-10-15 随暴露面收口摘除）
 
 ## 环境硬约束
 
 - **flutter 不在默认 PATH**：先 `export PATH="$HOME/flutter/bin:$PATH"`（flutter 装在 `~/flutter`）
-- 本地优先：全功能离线可用；MCP 仅 LAN；无任何遥测
-- **Android 交付约束（2026-10-06 拍板）**：minSdk=34（仅支持 Android 14+，勿回退 flutter.minSdkVersion）；根 `android/build.gradle.kts` 对全部 library 子项目钳制 compileSdk≥36——陈旧插件对策（bonsoir_android 5.1.6 硬编码 33、依赖 androidx 需 ≥34）
+- 本地优先：全功能离线可用；MCP 不对外暴露（HTTP 仅 127.0.0.1 回环 + adb reverse 调试，2026-10-15 拍板）；无任何遥测
+- **Android 交付约束（2026-10-06 拍板）**：minSdk=34（仅支持 Android 14+，勿回退 flutter.minSdkVersion）；根 `android/build.gradle.kts` 对全部 library 子项目钳制 compileSdk≥36——陈旧插件对策（bonsoir_android 5.1.6 硬编码 33 为原始诱因，依赖 2026-10-15 已摘，钳制保留兜底）
 - 文档纪律：docs/ 改动走 docs-spec（lint 用 `toolbox run docs-lint`）
 
 ## 命令（2026-10-05 实测跑通）
@@ -48,17 +48,15 @@ description: shiguang（Flutter Android 日程台账 + 内嵌 MCP 服务端）�
 - `lib/mcp/jsonrpc.dart` —— JSON-RPC/MCP 协议常量（拾贝原样）
 - `lib/mcp/mcp_server.dart` —— 内嵌 MCP 服务：Streamable HTTP POST /mcp + token 鉴权 + Origin 防护；instructions=政策精华六条；prompts 先空实现
 - `lib/mcp/tools.dart` —— 十工具 schema 全量注册（§6 定格）+ callTool 分发（AI 侧统一走 CommandHandler，data 透传）
-- `mcp-bridge/` —— stdio-bridge.mjs（桌面 stdio ↔ 手机 HTTP 桥）+ e2e-check.mjs（mock 上游自检）；mDNS 自动发现 M4 新写，手动 IP 兜底
+- `mcp-bridge/` —— stdio-bridge.mjs（桌面 stdio ↔ 手机回环 HTTP 桥，adb reverse）+ relay-bridge.mjs（轴 C 外网，默认关）+ e2e-check.mjs（mock 上游自检）
 - `lib/service/housekeeper.dart` —— 中央管家：日切扫描（missed/作废/Clean Slate 静默，幂等）+ dailyCutIfNeeded 冷启动；晨间 digest 在 queries
 - `lib/service/weather.dart` —— 天气投影（Open-Meteo 无 key + TTL + 静默降级），get_schedule 搭载（例外日/水位线同在 queries）
-- `lib/service/mcp_controller.dart` —— MCP 总控 + bonsoir mDNS 广播（fail-open）+ 前台服务
-- `lib/util/lan_ip.dart` —— 局域网 IPv4 探测（拾贝原样）
-- `lib/service/mcp_controller.dart` —— MCP 总控：token 生成/持久化（app_settings KV）/启停/冷启动恢复；前台服务保活留 M2 管家
+- `lib/service/mcp_controller.dart` —— MCP 总控：token 生成/持久化（app_settings KV）/启停/冷启动恢复 + 回环 HTTP（2026-10-15 暴露面收口，mDNS 退役）+ relay 挂载（轴 C，默认关）+ 前台服务保活
 - `lib/util/schedule_day.dart` —— 作息日 wake_time 切换 / 跨午夜几何 / ISO 日期 / overlapsMinutes / clockOf
 - `lib/theme/tokens.dart` —— ui-spec §0 视觉令牌单一事实源（色彩/尺度/动效/手势常量）
-- `lib/main.dart` + `lib/ui/` —— app 入口（M3 固定种子/Light 锁定）+ app_gate（revision 驱动闸门）+ app_shell（双 Tab+快记条常驻）+ onboarding 三步 + quick_note_bar + schedule_page 日视图（1dp/min 时间轴/车道分栏/确认三键/+30m/空槽创建）+ block_sheet + plans_page 三分区 + settings_page（作息/一周节奏/MCP）
+- `lib/main.dart` + `lib/ui/` —— app 入口（M3 固定种子/Light 锁定）+ app_gate（revision 驱动闸门）+ app_shell（三 Tab+快记条常驻）+ onboarding 三步 + quick_note_bar + schedule_page 日视图（1dp/min 时间轴/车道分栏/确认三键/+30m/空槽创建）+ block_sheet + plans_page 三分区 + settings_page（作息/一周节奏/排程偏好/关于；MCP 子页=隐藏入口：页尾「关于」长按唤「调试菜单」，照 goodshare 范本，2026-10-15 拍板）
 - `test/` —— schedule_day / repository / commands / mcp_tools / mcp_server 契约测试 + ui_* 流程测试（一测一文件，ffi 内存库；FakeAsync 铁律见 lessons.md [UI测试]）+ widget_test 冒烟
-- 已过测试里程碑：M1 行走骨架 + M2 减震系统 + M3 心理层 + M4 现实接口（functional-spec §1 全清，2026-10-06）。剩余（用户指定最后统一测）：真机四天型走查 + 桌面 AI 全链路 + 金样本评审 + mDNS/日历投影实证
+- 已过测试里程碑：M1 行走骨架 + M2 减震系统 + M3 心理层 + M4 现实接口（functional-spec §1 全清，2026-10-06）+ Binder 真机 e2e（2026-10-14，D.1/D.2 门禁）。剩余（用户指定最后统一测）：真机四天型走查 + 桌面 AI 全链路 + 金样本评审 + 日历投影实证（mDNS 实证随 2026-10-15 暴露面收口失效）
 
 ## 跨仓复用源
 

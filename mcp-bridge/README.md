@@ -1,9 +1,10 @@
 # mcp-bridge：桌面 AI ↔ 手机 MCP 的两个桥
 
-## stdio-bridge.mjs（LAN / USB，M1-M4 既有）
+## stdio-bridge.mjs（内部调试，2026-10-15 口径）
 
-stdio ↔ HTTP 直连：`--url http://<手机IP>:8765/mcp --token <访问令牌>`；
-USB 场景先 `adb reverse tcp:8765 tcp:8765`。零依赖（Node ≥18 内建 fetch）。
+stdio ↔ HTTP 直连：`--url http://127.0.0.1:8765/mcp --token <访问令牌>`；
+服务仅绑手机回环（2026-10-15 拍板：MCP 不对外暴露，生产通道走 Binder
+宿主进程内嵌入），桌面侧须先 `adb reverse tcp:8765 tcp:8765`。零依赖（Node ≥18 内建 fetch）。
 
 ## relay-bridge.mjs（外网可达，轴 C 新增）
 

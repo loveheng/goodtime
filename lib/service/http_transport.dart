@@ -22,7 +22,9 @@ class HttpTransport {
 
   Future<void> start({int port = 8765}) async {
     if (running) return;
-    final s = await HttpServer.bind(InternetAddress.anyIPv4, port);
+    // 仅绑回环（2026-10-15 拍板，§11「MCP 暴露面」）：生产通道走 Binder 宿主，
+    // 本传输只服务 adb reverse 内部调试，不暴露局域网。
+    final s = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     _s = s;
     s.listen(
       (req) async {

@@ -18,7 +18,6 @@ import '../util/schedule_day.dart';
 import '../widgets/now_next_card.dart';
 import 'block_sheet.dart';
 import 'global_action_sheet.dart';
-import 'mcp_settings_page.dart';
 
 /// 今日页（ui-spec §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
 /// ×安全线徽章）+ 分级确认卡（火种突出/Routine 折叠/两态收缩）+ 时间轴
@@ -115,9 +114,8 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   Widget build(BuildContext context) {
-    // 合并监听 mcp：MCP 启停联动今日页「桌面 AI 未连接」卡（§9，2026-10-08 回归）
     return ListenableBuilder(
-      listenable: Listenable.merge([_repo, AppServices.mcp]),
+      listenable: _repo,
       builder: (context, _) => Column(
         children: [
           Padding(
@@ -380,8 +378,6 @@ class _DayView extends StatelessWidget {
           ),
         // 双轨仪表盘（§3.1/§10 八轮）：推进任务 × 保护时长并列核心交付指标
         _Dashboard(data: data),
-        // MCP 未连接卡（§9 空态表回归，2026-10-08）：今日可见，一键进 MCP 服务页
-        if (data.isToday && !AppServices.mcp.running) const _McpOfflineCard(),
         // 昨日遗留区（§3.2）：守卫态与 Clean Slate 保护期整区淡出，非今日不渲染
         if (!windDown && !data.cleanSlate && data.isToday && data.leftovers.isNotEmpty)
           _LeftoverSection(data: data),
@@ -481,39 +477,6 @@ class _Dashboard extends StatelessWidget {
                 color: lit ? StColors.safelineOn : StColors.safelineOff),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// MCP 未连接卡（ui-spec §9 空态表回归，2026-10-08）：今日页常驻提示，
-/// 一键进 MCP 服务子页（配对/启停）。MCP 已启动时整卡消失。
-class _McpOfflineCard extends StatelessWidget {
-  const _McpOfflineCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(StScale.radiusCard),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const McpSettingsPage()),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(children: [
-            const Icon(Icons.lan_outlined, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text('桌面 AI 未连接——配对后可让 AI 排程',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ),
-            Icon(Icons.chevron_right,
-                size: 18, color: StColors.textSecondary),
-          ]),
-        ),
       ),
     );
   }

@@ -22,7 +22,7 @@ description: shiguang（Flutter Android 日程台账 + MCP 服务端）的「功
 | 金样本评审 | 金样本评审循环固定输入（#4 云南七天=旅行模式全流程+实现差异备忘） | —（纯文档域） | `docs/design/golden-samples.md` |
 | UI 规格 | 视觉 tokens/导航/页面布局/BlockRenderer 矩阵/文案词汇表 | `lib/theme/tokens.dart`（§0 落地件） | `docs/design/ui-spec.md`（§0.4 白话词汇表） |
 | Flutter 工程 | app 本体（M1 起逐步成形） | `lib/`（`find lib -name "*.dart"`） | — |
-| MCP 桥 | stdio-bridge / e2e-check（M1 待建） | `mcp-bridge/`（待建） | schedule-app.md §6 |
+| MCP 桥 | stdio-bridge（回环调试）/ relay-bridge（轴 C，默认关）/ e2e-check | `mcp-bridge/` | schedule-app.md §6 + §11「MCP 暴露面」行 |
 | 测试 | 单元/组件测试 | `test/`（`find test -name "*.dart"`） | — |
 | 跨仓复用源 | 拾贝领料（MCP 框架/命令层模式/前台服务/测试模板） | `/home/zzh/app/goodshare`（仓库外只读） | schedule-app.md §12 复用清单 |
 | 背景信息记录 | 软背景层 backgrounds（表 v3/命令层预算与原子归并/双通道装配/计划详情「背景」区；2026-10-07 七切片落地） | `lib/data/db.dart`・`lib/action/`・`lib/mcp/tools.dart`・`lib/ui/plans_page.dart` | `docs/design/background-context-draft.md`（定稿契约；schedule-app §11 留痕行） |

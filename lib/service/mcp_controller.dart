@@ -2,7 +2,6 @@ import 'dart:math';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../data/repository.dart';
@@ -12,14 +11,16 @@ import 'http_transport.dart';
 import 'relay_client.dart';
 import 'weather.dart';
 import '../update/remote_config_store.dart';
-import 'lan_ip.dart';
 import 'foreground_task_init.dart';
 
 /// MCP 服务总控（抄改自拾贝 mcp_controller，§12）：token 与开关持久化 + 内嵌 HTTP server。
 ///
-/// M1 口径：无前台服务保活（管家 M2 随 flutter_foreground_task 接入，届时补
-/// Doze 下持 CPU 锁+Wi-Fi 锁的踩坑结论）；token/开关走 app_settings KV
-/// （`mcp_token`/`mcp_enabled` 为内部键，不经 update_settings 命令白名单）。
+/// 暴露面口径（2026-10-15 拍板，schedule-app §11「MCP 暴露面」行）：生产通道 =
+/// Binder 宿主进程内嵌入（mcp_binder_entrypoint，不经本控）；本控的 HTTP 服务
+/// 仅绑 127.0.0.1 回环供 adb reverse 内部调试——不广播 mDNS、不展示 LAN 地址。
+/// token/开关走 app_settings KV（`mcp_token`/`mcp_enabled` 为内部键，不经
+/// update_settings 命令白名单）；前台服务保活（Doze 下持 CPU 锁+Wi-Fi 锁，
+/// 见 foreground_task_init）。
 class McpController extends ChangeNotifier {
   McpController({required this.repo});
 
@@ -39,7 +40,6 @@ class McpController extends ChangeNotifier {
   McpServer? _server;
   HttpTransport? _transport;
   RelayClient? _relay;
-  BonsoirBroadcast? _mdns;
   String? _token;
   String? _lastError;
 
@@ -47,6 +47,9 @@ class McpController extends ChangeNotifier {
   int get port => _transport?.port ?? defaultPort;
   String? get token => _token;
   String? get lastError => _lastError;
+
+  /// 调试端点（仅回环可达；桌面经 `adb reverse tcp:8765 tcp:8765` 接入）。
+  String get endpoint => 'http://127.0.0.1:$defaultPort/mcp';
 
   /// 冷启动装配：读/生成 token，并按上次开关状态自动恢复服务。
   Future<void> restoreIfNeeded() async {
@@ -73,12 +76,6 @@ class McpController extends ChangeNotifier {
     return List.generate(24, (_) => rnd.nextInt(16).toRadixString(16)).join();
   }
 
-  /// 当前 LAN 端点；无 Wi-Fi 时回退 127.0.0.1（仅 adb reverse 场景可用）。
-  Future<String> endpoint() async {
-    final ip = await lanIpv4();
-    return 'http://${ip ?? '127.0.0.1'}:$defaultPort/mcp';
-  }
-
   /// 打开 MCP 服务。返回 null 表示成功，否则为错误信息。
   Future<String?> enable() async {
     _lastError = null;
@@ -87,11 +84,10 @@ class McpController extends ChangeNotifier {
       // VM 测试/平台未就绪时跳过，仅启 HTTP（fail-open，不阻断服务）。
       try {
         await ensureForegroundTaskInit();
-        final addr = await lanIpv4();
         await FlutterForegroundTask.startService(
           serviceTypes: [ForegroundServiceTypes.dataSync],
           notificationTitle: '拾光 · MCP 服务运行中',
-          notificationText: 'http://${addr ?? '127.0.0.1'}:$defaultPort/mcp（地址见 app 内 MCP 页）',
+          notificationText: '仅本机回环（内部调试）；桌面先 adb reverse tcp:$defaultPort tcp:$defaultPort',
         );
       } catch (e) {
         // DEGRADE: [fg_unavailable] 前台服务不可用（VM 测试/平台未就绪）——仅 HTTP 无保活
@@ -124,25 +120,9 @@ class McpController extends ChangeNotifier {
       );
       _transport ??= HttpTransport(server: _server!);
       await _transport!.start(port: defaultPort);
-      // mDNS 广播（§10/§11 网络配对：消灭「Connection Refused」在用户修网络之前）。
-      // UNCERTAIN: bonsoir 新集成未真机实证；不可用时静默降级走手动 IP 兜底（拍板真）。
-      try {
-        final broadcast = BonsoirBroadcast(
-          service: BonsoirService(
-            name: 'shiguang-mcp',
-            type: '_shiguang-mcp._tcp.',
-            port: defaultPort,
-          ),
-        );
-        await broadcast.ready;
-        await broadcast.start();
-        _mdns = broadcast;
-      } catch (e) {
-        // DEGRADE: [mdns_unavailable] mDNS 广播不可用（VM 测试/权限/网络）——手动 IP 兜底
-        debugPrint('[DEGRADE][mdns_unavailable] mDNS 广播未启动: $e');
-      }
+      // mDNS 广播随 2026-10-15 暴露面拍板退役（回环服务无需 LAN 发现，§11）。
       // relay 传输（轴 C）：配置齐全才挂载——与 HTTP 并列的第二种传输，fail-open
-      // （relay 不可达不阻断 LAN HTTP 通道；schedule-app.md:331「手机不在线 AI 失联」同口径）。
+      // （relay 不可达不阻断回环 HTTP 通道；schedule-app.md:331「手机不在线 AI 失联」同口径）。
       await _startRelay();
       await repo.settingsSet({_keyEnabled: '1'});
     } catch (e) {
@@ -171,10 +151,6 @@ class McpController extends ChangeNotifier {
       await _relay?.stop();
     } catch (_) {/* relay 可能已断开 */}
     _relay = null;
-    try {
-      await _mdns?.stop();
-    } catch (_) {/* 广播可能已停止 */}
-    _mdns = null;
   }
 
   /// relay 通道装配：读取 app_settings 配置（RelayKeys），齐全才建连。

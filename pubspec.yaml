@@ -50,8 +50,6 @@ dependencies:
   # 前台服务保活（M2 管家日切 / MCP Doze 下应答，拾贝同版本）
   flutter_foreground_task: ^11.0.3
 
-  # mDNS 服务广播（M4 网络配对：shiguang-mcp._tcp；拾贝零实装，新集成 §12 ②）
-  bonsoir: ^5.1.0
   url_launcher: ^6.3.3
 
   # relay 传输（轴 C：MCP over relay）——契约副本在 lib/relay_proto/（随仓拷贝，

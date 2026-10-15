@@ -4,7 +4,7 @@ format: v1
 epic: online
 status: active
 pairs_with: "goodhub-local-plugin（Binder 嵌入对接域，见 context/epics/goodhub-local-plugin/memory.md）"
-breakpoint: "轴 A→Binder 终点已实装且真机 e2e 闭环（2026-10-14，D.1/D.2 门禁全过、add_plan 真机落库）；下一步：轴 B 第二段 `shiguang_mcp` 纯 Dart 包（待宿主驱动）或轴 C 真机 relay 联调"
+breakpoint: "MCP 暴露面收口已实装（2026-10-15：HTTP 仅回环+设置页隐藏入口+mDNS/配对卡摘除+relay 收起，analyze 0/202 全绿/arch-guard 6/6）；下一步：真机验证（隐藏入口手势+adb reverse 回环可达+宿主仍可 bind）或轴 B 第二段 `shiguang_mcp` 纯 Dart 包（待宿主驱动）"
 ---
 
 # ⚡ 给「拾光」AI 代理的整体改造提示词（让它自己完成拆分化）
@@ -38,7 +38,7 @@ breakpoint: "轴 A→Binder 终点已实装且真机 e2e 闭环（2026-10-14，D
 ## 2. 已确认方向（钉死，不做二次讨论）
 
 1. **Binder 插件嵌入**：shiguang 的 MCP 层终态是「可作为 Binder 插件被宿主进程内嵌入」。这**不是外挂，而是本次拆分的內禀终点**——`shiguang_mcp` 内核包就是那个被嵌入的单元。
-2. **复用 relay**：内网 bonsoir 发现 + 公网 relay 中转，只做 TCP/JSON 中转，不碰业务。
+2. **复用 relay**（公网）：relay 只做 TCP/JSON 中转，不碰业务；内网 bonsoir 发现已退役（2026-10-15 [SSOT 修正] 旧「内网 bonsoir 发现 + 公网 relay 中转」➔ 新「仅公网 relay + 暴露面收口为 Binder 宿主 + 回环调试」，见 schedule-app §11「MCP 暴露面」行）。
 3. 参考样板（**只读，不跨项目改**）：goodshare 的 `lib/mcp/mcp_server.dart` 中 `handleJsonRpc(String)` 是已验证的传输无关范本；goodshare `context/epics/goodhub-local-plugin/memory.md` 记录了 Binder 嵌入「核心零改动，只加 Binder 传输层 + 同签名权限协调，无缺口」。
 
 ## 3. 原则（来自 goodshare 的血泪，务必遵守）
@@ -59,10 +59,10 @@ breakpoint: "轴 A→Binder 终点已实装且真机 e2e 闭环（2026-10-14，D
 - 终态：宿主 `import 'package:shiguang_mcp/...'` 即可拿 `handleJsonRpc` + `tools`，只需注入自己的 `Repository`（DB 实现由宿主提供）。
 
 ### 轴 C — relay 复用（内网/公网可达）
-复用 `shiguang-relay`（Go）与 `mcp-bridge` 的 bonsoir 发现。relay 仅做中转，无需改造内核；配置层（`RelayClient`）挂在 `McpController` 之后，与 `HttpTransport` 并列作为另一种传输。
+复用 `shiguang-relay`（Go）。relay 仅做中转，无需改造内核；配置层（`RelayClient`）挂在 `McpController` 之后，与 `HttpTransport` 并列作为另一种传输（2026-10-15 暴露面收口：默认关、显式配置才挂载，bonsoir 发现引用退役）。
 
 ### 轴 D — 平台能力接口化
-前台保活（`flutter_foreground_task`）、自更新（`open_filex`/`package_info_plus`）、网络广播（`bonsoir`）已是抽象。确认这些**只出现在 `lib/service` 与 `lib/update`，不渗入 `lib/mcp`、`lib/action`、`lib/data`**。如有越界，在轴 A/B 时一并收敛。
+前台保活（`flutter_foreground_task`）、自更新（`open_filex`/`package_info_plus`）、网络广播（`bonsoir`，2026-10-15 随暴露面收口退役）已是抽象。确认这些**只出现在 `lib/service` 与 `lib/update`，不渗入 `lib/mcp`、`lib/action`、`lib/data`**。如有越界，在轴 A/B 时一并收敛。
 
 ## 5. Step 1 详细配方（立即执行，风险极低，行为零变化）
 
@@ -210,3 +210,19 @@ Future<String> handleJsonRpc(String rawBody) async {
     在线直推/离线留 pending 两个用例）；app analyze 0 issue + 198 测全过（+4 relay）。
     **遗留**：真机/真 relay e2e 联调未跑（本环境 docker 不可用）；顺手修复 sim_activity_test.go
     五处存量编译错误（该文件从未编译通过）。
+- [x] **MCP 暴露面收口（2026-10-15）**：用户拍板「MCP 服务隐藏、不对外开放、只内部调试，
+  机制全部走 bind（Binder 宿主通道）」+ relay 处置裁决（代码保留、随隐藏入口收起、默认关）：
+  - HTTP：`HttpServer.bind(InternetAddress.loopbackIPv4)` 仅回环（原 anyIPv4 全网卡）；
+    桌面侧经 `adb reverse tcp:8765 tcp:8765` 接入；`endpoint()` 改回环常量展示。
+  - mDNS：bonsoir 依赖摘除（pubspec）、mcp_controller 广播块与 lan_ip.dart 删除；
+    schedule-app §11「网络配对」行标废弃。
+  - UI：设置页「MCP 服务」入口行移除→隐藏入口（页尾「关于」区长按标题唤出「调试菜单」
+    →「MCP 调试服务」带运行态，照 goodshare 范本，用户指令改形态）；今日页
+    「桌面 AI 未连接」配对卡摘除；MCP 子页地址改回环展示+提示改调试口径；relay 区保留。
+  - 保留项：token 鉴权（Android 同设备回环不隔离）、前台服务保活（Binder 与调试均需
+    进程存活，通知文案改调试口径）。
+  - 验收：flutter analyze 0 issue / flutter test 202/202 / arch-guard 6/6 / docs-lint 过
+    （ui_settings_token_test 改走隐藏入口手势）；m1 bonsoir 升级挂账作废归档 done.md；
+    workflow/index skill + README/mcp-bridge README + ui-spec §0.4 两行 + schedule-app
+    §11「MCP 暴露面」新行同步。
+  - **遗留**：真机验证未跑（装包+隐藏入口手势+adb reverse 回环可达+宿主仍可 bind 核验）。
