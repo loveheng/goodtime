@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 // upload-r2.mjs — 零依赖上传单个文件到 Cloudflare R2（AWS SigV4，region=auto）
-// 用法: node scripts/upload-r2.mjs <localFile> <remoteKey> [contentType]
+// 用法: node scripts/upload-r2.mjs <localFile> <remoteKey> [contentType] [cacheControl]
 // 凭证/桶从环境变量读取: R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET
 import { readFileSync } from 'node:fs';
 import { createHash, createHmac } from 'node:crypto';
 
-const [, , localPath, remoteKey, contentType = 'application/octet-stream'] =
+const [, , localPath, remoteKey, contentType = 'application/octet-stream', cacheControl] =
   process.argv;
 if (!localPath || !remoteKey) {
   console.error(
-    '用法: node scripts/upload-r2.mjs <localFile> <remoteKey> [contentType]'
+    '用法: node scripts/upload-r2.mjs <localFile> <remoteKey> [contentType] [cacheControl]'
   );
   process.exit(2);
 }
@@ -41,8 +41,13 @@ function sha256hex(s) {
   return createHash('sha256').update(s).digest('hex');
 }
 
-const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
-const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+// cache-control 参与签名（固定 key 对象须显式 no-cache，防公开域 CDN 启发式缓存串版，
+// 2026-10-15 实测踩坑：APK 固定 key 被缓存旧字节导致客户端 sha256 校验失败）
+const cacheLine = cacheControl ? `cache-control:${cacheControl}\n` : '';
+const canonicalHeaders = `${cacheLine}host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
+const signedHeaders = cacheControl
+  ? 'cache-control;host;x-amz-content-sha256;x-amz-date'
+  : 'host;x-amz-content-sha256;x-amz-date';
 const canonicalRequest = `PUT\n/${bucket}/${remoteKey}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
 const algorithm = 'AWS4-HMAC-SHA256';
 const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
@@ -63,6 +68,7 @@ const res = await fetch(url, {
     'x-amz-date': amzDate,
     'x-amz-content-sha256': payloadHash,
     'Content-Type': contentType,
+    ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
   },
   body,
 });
