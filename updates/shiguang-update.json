@@ -2,7 +2,7 @@
   "versionCode": 28021,
   "versionName": "1.2.1",
   "applicationId": "app.shiguang.shiguang",
-  "apkUrl": "https://r2.oklhj.eu.org/updates/shiguang/app-release.apk",
+  "apkUrl": "https://r2.oklhj.eu.org/updates/shiguang/app-28021.apk",
   "sha256": "5876895d12583b422f0e4f4054f904e203bd01a57940f17900022644548fcf42",
   "changelog": "修复设置页标题重复显示；「关于」调试入口触发区域扩大（长按整卡即可唤出）。"
 }
