@@ -1,8 +1,8 @@
 {
-  "versionCode": 28019,
-  "versionName": "1.2.0",
+  "versionCode": 28020,
+  "versionName": "1.2.1",
   "applicationId": "app.shiguang.shiguang",
   "apkUrl": "https://r2.oklhj.eu.org/updates/shiguang/app-release.apk",
-  "sha256": "e3960ca4148c2df046604d27f7999dd6e3728399c6064e6c57c8f3a7b445fccb",
-  "changelog": "fix(update): 清单加 applicationId + 客户端包名校验，防多 app 共用更新源串包"
+  "sha256": "e63de6e8740237ccdae9342215e548d6c5fac821d30c0c27c7bb7957f337593f",
+  "changelog": "MCP 服务不再对局域网暴露：生产通道改宿主 App 进程内连接；HTTP 调试通道仅本机回环（桌面经 adb reverse 接入）；设置页 MCP 入口移入「关于」长按调试菜单。"
 }
