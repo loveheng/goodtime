@@ -28,8 +28,9 @@ import java.util.concurrent.TimeoutException
  * §1.2.5 随调随起——app 被杀也能被拉起跑 MCP），经 MethodChannel `shiguang/mcp_binder`
  * 调 Dart 后台 entrypoint（[mcpBinderMain]）→ [com.zzh.goodhub.mcp] 通道 →
  * McpServer.handleJsonRpc。模式照抄 goodshare McpBinderService（已验证范本），
- * 与其差异仅：通道名/entrypoint 名/包名（shiguang 工具面无 >5s 长任务，MVP 不走
- * `_async`+onEvent 终帧切片，answerReverse 通道保留契约位）。
+ * 与其差异仅：通道名/entrypoint 名/包名；且 shiguang 对 **所有 tools/call**（回调已
+ * 注册时）走 `_async`+onEvent 终帧切片（F1，修并行排队撞 B1 超时），goodshare 是
+ * 按工具白名单；answerReverse 通道保留契约位。
  *
  * 线程：AIDL `call` 由 goodhub 在 Binder 线程触发（非主线程），直接阻塞等待 Dart 回传
  * 不触发 ANR（§1.2.3）；首调前经 [ready] 信号解除引擎未就绪竞态。
@@ -44,7 +45,7 @@ class ShiguangMcpBinderService : Service() {
      *  call()/registerCallback() 均在 Binder 线程触发，须 post 过来。 */
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** 宿主回注的回调（MVP 未用 onEvent 推帧，保留契约位；volatile 防跨线程可见性）。 */
+    /** 宿主回注的回调（F1 后 onEvent 承载 _async 终帧转发；volatile 防跨线程可见性）。 */
     @Volatile
     private var callback: IMcpCallback? = null
 
@@ -63,6 +64,58 @@ class ShiguangMcpBinderService : Service() {
             // invokeMethod 必须在引擎主线程执行（@UiThread），故 post 到 mainHandler。
             val ch = channel
             if (ch == null) return errorJson(reqId, -32603, "MCP Binder 通道未建立")
+            // F1（_async+onEvent 终帧切片，契约 §1.2.2）：回调已注册且为 tools/call 时，
+            // call 立即回 _async 占位帧（不占 5s Binder 预算），真实结果由 dispatch 的
+            // Result 回调经 callback.onEvent 推同 id 终帧——并行调用不再排队撞 B1 超时。
+            // 非 tools/call（initialize/tools/list，均 <1s）与回调缺失时维持同步路径（兼容旧宿主）。
+            if (callback != null && extractMethod(jsonRpcRequest) == "tools/call") {
+                android.util.Log.i(TAG, "[F1] async dispatch posted: id=$reqId")
+                mainHandler.post {
+                    try {
+                        ch.invokeMethod(
+                            "dispatch",
+                            jsonRpcRequest,
+                            object : MethodChannel.Result {
+                                override fun success(result: Any?) {
+                                    val frame = result as? String
+                                    android.util.Log.i(
+                                        TAG,
+                                        "[F1] dispatch done: id=$reqId emit=${frame != null}",
+                                    )
+                                    if (frame == null) {
+                                        emitTerminalFrame(
+                                            callback,
+                                            errorJson(reqId, -32603, "Dart 返回空响应"),
+                                        )
+                                    } else {
+                                        emitTerminalFrame(callback, frame)
+                                    }
+                                }
+
+                                override fun error(code: String, msg: String?, details: Any?) {
+                                    emitTerminalFrame(
+                                        callback,
+                                        errorJson(reqId, -32603, "MCP Binder 调用失败: ${msg ?: code}"),
+                                    )
+                                }
+
+                                override fun notImplemented() {
+                                    emitTerminalFrame(
+                                        callback,
+                                        errorJson(reqId, -32603, "Dart 未实现 dispatch"),
+                                    )
+                                }
+                            },
+                        )
+                    } catch (e: Exception) {
+                        emitTerminalFrame(
+                            callback,
+                            errorJson(reqId, -32603, "MCP Binder 调用失败: ${e.message}"),
+                        )
+                    }
+                }
+                return asyncResultJson(reqId)
+            }
             val resultFuture = CompletableFuture<String?>()
             mainHandler.post {
                 try {
@@ -98,7 +151,7 @@ class ShiguangMcpBinderService : Service() {
 
         override fun registerCallback(cb: IMcpCallback?) {
             callback = cb
-            // 通知 Dart 侧回调通道已建立（onEvent 推帧为后续切片，当前仅可观测标记）。
+            // 通知 Dart 侧回调通道已建立（注册后 tools/call 即走 _async 切片）。
             // invokeMethod 须引擎主线程执行。
             mainHandler.post { runCatching { channel?.invokeMethod("hostCallbackReady", cb != null) } }
         }
@@ -186,6 +239,40 @@ class ShiguangMcpBinderService : Service() {
             JSONObject(request).opt("id")
         } catch (_: Exception) {
             null
+        }
+
+        private const val TAG = "ShiguangMcpBinder"
+
+        /** _async 占位帧（§1.2.2）：call 立即返回，真实终帧经 onEvent 推送。 */
+        private fun asyncResultJson(id: Any?): String = JSONObject().apply {
+            put("jsonrpc", "2.0")
+            put("id", if (id == null) JSONObject.NULL else id)
+            put("result", JSONObject().apply { put("_async", true) })
+        }.toString()
+
+        /** 从请求 JSON 解析 method（缺失/解析失败返回 null），供 _async 分流判定。 */
+        private fun extractMethod(request: String): String? = try {
+            JSONObject(request).optString("method", null)
+        } catch (_: Exception) {
+            null
+        }
+
+        /**
+         * 终帧经 [IMcpCallback.onEvent] 推给宿主（F1 义务②：推失败打 [DEGRADE] 日志，
+         * 防悬挂可观测——goodhub 侧 _pendingTerminal 无终帧即悬挂，靠其 idle 超时兜底）。
+         */
+        private fun emitTerminalFrame(cb: IMcpCallback?, frame: String) {
+            val target = cb
+            if (target == null) {
+                android.util.Log.w(TAG, "[DEGRADE] 终帧无处可推（回调已注销）: ${frame.take(200)}")
+                return
+            }
+            try {
+                target.onEvent(frame)
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "[DEGRADE] onEvent 推帧失败（宿主回调断连？）: ${e.message}")
+            }
+            android.util.Log.i(TAG, "[F1] terminal emitted: ${frame.take(80)}")
         }
 
         /**

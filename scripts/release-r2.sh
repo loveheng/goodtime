@@ -131,6 +131,21 @@ echo "上传 APK → s3://$R2_BUCKET/$APK_KEY"
 echo "上传清单 → s3://$R2_BUCKET/$REMOTE_PREFIX/shiguang-update.json"
 "${NODE_UP[@]}" scripts/upload-r2.mjs updates/shiguang-update.json "$REMOTE_PREFIX/shiguang-update.json" "application/json" "no-cache"
 
+# 新 APK 上传成功后清理旧版本 APK（版本化 key 不可变，旧对象只能删除；避免桶里堆积旧包被 CDN/直链命中）
+# 先传新后删旧：若删完新包传失败，桶里至少还留着上一个可用版本，客户端不至于拉空
+echo "清理旧版本 APK（保留 ${APK_KEY}）"
+OLD_KEYS="$("${NODE_UP[@]}" scripts/upload-r2.mjs --list "${REMOTE_PREFIX}/" | grep -E "^${REMOTE_PREFIX}/app-[0-9]+\.apk$" || true)"
+for k in $OLD_KEYS; do
+  if [ "$k" != "$APK_KEY" ]; then
+    "${NODE_UP[@]}" scripts/upload-r2.mjs --delete "$k"
+  fi
+done
+# 旧固定路径同步（2026-10-15）：28019 及更早的包把无前缀路径编进了 UPDATE_SOURCE_URL，
+# 浏览器直链也指向旧固定 key；不同步则老客户端/直链永远拿旧版。
+echo "同步旧固定路径（无前缀清单 + app-release.apk）"
+"${NODE_UP[@]}" scripts/upload-r2.mjs updates/shiguang-update.json updates/shiguang-update.json "application/json" "no-cache"
+"${NODE_UP[@]}" scripts/upload-r2.mjs "$APK" updates/app-release.apk "application/vnd.android.package-archive" "no-cache"
+
 echo "OK: 发布完成"
 echo "  更新源 URL（App 更新页填写）: ${SRC_URL}"
 echo "  APK 公开地址: ${APK_URL}"

@@ -147,11 +147,19 @@ class _UpdatePageState extends State<UpdatePage> {
   Future<void> _install() async {
     final apk = _apk;
     if (apk == null) return;
+    // 首次自更新前置：未授予「安装未知应用」时直接带用户到系统开关页，
+    // 授权后回本页重试（原实现只 toast 兜底文案，用户不知从哪开）。
+    if (!await canRequestPackageInstalls()) {
+      await openUnknownSourceSettings();
+      if (!mounted) return;
+      _toast('请在系统页允许「安装未知应用」后，回到本页再点安装');
+      return;
+    }
     try {
       await installApk(apk.path);
     } catch (e) {
       if (!mounted) return;
-      _toast('$e（首次安装需在系统弹窗中允许「安装未知应用」）', error: true);
+      _toast('$e', error: true);
     }
   }
 

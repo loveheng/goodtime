@@ -25,7 +25,12 @@ import 'service/weather.dart';
 ///   存储工厂须显式注册（Db.registerDefaultStorageFactory，不能靠模块加载副作用）；
 ///   不走 AppServices.init（那会装配 McpController 起 HTTP 监听/前台服务/远程配置，
 ///   Binder isolate 只要台账内核）。天气注入真实 [WeatherService]（get_weather 与
-///   HTTP 通道同源，工具面无 >5s 长任务，MVP 不走 `_async`+onEvent 切片）。
+///   HTTP 通道同源）。
+///
+/// F1 `_async`+onEvent 终帧切片（契约 thirdconnect.md §1.2.2）：tools/call 由原生侧
+/// 立回 `{"_async":true}` 占位帧，dispatch 照旧同步返回完整 JSON-RPC 响应字符串，
+/// 由原生 Result 回调经 `IMcpCallback.onEvent` 转发为同 id 终帧——本 isolate 不感知
+/// 切片；dispatch 内任何异常经 MethodChannel error 回调由原生侧兜底成 error 终帧。
 const _kChannel = 'shiguang/mcp_binder';
 
 @pragma('vm:entry-point')
@@ -50,8 +55,9 @@ void mcpBinderMain() {
         // 同步 JSON-RPC 请求 → 响应字符串（原生侧 B1 per-call ≤5s 超时兜底）。
         return await server.handleJsonRpc(call.arguments as String);
       case 'hostCallbackReady':
-        // 宿主已注册 IMcpCallback（registerCallback）。onEvent 推帧为后续切片，
-        // 当前无反向请求/进度帧，仅作可观测标记。
+        // 宿主已注册 IMcpCallback（registerCallback）。注册后原生侧对 tools/call 走
+        // _async 切片（call 立回占位帧，dispatch 结果经 onEvent 转发终帧）；
+        // 本 isolate 无反向请求/进度帧，仅作可观测标记。
         return null;
       default:
         throw PlatformException(code: 'not_implemented', message: call.method);

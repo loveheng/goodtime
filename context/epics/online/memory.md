@@ -4,7 +4,7 @@ format: v1
 epic: online
 status: active
 pairs_with: "goodhub-local-plugin（Binder 嵌入对接域，见 context/epics/goodhub-local-plugin/memory.md）"
-breakpoint: "MCP 暴露面收口已实装并发布 R2 v1.2.1 (28020)（2026-10-15，远端清单/APK 核验过）；下一步：真机验证（app 内自更新到 28020 → 验自更新+隐藏入口+adb reverse 回环+宿主 bind）或轴 B 第二段 `shiguang_mcp` 纯 Dart 包（待宿主驱动）"
+breakpoint: "R2 CDN 串版已修 + 28021 已按版本化 key 重推（2026-10-15，客户端全链路核验过）；下一步：真机「检查更新」装 28021（sha 校验应过）→ 验（整卡长按唤调试菜单+adb reverse 回环+宿主 bind）或轴 B 第二段 `shiguang_mcp` 纯 Dart 包（待宿主驱动）"
 ---
 
 # ⚡ 给「拾光」AI 代理的整体改造提示词（让它自己完成拆分化）
@@ -230,3 +230,18 @@ Future<String> handleJsonRpc(String rawBody) async {
   `release-r2.sh --commit` 全流程过（analyze 0 → arm64 release 21.0MB → sha256 e63de6e8… → R2 公开域）。
   远端核验：公开清单 GET 过（五字段齐）+ APK HEAD 200（20,964,788 字节与构建产物一致）。
   **遗留**：真机自更新流程未验（app「检查更新」→ 装 28020 → 隐藏入口/回环/宿主 bind 一并核）。
+- [x] **R2 补发 v1.2.1 (28021)（2026-10-15）**：设置页双「设置」标题修复（摘 SettingsPage 自有 AppBar，
+  「去设置」改跳 Tab）+ 「关于」长按触发区扩到整卡（真机长按未弹菜单→小目标手势被列表滚动抢占）。
+  基线 972443a + 版本 6560928 + 清单 c9fc45e；远端清单 GET + APK HEAD 核验过。
+  **遗留**：真机验 28021（整卡长按唤「调试菜单」→ MCP 调试页；连同回环/宿主 bind 一并核）。
+- [x] **R2 CDN 串版修复 + 28021 重推（2026-10-15）**：用户报 sha256 校验失败 → 双取证实锤公开域 CDN
+  对固定 key 返回 28020 旧字节（源站正确）。发布脚本改 APK 版本化不可变 key（app-<build>.apk）+
+  清单 no-cache（commit e29769c）；28021 重推（内容不变不抬版本号），端到端核验过。
+  **教训**：公开域 R2 无 CDN purge 权限（无 zone token），版本化 key + no-cache 为常态对策；
+  旧固定 key app-release.apk 残留 28020 对象，无客户端再访问，留待后续清理。
+  **遗留**：真机「检查更新」装 28021（sha 应过）+ 整卡长按/回环/宿主 bind 一并核。
+- [x] **MCP 隐藏入口改「关于」长按调试菜单（2026-10-15）**：settings_page 撤五连点手势，页尾「关于」区整卡长按唤调试菜单（首版标题目标过小被滚动抢手势，扩到整卡）；双「设置」标题修复（SettingsPage 摘自有 AppBar，外壳 Tab 标题唯一；「去设置」改跳 Tab）。五处留痕（ui-spec §0.4/§11/memory/workflow skill/pending-confirm）。**遗留**：真机长按路径核验随 28021。
+- [x] **F1 Binder `_async` 终帧切片（2026-10-17）**：goodhub 并行调用汇入单 Dart isolate 串行竞争，同步 call 的 B1 5s per-call 超时下后到调用必超时（呈现为中断）——「工具面无 >5s 长任务」旧假设作废，§11 拍板留痕。修法：`ShiguangMcpBinderService.call()` 对 tools/call（回调已注册）立回 `_async` 占位帧，dispatch 结果/异常由原生 Result 回调经 `IMcpCallback.onEvent` 转发同 id 终帧（全异常路径兜底防宿主悬挂，推失败 `[DEGRADE]` 日志）；goodhub 侧 `BinderTransport` 终帧 idle 超时兜底 120s（可注入，send completer + sendStream 看门狗）+ 防悬挂回归单测。F2（Isolate.run 包 CPU 重段）按准入评估降级暂缓。验证：analyze/arch-guard/APK 28023 编译绿，goodhub 全量 774 测试含新单测过；flutter test 90/91（ui_reject_reason 存量失败与本轮无关）。**遗留**：真机 goodhub 并行场景 e2e 验证无中断 + goodhub 侧改动单独 commit。
+
+## 断点
+- [断点] 下一步：并发断环取证中：带 [F1] 日志的 debug APK 已就绪（21:56, sha 624b2af4…）→ 待用户装包复现三并发 + 贴 logcat（grep ShiguangMcpBinder）；判读表见本轮对话，断环定位后修两仓

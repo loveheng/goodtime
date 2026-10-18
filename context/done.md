@@ -4,6 +4,8 @@ format: v2
 ---
 
 # 完成列表
+- [2026-10-15] R2 CDN 串版事故修复 + 28021 重推（APK 版本化 key app-28021.apk + 清单 no-cache；客户端全链路核验过：清单 GET/no-cache 头/APK 实哈希=清单值） (域: online)
+- [2026-10-15] R2 补发 v1.2.1+28021（设置页双「设置」标题修复 + 「关于」长按触发区扩到整卡；远端清单 GET + APK HEAD 核验过） (域: online)
 - [2026-10-15] R2 发布 v1.2.1+28020（MCP 暴露面收口：HTTP 仅回环调试+「关于」长按隐藏入口+mDNS 退役；远端清单 GET + APK HEAD 核验过，自更新流程待真机验） (域: online)
 - [2026-10-15] bonsoir 5.1.x→7.x 升级评估挂账作废：bonsoir 依赖随 MCP 暴露面收口摘除（mDNS 广播退役，无 mDNS 真机实证需求；根 gradle compileSdk≥36 钳制保留兜底） (域: m1)
 - [2026-10-06] 今日页「昨日遗留区」实装（missed 三键：补勾补记/顺延今日/退回愿望池，PostponeBlock 新命令） (域: m1)

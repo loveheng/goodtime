@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-15
+updated: 2026-10-17
 ---
 
 # 拾光（shiguang）——MCP 日程 app 设计
@@ -343,6 +343,7 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | 最小澄清 | ≤30min 或琐事类免澄清直接生成叶子行动（2026-10-05 拍板） |
 | 反压迫机制 | get_history 三组校准指标（膨胀系数/时段热力/耐受阈值）+ 呼吸律（>45min 块后 15min 缓冲）+ 时长乘数补正 + 提案附理由（2026-10-05 拍板） |
 | user_rules | settings 新增可空偏好文本，AI 经 update_settings 维护；优先级高于统计推断（2026-10-05 拍板） |
+| Binder _async 切片 | tools/call 在宿主回调已注册时一律走 `_async`+onEvent 终帧切片（契约 thirdconnect.md §1.2.2，goodhub 仓）（2026-10-17 拍板）：goodhub 并行调用汇入单 Dart isolate 串行竞争，同步路径后到调用撞 B1 5s 预算回 `-32000` 呈现为中断；原生侧 `call()` 立回占位帧、dispatch 结果经 `IMcpCallback.onEvent` 转发同 id 终帧，dispatch 异常由原生 Result 回调兜底成 error 终帧（防宿主 `_pendingTerminal` 悬挂）；宿主侧另加 120s idle 超时兜底（义务①，goodhub 仓）；「工具面无 >5s 长任务、MVP 不走 _async」旧假设作废 |
 | 断流复苏 | Clean Slate：Housekeeper 静默保护（archived 中性态，不进聚合）+ AI recovery SOP（禁盘问/一键赦免/极简重启）+ 断流定义=连续 3 作息日无交互或 missed≥5（2026-10-05 拍板） |
 | 网络配对 | ~~mDNS 自动发现（shiguang.local，bridge+Android NSD）+ 设置页状态灯/一键唤醒；手动 IP 兜底~~ **已废弃（2026-10-15，见「MCP 暴露面」行）**（2026-10-05 拍板）；拾贝零 mDNS 实装代码，新集成（§12 盘点） |
 | 确认分级 | 提案确认分级折叠：仅突出 Q2 任务+理由+缓冲，Routine 折叠防盲签（2026-10-05 拍板） |
