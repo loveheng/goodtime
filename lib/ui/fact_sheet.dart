@@ -12,7 +12,7 @@ import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
 // ─────────────────────────── 类别与派生 helper ───────────────────────────
-// 白话类别=ui-spec §0.4（黑话不上屏）；派生口径一律不入库（与「过去的凭证」
+// 白话类别=ui-pages §9.5（黑话不上屏）；派生口径一律不入库（与「过去的凭证」
 // 「留白缓冲」同纪律）。
 
 /// category 五类 → 白话（§0.4）：交通/门票/住宿/须知/口头信息。
@@ -88,32 +88,66 @@ DateTime? _abs(String? date, int? min) {
   return DateTime(d.year, d.month, d.day).add(Duration(minutes: min));
 }
 
-/// §1.4 一致性派生比对：span 锚与关联块起止（跨午夜按绝对时刻折算，严禁同日
-/// 直接比分钟）；不一致 → 卡顶琥珀条。派生不入库，关联块悬空自然不自检。
+/// §1.4 一致性派生比对（**选锚规则=重叠度贪心**，§9.5-5 2026-10-08 拍板）：
+/// span 锚与关联块起止（跨午夜按绝对时刻折算，严禁同日直接比分钟）；不一致
+/// → 卡顶琥珀条。派生不入库，关联块悬空自然不自检。
+/// 多 span（往返票 / 入住+预约段）时**只比对选中那一条**：与块重叠区间最大者
+/// 优先；均不重叠时取起始最早者——避免无关 span 造成琥珀条误报。
 bool factInconsistentWithBlock(Artifact a, ScheduleBlock? block) {
   // 绑定已反转至块侧（fact §9.5-6）：调用方经块侧 artifact_id 配对传入，此处
   // 只需判块在位——日切删块悬空时上游自然拿不到块，静默不检（§9.5-8）。
   if (block == null) return false;
+  final b0 = _abs(block.date, block.startMin);
+  var b1 = _abs(block.date, block.endMin);
+  if (b0 == null || b1 == null) return false;
+  if (b1.isBefore(b0)) b1 = b1.add(const Duration(days: 1));
+  final spans = <_AnchorSpan>[];
   for (final raw in _anchorList(a)) {
     if (raw is! Map || raw['kind'] != 'span') continue;
-    DateTime? s0 = _abs(raw['date'] as String?, raw['start_min'] as int?);
-    DateTime? s1 = _abs(raw['end_date'] as String? ?? raw['date'] as String?,
+    final s0 = _abs(raw['date'] as String?, raw['start_min'] as int?);
+    var s1 = _abs(
+        raw['end_date'] as String? ?? raw['date'] as String?,
         raw['end_min'] as int?);
-    final b0 = _abs(block.date, block.startMin);
-    DateTime? b1 = _abs(block.date, block.endMin);
-    if (s0 == null || s1 == null || b0 == null || b1 == null) continue;
+    if (s0 == null || s1 == null) continue;
     if (s1.isBefore(s0)) s1 = s1.add(const Duration(days: 1));
-    if (b1.isBefore(b0)) b1 = b1.add(const Duration(days: 1));
-    if (s0 != b0 || s1 != b1) return true;
+    spans.add(_AnchorSpan(s0, s1));
   }
-  return false;
+  if (spans.isEmpty) return false;
+  _AnchorSpan? best;
+  var bestOverlap = 0;
+  for (final s in spans) {
+    final ov = _overlapMinutes(s, b0, b1);
+    if (ov > 0 && (best == null || ov > bestOverlap)) {
+      best = s;
+      bestOverlap = ov;
+    }
+  }
+  // 均不重叠 → 起始最早者
+  best ??= spans.reduce((x, y) => x.start.isBefore(y.start) ? x : y);
+  return best.start != b0 || best.end != b1;
+}
+
+/// span 与块的重叠分钟数（≤0 表示不重叠；贪心选锚判据）。
+int _overlapMinutes(_AnchorSpan s, DateTime b0, DateTime b1) {
+  final start = s.start.isAfter(b0) ? s.start : b0;
+  final end = s.end.isBefore(b1) ? s.end : b1;
+  return end.difference(start).inMinutes;
+}
+
+/// 折算至绝对时间轴的 span 区段（贪心选锚用）。
+class _AnchorSpan {
+  const _AnchorSpan(this.start, this.end);
+
+  final DateTime start;
+  final DateTime end;
 }
 
 // ─────────────────────────── 紧凑凭证卡 ───────────────────────────
 
 /// 紧凑凭证卡（计划详情「随行凭证」区 / 未归属面板共用）：类别图标+title+
 /// badge+日期。raw=琥珀卡（原文待提炼，未解析无日期）；verbal=弱化+「口头
-/// 信息 · 待核实」角标；voided 由读侧白名单挡掉，到不了本层。
+/// 信息 · 待核实」角标；voided=弱化+「已作废」标（仅出现在凭证子页「已作废」
+/// 折叠组内；排程读侧仍全静默，§1.2 双通道口径 2026-10-08）。
 class FactCard extends StatelessWidget {
   const FactCard({super.key, required this.fact, this.onTap, this.onLongPress});
 
@@ -125,6 +159,7 @@ class FactCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isRaw = fact.state == Artifact.stateRaw;
     final isVerbal = fact.category == Artifact.categoryVerbal;
+    final isVoided = fact.state == Artifact.stateVoided;
     final badge = factDateBadge(fact);
     return Material(
       color: isRaw ? StColors.voucherBg : Colors.transparent,
@@ -159,6 +194,10 @@ class FactCard extends StatelessWidget {
                     Text('原文待提炼',
                         style: TextStyle(
                             fontSize: 10, color: StColors.sparkStroke))
+                  else if (isVoided)
+                    Text('已作废',
+                        style: TextStyle(
+                            fontSize: 10, color: StColors.textSecondary))
                   else if (isVerbal)
                     Text('口头信息 · 待核实',
                         style: TextStyle(

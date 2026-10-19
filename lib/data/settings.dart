@@ -47,7 +47,7 @@ abstract final class SettingsKeys {
   static const quickNoteDraftImportant = 'quick_note_draft_important';
   static const quickNoteDraftDeadline = 'quick_note_draft_deadline';
 
-  /// 界面外观三档 system/light/dark（ui-spec §0，2026-10-06 拍板解锁双主题）。
+  /// 界面外观三档 system/light/dark（ui-design §3.1，2026-10-06 拍板解锁双主题）。
   /// 入 [all]（UI 经 update_settings 通道写），同时入 [uiOnly]——AI 越权写外观被拒。
   static const themeMode = 'theme_mode';
 

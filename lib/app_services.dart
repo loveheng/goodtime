@@ -13,6 +13,7 @@ import 'collab/runtime.dart';
 import 'collab/relay/client.dart';
 import 'collab/relay_config.dart';
 import 'data/repository.dart';
+import 'data/db.dart';
 import 'models/artifact.dart';
 import 'service/housekeeper.dart';
 import 'service/mcp_controller.dart';
@@ -89,6 +90,9 @@ class AppServices {
 
   static Future<void> init() async {
     if (_repo != null) return;
+    // 默认存储工厂先行注册（Repository 内核不 import sqflite，轴 B G2·②）：
+    // 闭包惰性求值，真正建库发生在首个 DB 操作时。
+    Db.registerDefaultStorageFactory();
     final repo = Repository();
     _repo = repo;
     final mcp = McpController(repo: repo);

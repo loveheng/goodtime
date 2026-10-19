@@ -7,7 +7,7 @@ import '../data/settings.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
-/// 假期与出行设置页（ui-spec §1 子页化 2026-10-08 拍板）：例外日（§13 旅行模式）
+/// 假期与出行设置页（ui-pages §1 子页化 2026-10-08 拍板）：例外日（§13 旅行模式）
 /// 日期范围 + 标签；期间工作类 fixed_slots 挂起、填充率降至 35%。
 /// 整列经 update_settings(exceptions=JSON) 落库。自 settings_page 大平铺迁出。
 class ExceptionsSettingsPage extends StatefulWidget {

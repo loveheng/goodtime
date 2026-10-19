@@ -9,7 +9,7 @@ import 'settings_page.dart';
 import '../app_services.dart';
 import '../theme/tokens.dart';
 
-/// 主框架（ui-spec §1）：底部三 Tab「日程｜清单｜设置」+ 右下角快记 FAB 两 Tab
+/// 主框架（ui-pages §1）：底部三 Tab「日程｜清单｜设置」+ 右下角快记 FAB 两 Tab
 /// 常驻（2026-10-06 拍板，自顶部常驻快记条迁改；守卫态不撤=「快记永不关门」
 /// 平移）。2026-10-08 用户拍板：设置自 AppBar 右上角迁入底部第三 Tab（§11 留痕）。
 class AppShell extends StatefulWidget {
@@ -34,8 +34,8 @@ class _AppShellState extends State<AppShell> {
         content: Text('AI 建议修改「$key」：$reason'),
         action: SnackBarAction(
           label: '去设置',
-          onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute<void>(builder: (_) => const SettingsPage())),
+          // 直接跳设置 Tab，不再全页 push（全页路由至此彻底退役，2026-10-15）
+          onPressed: () => setState(() => _tab = 2),
         ),
         duration: const Duration(seconds: 8),
       ));

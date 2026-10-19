@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../models/artifact.dart';
 import '../models/background.dart';
@@ -10,19 +9,33 @@ import '../models/fixed_slot.dart';
 import '../models/plan.dart';
 import '../models/schedule_block.dart';
 import '../util/schedule_day.dart';
-import 'db.dart';
+import 'storage.dart';
 
 /// 数据仓库：UI 与 MCP 工具共用的唯一入口（拾贝 Repository 模式照抄，§12 领料）。
 /// 写复合操作统一走 [synchronized] FIFO 锁；更新走字段级 patch + 乐观锁 version
 /// （并发契约 §11）。业务校验（重叠/作息边界/plan 存在性/填充率/呼吸律）归命令层
 /// （M1 后续段落），仓库只管台账保真；plan 存在性与引用完整性由 DB 外键兜底。
-class Repository extends ChangeNotifier {
-  Database? _db;
+///
+/// 实现 [Listenable]（非 [ChangeNotifier]）：仅暴露 addListener/removeListener 回调，
+/// 去掉 Flutter 观察者框架的其余负担——UI 的 [ListenableBuilder] 照常工作
+/// （轴 B 纯 Dart 化 G2·①：ChangeNotifier → 轻量抽象接口）。
+class Repository implements Listenable {
+  ScheduleStorage? _storage;
 
-  Future<Database> _database() async => _db ??= await Db.instance();
+  /// 惰性取存储：首次 DB 操作时经全局工厂获得后端（默认 sqflite，宿主可注入/覆盖）。
+  Future<ScheduleStorage> get _store async =>
+      _storage ??= await storageFactory();
 
-  /// 暴露底层句柄给协同仓储（[CollabBundleRepository]/[OutboxRepository] 注入用）。
-  Future<Database> get db => _database();
+  final List<void Function()> _listeners = [];
+
+  /// 外部监听写入信号（main.dart 借此触发重载；与 flutter ChangeNotifier 同名 API，
+  /// 避免消费面改动——轴 B 纯 Dart 化 G2·①）。
+  @override
+  void addListener(void Function() listener) => _listeners.add(listener);
+
+  @override
+  void removeListener(void Function() listener) =>
+      _listeners.remove(listener);
 
   int _revision = 0;
 
@@ -30,10 +43,12 @@ class Repository extends ChangeNotifier {
   /// （跨 zone 场景下 FutureBuilder 的快照交付不可靠，代次轮询是可靠信号）。
   int get revision => _revision;
 
-  @override
+  /// 写入信号：自增代次并通知监听方（替代 flutter ChangeNotifier.notifyListeners）。
   void notifyListeners() {
     _revision++;
-    super.notifyListeners();
+    for (final l in _listeners) {
+      l();
+    }
   }
 
   /// 写路径 FIFO 队尾（串行锁的实现载体，见 [synchronized]）。
@@ -60,9 +75,9 @@ class Repository extends ChangeNotifier {
 
   /// 批量事务：多条写「全成功才提交，中途出错整体回滚」（propose 整单原子写 §6）。
   /// 事务内的读写必须走传入的 [txn]，否则读不到同一事务里上一条的未提交改动。
-  Future<T> transaction<T>(Future<T> Function(Transaction txn) action) async {
-    final db = await _database();
-    final result = await db.transaction((txn) => action(txn));
+  Future<T> transaction<T>(Future<T> Function(StorageTxn txn) action) async {
+    final store = await _store;
+    final result = await store.transaction((txn) => action(txn));
     notifyListeners();
     return result;
   }
@@ -120,21 +135,21 @@ class Repository extends ChangeNotifier {
       updatedAt: now,
       version: 0,
     );
-    final db = await _database();
-    await db.insert('plans', p.toMap());
+    final store = await _store;
+    await store.insert('plans', p.toMap());
     notifyListeners();
     return p;
   }
 
   Future<Plan?> planById(String id) async {
-    final db = await _database();
-    final rows = await db.query('plans', where: 'id = ?', whereArgs: [id], limit: 1);
+    final store = await _store;
+    final rows = await store.query('plans', where: 'id = ?', whereArgs: [id], limit: 1);
     return rows.isEmpty ? null : Plan.fromMap(rows.first);
   }
 
   /// 清单列表。默认排除 archived（list_plans 默认过滤口径 §6：归档/冷数据不拉）。
   Future<List<Plan>> listPlans({bool includeArchived = false, String? parentId}) async {
-    final db = await _database();
+    final store = await _store;
     final where = <String>[];
     final args = <Object?>[];
     if (!includeArchived) where.add('archived = 0');
@@ -142,7 +157,7 @@ class Repository extends ChangeNotifier {
       where.add('parent_id = ?');
       args.add(parentId);
     }
-    final rows = await db.query(
+    final rows = await store.query(
       'plans',
       where: where.isEmpty ? null : where.join(' AND '),
       whereArgs: where.isEmpty ? null : args,
@@ -158,7 +173,7 @@ class Repository extends ChangeNotifier {
   Future<bool> patchPlan(String id, Map<String, Object?> patch, {int? expectedVersion}) async {
     final values = _whitelist(patch, _planPatchColumns);
     if (values.isEmpty) return true;
-    final db = await _database();
+    final store = await _store;
     final set = [for (final k in values.keys) '$k = ?', 'version = version + 1', 'updated_at = ?'].join(', ');
     final where = expectedVersion == null ? 'id = ?' : 'id = ? AND version = ?';
     final args = <Object?>[
@@ -167,7 +182,7 @@ class Repository extends ChangeNotifier {
       id,
       ?expectedVersion,
     ];
-    final n = await db.rawUpdate('UPDATE plans SET $set WHERE $where', args);
+    final n = await store.rawUpdate('UPDATE plans SET $set WHERE $where', args);
     if (n > 0) notifyListeners();
     return n > 0;
   }
@@ -175,8 +190,8 @@ class Repository extends ChangeNotifier {
   /// 物理删除。子树（plans.parent_id）与肉身（blocks.plan_id）受外键 NO ACTION
   /// 保护：有引用时抛出——删除前处置策略归命令层显式处理，数据层不静默级联。
   Future<void> deletePlan(String id) async {
-    final db = await _database();
-    final n = await db.delete('plans', where: 'id = ?', whereArgs: [id]);
+    final store = await _store;
+    final n = await store.delete('plans', where: 'id = ?', whereArgs: [id]);
     if (n == 0) throw StateError('plan 不存在: $id');
     notifyListeners();
   }
@@ -203,15 +218,15 @@ class Repository extends ChangeNotifier {
       updatedAt: now,
       version: 0,
     );
-    final db = await _database();
-    await db.insert('backgrounds', b.toMap());
+    final store = await _store;
+    await store.insert('backgrounds', b.toMap());
     notifyListeners();
     return b;
   }
 
   Future<Background?> backgroundById(String id) async {
-    final db = await _database();
-    final rows = await db.query('backgrounds', where: 'id = ?', whereArgs: [id], limit: 1);
+    final store = await _store;
+    final rows = await store.query('backgrounds', where: 'id = ?', whereArgs: [id], limit: 1);
     return rows.isEmpty ? null : Background.fromMap(rows.first);
   }
 
@@ -219,7 +234,7 @@ class Repository extends ChangeNotifier {
   /// 祖先链继承与 applicable_dates 日期窗集合判断归 queries 装配层（§4 双通道装配），
   /// 仓库只保台账行原样。
   Future<List<Background>> listBackgrounds({String? scope, String? planId}) async {
-    final db = await _database();
+    final store = await _store;
     final where = <String>[];
     final args = <Object?>[];
     if (scope != null) {
@@ -230,7 +245,7 @@ class Repository extends ChangeNotifier {
       where.add('plan_id = ?');
       args.add(planId);
     }
-    final rows = await db.query(
+    final rows = await store.query(
       'backgrounds',
       where: where.isEmpty ? null : where.join(' AND '),
       whereArgs: where.isEmpty ? null : args,
@@ -243,7 +258,7 @@ class Repository extends ChangeNotifier {
   Future<bool> patchBackground(String id, Map<String, Object?> patch, {int? expectedVersion}) async {
     final values = _whitelist(patch, _backgroundPatchColumns);
     if (values.isEmpty) return true;
-    final db = await _database();
+    final store = await _store;
     final set = [for (final k in values.keys) '$k = ?', 'version = version + 1', 'updated_at = ?'].join(', ');
     final where = expectedVersion == null ? 'id = ?' : 'id = ? AND version = ?';
     final args = <Object?>[
@@ -252,15 +267,15 @@ class Repository extends ChangeNotifier {
       id,
       ?expectedVersion,
     ];
-    final n = await db.rawUpdate('UPDATE backgrounds SET $set WHERE $where', args);
+    final n = await store.rawUpdate('UPDATE backgrounds SET $set WHERE $where', args);
     if (n > 0) notifyListeners();
     return n > 0;
   }
 
   /// 物理删除（§6 单设备真删，无墓碑；命令层 AI 提炼回显后的删除通道同此口）。
   Future<void> deleteBackground(String id) async {
-    final db = await _database();
-    final n = await db.delete('backgrounds', where: 'id = ?', whereArgs: [id]);
+    final store = await _store;
+    final n = await store.delete('backgrounds', where: 'id = ?', whereArgs: [id]);
     if (n == 0) throw StateError('background 不存在: $id');
     notifyListeners();
   }
@@ -299,8 +314,8 @@ class Repository extends ChangeNotifier {
       updatedAt: now,
       version: 0,
     );
-    final db = await _database();
-    await db.transaction((txn) async {
+    final store = await _store;
+    await store.transaction((txn) async {
       await txn.insert('artifacts', a.toMap());
       if (bindBlockId != null) {
         // 块侧绑定单点（v5 反转关联）：块行在才绑，version+1 守乐观锁纪律
@@ -315,23 +330,28 @@ class Repository extends ChangeNotifier {
   }
 
   Future<Artifact?> artifactById(String id) async {
-    final db = await _database();
-    final rows = await db.query('artifacts', where: 'id = ?', whereArgs: [id], limit: 1);
+    final store = await _store;
+    final rows = await store.query('artifacts', where: 'id = ?', whereArgs: [id], limit: 1);
     return rows.isEmpty ? null : Artifact.fromMap(rows.first);
   }
 
   /// 凭证区子树聚合（§8 施工微观约定 1）：调用方先用内存 PlanTree 收集目标计划及
   /// 全部子孙 id，本方法**单条 SQL**完成多计划聚合（防逐子节点查询的列表抖动）。
-  /// state != voided：raw 保留（待提炼琥珀卡）、voided 不进卡面；created_at ASC 稳定序。
-  Future<List<Artifact>> artifactsForPlans(Iterable<String> planIds) async {
+  /// 默认 state != voided：raw 保留（待提炼琥珀卡）、voided 不进卡面；
+  /// `includeVoided=true` = UI 折叠组专用通道（§1.2 双通道口径 2026-10-08 拍板：
+  /// 排程/临场读侧全静默，UI「已作废 · N 条」折叠组单独放行）。created_at ASC 稳定序。
+  Future<List<Artifact>> artifactsForPlans(Iterable<String> planIds,
+      {bool includeVoided = false}) async {
     final ids = planIds.toList();
     if (ids.isEmpty) return const [];
-    final db = await _database();
+    final store = await _store;
     final marks = List.filled(ids.length, '?').join(', ');
-    final rows = await db.query(
+    final rows = await store.query(
       'artifacts',
-      where: 'plan_id IN ($marks) AND state != ?',
-      whereArgs: [...ids, Artifact.stateVoided],
+      where: includeVoided
+          ? 'plan_id IN ($marks)'
+          : 'plan_id IN ($marks) AND state != ?',
+      whereArgs: includeVoided ? ids : [...ids, Artifact.stateVoided],
       orderBy: 'created_at',
     );
     return [for (final r in rows) Artifact.fromMap(r)];
@@ -341,8 +361,8 @@ class Repository extends ChangeNotifier {
   /// 搭载过滤、state='raw' 供 list_plans「N 条原文待提炼」摘要（§8 施工微观约定 3
   /// 的白名单入口——排除 voided 由调用方按通道语义另行处理，raw/structured 天然不含）。
   Future<List<Artifact>> artifactsByState(String state) async {
-    final db = await _database();
-    final rows = await db.query(
+    final store = await _store;
+    final rows = await store.query(
       'artifacts',
       where: 'state = ?',
       whereArgs: [state],
@@ -356,8 +376,8 @@ class Repository extends ChangeNotifier {
   /// 1:N 软引用无外键）——块已被日切物理删除时 JOIN 无行，静默降级（§9.5-8）。
   /// voided 不进（存证保留但不进卡面）；同块多凭证取最新一枚。
   Future<Artifact?> artifactForBlock(String blockId) async {
-    final db = await _database();
-    final rows = await db.rawQuery(
+    final store = await _store;
+    final rows = await store.rawQuery(
       'SELECT a.* FROM artifacts a '
       'JOIN schedule_blocks b ON b.artifact_id = a.id '
       'WHERE b.id = ? AND a.state != ? '
@@ -372,8 +392,8 @@ class Repository extends ChangeNotifier {
   /// Bundle 详情看板聚合，绝不污染未归属池。voided 不进卡面；created_at DESC
   /// 新者在前（管理面板先看刚分享进来的）。
   Future<List<Artifact>> artifactsUnattributed() async {
-    final db = await _database();
-    final rows = await db.query(
+    final store = await _store;
+    final rows = await store.query(
       'artifacts',
       where: 'plan_id IS NULL AND bundle_id IS NULL AND state != ?',
       whereArgs: [Artifact.stateVoided],
@@ -385,8 +405,8 @@ class Repository extends ChangeNotifier {
   /// state 白名单计数（§8 施工微观约定 3）：list_plans 快照「N 条原文待提炼」等
   /// 聚合口径的单点；voided 由调用方按通道语义排除（raw 计数天然不含）。
   Future<int> countArtifacts({String? state}) async {
-    final db = await _database();
-    final rows = await db.query(
+    final store = await _store;
+    final rows = await store.query(
       'artifacts',
       columns: ['COUNT(*) AS c'],
       where: state == null ? null : 'state = ?',
@@ -400,7 +420,7 @@ class Repository extends ChangeNotifier {
   Future<bool> patchArtifact(String id, Map<String, Object?> patch, {int? expectedVersion}) async {
     final values = _whitelist(patch, _artifactPatchColumns);
     if (values.isEmpty) return true;
-    final db = await _database();
+    final store = await _store;
     final set = [for (final k in values.keys) '$k = ?', 'version = version + 1', 'updated_at = ?'].join(', ');
     final where = expectedVersion == null ? 'id = ?' : 'id = ? AND version = ?';
     final args = <Object?>[
@@ -409,7 +429,7 @@ class Repository extends ChangeNotifier {
       id,
       ?expectedVersion,
     ];
-    final n = await db.rawUpdate('UPDATE artifacts SET $set WHERE $where', args);
+    final n = await store.rawUpdate('UPDATE artifacts SET $set WHERE $where', args);
     if (n > 0) notifyListeners();
     return n > 0;
   }
@@ -417,8 +437,8 @@ class Repository extends ChangeNotifier {
   /// 物理删除（DeleteArtifact 仅 human 通道：误分享文本清理；AI 无删除权。
   /// 删凭证绝不删块——pinned 降格处置在命令层，§1.4 反向销毁防护）。
   Future<void> deleteArtifact(String id) async {
-    final db = await _database();
-    final n = await db.delete('artifacts', where: 'id = ?', whereArgs: [id]);
+    final store = await _store;
+    final n = await store.delete('artifacts', where: 'id = ?', whereArgs: [id]);
     if (n == 0) throw StateError('artifact 不存在: $id');
     notifyListeners();
   }
@@ -426,14 +446,14 @@ class Repository extends ChangeNotifier {
   // ---------- fixed_slots ----------
 
   Future<List<FixedSlot>> listFixedSlots() async {
-    final db = await _database();
-    final rows = await db.query('fixed_slots', orderBy: 'start_min');
+    final store = await _store;
+    final rows = await store.query('fixed_slots', orderBy: 'start_min');
     return [for (final r in rows) FixedSlot.fromMap(r)];
   }
 
   /// 批量原子替换（update_fixed_slots 整单校验模式 §6）：整批成功或整批不动。
   Future<void> replaceFixedSlots(List<FixedSlot> slots) async {
-    final db = await _database();
+    final store = await _store;
     final rows = [
       for (final s in slots)
         FixedSlot(
@@ -444,7 +464,7 @@ class Repository extends ChangeNotifier {
           endMin: s.endMin,
         ).toMap(),
     ];
-    await db.transaction((txn) async {
+    await store.transaction((txn) async {
       await txn.delete('fixed_slots');
       for (final r in rows) {
         await txn.insert('fixed_slots', r);
@@ -473,28 +493,28 @@ class Repository extends ChangeNotifier {
   // ---------- app_settings ----------
 
   Future<Map<String, String>> settingsAll() async {
-    final db = await _database();
-    final rows = await db.query('app_settings');
+    final store = await _store;
+    final rows = await store.query('app_settings');
     return {for (final r in rows) r['key'] as String: r['value'] as String};
   }
 
   Future<String?> settingsGet(String key) async {
-    final db = await _database();
-    final rows = await db.query('app_settings', where: 'key = ?', whereArgs: [key], limit: 1);
+    final store = await _store;
+    final rows = await store.query('app_settings', where: 'key = ?', whereArgs: [key], limit: 1);
     return rows.isEmpty ? null : rows.first['value'] as String;
   }
 
   /// 批量 upsert（update_settings 走此口；合法键与类型校验在命令层）。
   Future<void> settingsSet(Map<String, String> values) async {
     if (values.isEmpty) return;
-    final db = await _database();
+    final store = await _store;
     final now = DateTime.now().millisecondsSinceEpoch;
-    await db.transaction((txn) async {
+    await store.transaction((txn) async {
       for (final e in values.entries) {
         await txn.insert(
           'app_settings',
           {'key': e.key, 'value': e.value, 'updated_at': now},
-          conflictAlgorithm: ConflictAlgorithm.replace,
+          replace: true,
         );
       }
     });
@@ -503,16 +523,16 @@ class Repository extends ChangeNotifier {
 
   /// 删除设置键（update_settings 传 null 清空对应项）。
   Future<void> settingsClear(String key) async {
-    final db = await _database();
-    await db.delete('app_settings', where: 'key = ?', whereArgs: [key]);
+    final store = await _store;
+    await store.delete('app_settings', where: 'key = ?', whereArgs: [key]);
     notifyListeners();
   }
 
   /// 批量删键（单事务+单 notify——快记草稿三键整组清除走此口，避免三连重建）。
   Future<void> settingsClearAll(List<String> keys) async {
     if (keys.isEmpty) return;
-    final db = await _database();
-    await db.transaction((txn) async {
+    final store = await _store;
+    await store.transaction((txn) async {
       for (final k in keys) {
         await txn.delete('app_settings', where: 'key = ?', whereArgs: [k]);
       }
@@ -547,23 +567,23 @@ class Repository extends ChangeNotifier {
       updatedAt: now,
       version: 0,
     );
-    final db = await _database();
-    await db.insert('schedule_blocks', b.toMap());
+    final store = await _store;
+    await store.insert('schedule_blocks', b.toMap());
     notifyListeners();
     return b;
   }
 
   Future<ScheduleBlock?> blockById(String id) async {
-    final db = await _database();
-    final rows = await db.query('schedule_blocks', where: 'id = ?', whereArgs: [id], limit: 1);
+    final store = await _store;
+    final rows = await store.query('schedule_blocks', where: 'id = ?', whereArgs: [id], limit: 1);
     return rows.isEmpty ? null : ScheduleBlock.fromMap(rows.first);
   }
 
   /// 某开始日的全部块（按 start_min 排序）。跨午夜块按开始日归属、不拆段（§4）：
   /// 「明天读今天」的显示层溢出回显归 BlockRenderer，查询恒按 date 单列。
   Future<List<ScheduleBlock>> blocksOnDate(String isoDate) async {
-    final db = await _database();
-    final rows = await db.query(
+    final store = await _store;
+    final rows = await store.query(
       'schedule_blocks',
       where: 'date = ?',
       whereArgs: [isoDate],
@@ -575,8 +595,8 @@ class Repository extends ChangeNotifier {
   /// 日期范围（闭区间）内的块，按 date + start_min 排序（派生视图走单条 SQL，
   /// 复用 idx_blocks_date 索引）。
   Future<List<ScheduleBlock>> blocksInRange(String fromIso, String toIso) async {
-    final db = await _database();
-    final rows = await db.query(
+    final store = await _store;
+    final rows = await store.query(
       'schedule_blocks',
       where: 'date >= ? AND date <= ?',
       whereArgs: [fromIso, toIso],
@@ -589,7 +609,7 @@ class Repository extends ChangeNotifier {
   Future<bool> patchBlock(String id, Map<String, Object?> patch, {int? expectedVersion}) async {
     final values = _whitelist(patch, _blockPatchColumns);
     if (values.isEmpty) return true;
-    final db = await _database();
+    final store = await _store;
     final set = [for (final k in values.keys) '$k = ?', 'version = version + 1', 'updated_at = ?'].join(', ');
     final where = expectedVersion == null ? 'id = ?' : 'id = ? AND version = ?';
     final args = <Object?>[
@@ -598,7 +618,7 @@ class Repository extends ChangeNotifier {
       id,
       ?expectedVersion,
     ];
-    final n = await db.rawUpdate('UPDATE schedule_blocks SET $set WHERE $where', args);
+    final n = await store.rawUpdate('UPDATE schedule_blocks SET $set WHERE $where', args);
     if (n > 0) notifyListeners();
     return n > 0;
   }
@@ -606,22 +626,22 @@ class Repository extends ChangeNotifier {
   /// 全量导出（§11 数据出口「导出 JSON 全量」）：六个存储面一次 JSON 化，
   /// 备份/迁移用途；设置页一键触发。
   Future<Map<String, Object?>> exportAll() async {
-    final db = await _database();
+    final store = await _store;
     return {
       'exported_at': DateTime.now().toIso8601String(),
-      'plans': await db.query('plans'),
-      'fixed_slots': await db.query('fixed_slots'),
-      'schedule_blocks': await db.query('schedule_blocks'),
-      'backgrounds': await db.query('backgrounds'),
-      'artifacts': await db.query('artifacts'),
-      'app_settings': await db.query('app_settings'),
+      'plans': await store.query('plans'),
+      'fixed_slots': await store.query('fixed_slots'),
+      'schedule_blocks': await store.query('schedule_blocks'),
+      'backgrounds': await store.query('backgrounds'),
+      'artifacts': await store.query('artifacts'),
+      'app_settings': await store.query('app_settings'),
     };
   }
 
   /// 物理删除（仅 proposed 块的否决蒸发走命令层守卫后调用；其余状态迁移走 patch）。
   Future<void> deleteBlock(String id) async {
-    final db = await _database();
-    final n = await db.delete('schedule_blocks', where: 'id = ?', whereArgs: [id]);
+    final store = await _store;
+    final n = await store.delete('schedule_blocks', where: 'id = ?', whereArgs: [id]);
     if (n == 0) throw StateError('block 不存在: $id');
     notifyListeners();
   }

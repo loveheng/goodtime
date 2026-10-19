@@ -3,7 +3,7 @@ import 'package:shiguang/main.dart';
 import 'package:shiguang/ui/schedule_page.dart';
 import 'helpers/ui.dart';
 
-/// 视图横滑翻页（ui-spec §6.4，2026-10-06 拍板）：日视图背景横滑=翻日。
+/// 视图横滑翻页（ui-design §5.4，2026-10-06 拍板）：日视图背景横滑=翻日。
 /// 一测一文件（helpers/ui.dart 约定：UI 流程跨测试异步残留互扰）。
 void main() {
   setUp(() async {

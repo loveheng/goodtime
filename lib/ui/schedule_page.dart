@@ -27,9 +27,8 @@ import 'block_sheet.dart';
 import 'fact_sheet.dart';
 import 'global_action_sheet.dart';
 import 'collab/member_calendar_page.dart';
-import 'mcp_settings_page.dart';
 
-/// 今日页（ui-spec §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
+/// 今日页（ui-pages §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
 /// ×安全线徽章）+ 分级确认卡（火种突出/Routine 折叠/两态收缩）+ 时间轴
 /// （1dp=1min、fixed 背景带、派生保护区三级绘制过滤、确认三键、+30m、空槽创建）。
 /// 遗留区/四形态/三手势按里程碑推进。
@@ -124,9 +123,8 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   Widget build(BuildContext context) {
-    // 合并监听 mcp：MCP 启停联动今日页「桌面 AI 未连接」卡（§9，2026-10-08 回归）
     return ListenableBuilder(
-      listenable: Listenable.merge([_repo, AppServices.mcp]),
+      listenable: _repo,
       builder: (context, _) => Column(
         children: [
           Padding(
@@ -148,7 +146,7 @@ class _SchedulePageState extends State<SchedulePage> {
                   icon: const Icon(Icons.groups_outlined),
                   tooltip: '协同日程',
                   onPressed: () async {
-                    final db = await AppServices.repo.db;
+                    final db = await collabDatabase();
                     final me = await SecureIdentityStore().load();
                     // 运行期 K_bundle 检索：collab_key_ring 信封 → KeyStore.open。
                     // MSK 端侧自动托管，密钥恒就绪；未登录/无身份时装配方返回
@@ -259,7 +257,7 @@ class _SchedulePageState extends State<SchedulePage> {
         _confirmCollapsed = false;
       });
 
-  // ---- 视图横滑翻页（ui-spec §6.4，2026-10-06 拍板）----
+  // ---- 视图横滑翻页（ui-design §5.4，2026-10-06 拍板）----
 
   double _swipeDx = 0;
 
@@ -442,9 +440,8 @@ class _DayView extends StatelessWidget {
           ),
         // 双轨仪表盘（§3.1/§10 八轮）：推进任务 × 保护时长并列核心交付指标
         _Dashboard(data: data),
-        // MCP 未连接卡（§9 空态表回归，2026-10-08）：今日可见，一键进 MCP 服务页
-        if (data.isToday && !AppServices.mcp.running) const _McpOfflineCard(),
         // 临场通关条（§9.4 分期二）：系统 Banner 下、遗留区上；本地物理时钟判定
+        // （main 2026-10-15 拍板：MCP 配对卡退役，仅保留通关条）
         if (data.isToday)
           FutureBuilder<List<ActionPass>>(
             key: ValueKey(data.today),
@@ -456,6 +453,7 @@ class _DayView extends StatelessWidget {
                   )
                 : const SizedBox.shrink(),
           ),
+
         // 昨日遗留区（§3.2）：守卫态与 Clean Slate 保护期整区淡出，非今日不渲染
         if (!windDown && !data.cleanSlate && data.isToday && data.leftovers.isNotEmpty)
           _LeftoverSection(data: data),
@@ -560,39 +558,6 @@ class _Dashboard extends StatelessWidget {
   }
 }
 
-/// MCP 未连接卡（ui-spec §9 空态表回归，2026-10-08）：今日页常驻提示，
-/// 一键进 MCP 服务子页（配对/启停）。MCP 已启动时整卡消失。
-class _McpOfflineCard extends StatelessWidget {
-  const _McpOfflineCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(StScale.radiusCard),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const McpSettingsPage()),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(children: [
-            const Icon(Icons.lan_outlined, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text('桌面 AI 未连接——配对后可让 AI 排程',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ),
-            Icon(Icons.chevron_right,
-                size: 18, color: StColors.textSecondary),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
 /// 晨间生理电量三档（⚡满血/🔋平稳/🪫低电量）——手动点选、日切重置（十轮拍板）。
 class _EnergyToggle extends StatelessWidget {
   const _EnergyToggle({required this.current, required this.onSelect});
@@ -617,7 +582,7 @@ class _EnergyToggle extends StatelessWidget {
   }
 }
 
-/// 昨日遗留区（ui-spec §3.2）：昨日 missed 逐条三键——补勾（自动带补记标）/
+/// 昨日遗留区（ui-pages §3.2）：昨日 missed 逐条三键——补勾（自动带补记标）/
 /// 顺延今日/退回愿望池；守卫态与 Clean Slate 保护期整区淡出（_DayView 门控）。
 class _LeftoverSection extends StatelessWidget {
   const _LeftoverSection({required this.data});
@@ -1297,7 +1262,7 @@ class _ProtectedBand extends StatelessWidget {
   }
 }
 
-/// 单个块卡片（ui-spec §6.1 四形态 + §6.2 状态叠加 + §6.3 来源角标）
+/// 单个块卡片（ui-design §5.1 四形态 + §5.2 状态叠加 + §5.3 来源角标）
 /// 外挂三手势（§6.4/§6.5：长按坍缩/左滑换乘/右滑融化 + 手势锁 + 卡点 + 触觉）。
 class _BlockCard extends StatelessWidget {
   const _BlockCard({required this.block, required this.plan, required this.data, required this.onTap});
@@ -1461,7 +1426,7 @@ class _BlockCard extends StatelessWidget {
             style: const TextStyle(fontSize: 9, color: Colors.white, height: 1.2)),
       );
 
-  /// 🎫 凭证微标（ui-spec §0.4）：票形 + badge 文本（有则显，ellipsis 96dp 同
+  /// 🎫 凭证微标（ui-design §5.3）：票形 + badge 文本（有则显，ellipsis 96dp 同
   /// 凭证卡 badge 口径）；微标不挡块主文本（左下挂角）。
   Widget _voucherMark(String? badge, Color textColor) => Row(
         mainAxisSize: MainAxisSize.min,
@@ -1531,7 +1496,7 @@ class _GestureBlockState extends State<_GestureBlock> {
         content: Text(r.note ?? '完成'),
         duration:
             undo == null ? const Duration(seconds: 2) : const Duration(seconds: 5),
-        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-spec §3 层叠规则）
+        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-design §3.2 层叠规则）
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
         action: undo,
@@ -1551,7 +1516,7 @@ class _GestureBlockState extends State<_GestureBlock> {
         canUndo: true);
   }
 
-  /// 换乘抽屉（ui-spec §6.4 拍板形态回归，2026-10-08）：左滑过卡点呼出候选列表
+  /// 换乘抽屉（ui-design §5.4 拍板形态回归，2026-10-08）：左滑过卡点呼出候选列表
   /// （待安排池 light/anywhere，swapCandidatesFor 时长相近优先），显式挑选后经
   /// SwapBlockCommand(targetPlanId) 换入——原任务无痕回池；空池直接轻提示不开抽屉。
   Future<void> _swap() async {

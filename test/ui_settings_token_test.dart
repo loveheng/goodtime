@@ -27,10 +27,20 @@ void main() {
       },
     );
 
-    // 设置目录 → MCP 服务子页（2026-10-08 拍板：MCP 区独立成页）
+    // 设置页 → MCP 服务子页（隐藏入口 2026-10-15 拍板，照 goodshare 范本：
+    // 长按「关于」标题唤出调试菜单 → 点「MCP 调试服务」）
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
     await pumpFlush(tester);
-    await tester.tap(find.text('MCP 服务'));
+    // 「关于」区在页尾，先滚到可见（坑9 同款先滚后点）
+    await tester.scrollUntilVisible(
+      find.text('关于'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.longPress(find.text('关于'));
+    await pumpFlush(tester);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('MCP 调试服务'));
     await pumpFlush(tester);
     await tester.pump(const Duration(milliseconds: 400));
 

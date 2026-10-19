@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/artifact.dart';
+import 'storage.dart';
 
 /// 存储层：台账库——plans（清单条目=本体 Soul）+ fixed_slots（固定占用=约束）+
 /// schedule_blocks（日程块实例=肉身 Avatar）+ backgrounds（软背景，v3 增，
@@ -19,7 +20,21 @@ class Db {
   static String? _pathOverride;
   static void overridePath(String path) => _pathOverride = path;
 
+  /// 默认工厂已注册标记（幂等：宿主可经 registerStorageFactory 覆盖，不回写此标记）。
+  static bool _factoryRegistered = false;
+
+  /// 注册默认存储工厂（幂等）：让内核 Repository 经 [ScheduleStorage] 抽象
+  /// 拿到 sqflite 后端，而 repository.dart 不 import sqflite（轴 B 纯 Dart 化 G2·②）。
+  /// 注意：Dart 顶层 final 惰性初始化，不能靠模块加载副作用，须显式触发
+  /// （app 启动在 AppServices.init；测试经 [instance] 首调自动触发）。
+  static void registerDefaultStorageFactory() {
+    if (_factoryRegistered) return;
+    registerStorageFactory(() async => SqfliteStorage(await Db.instance()));
+    _factoryRegistered = true;
+  }
+
   static Future<Database> instance() async {
+    registerDefaultStorageFactory();
     final cached = _db;
     if (cached != null) return cached;
     final dir = await getDatabasesPath();
@@ -63,6 +78,11 @@ class Db {
       onOpen: (db) async {
         // plans 自引用树与 blocks.plan_id 的外键保护依赖此开关，sqflite 默认关闭
         await db.execute('PRAGMA foreign_keys = ON');
+        // R1（goodhub Binder 并发）：主 isolate 与 binder headless isolate 各持一连接
+        // 共写 WAL 库，5s busy 等待兜底锁冲突（对齐 goodshare 已验证缓解）
+        // busy_timeout 是带返回值的 PRAGMA，Android execSQL（execute 底层）拒绝有
+        // 结果集的语句，须走 rawQuery
+        await db.rawQuery('PRAGMA busy_timeout = 5000');
       },
     );
     _db = db;
@@ -506,3 +526,90 @@ class Db {
     );
   }
 }
+
+/// sqflite 后端：[ScheduleStorage] 的具象实现（轴 B 纯 Dart 化，G2·②）。
+/// 仅这一处依赖 sqflite/dart:io 平台包——收口在 lib/data，内核不沾。
+class SqfliteStorage implements ScheduleStorage {
+  SqfliteStorage(this._db);
+
+  final Database _db;
+
+  @override
+  Future<int> insert(String table, Map<String, Object?> values,
+          {bool replace = false}) =>
+      _db.insert(table, values,
+          conflictAlgorithm: replace ? ConflictAlgorithm.replace : null);
+
+  @override
+  Future<List<Map<String, Object?>>> query(String table,
+          {List<String>? columns,
+          String? where,
+          List<Object?>? whereArgs,
+          String? orderBy,
+          int? limit}) =>
+      _db.query(table,
+          columns: columns,
+          where: where,
+          whereArgs: whereArgs,
+          orderBy: orderBy,
+          limit: limit);
+
+  @override
+  Future<int> rawUpdate(String sql, List<Object?> args) =>
+      _db.rawUpdate(sql, args);
+
+  @override
+  Future<List<Map<String, Object?>>> rawQuery(String sql,
+          [List<Object?>? args]) =>
+      _db.rawQuery(sql, args);
+
+  @override
+  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) =>
+      _db.delete(table, where: where, whereArgs: whereArgs);
+
+  @override
+  Future<T> transaction<T>(Future<T> Function(StorageTxn txn) action) =>
+      _db.transaction((txn) => action(_SqfliteTxn(txn)));
+}
+
+class _SqfliteTxn implements StorageTxn {
+  _SqfliteTxn(this._txn);
+
+  final Transaction _txn;
+
+  @override
+  Future<int> insert(String table, Map<String, Object?> values,
+          {bool replace = false}) =>
+      _txn.insert(table, values,
+          conflictAlgorithm: replace ? ConflictAlgorithm.replace : null);
+
+  @override
+  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) =>
+      _txn.delete(table, where: where, whereArgs: whereArgs);
+
+  @override
+  Future<List<Map<String, Object?>>> query(String table,
+          {List<String>? columns,
+          String? where,
+          List<Object?>? whereArgs,
+          String? orderBy,
+          int? limit}) =>
+      _txn.query(table,
+          columns: columns,
+          where: where,
+          whereArgs: whereArgs,
+          orderBy: orderBy,
+          limit: limit);
+
+  @override
+  Future<int> rawUpdate(String sql, List<Object?> args) =>
+      _txn.rawUpdate(sql, args);
+
+  @override
+  Future<int> update(String table, Map<String, Object?> values,
+          {String? where, List<Object?>? whereArgs}) =>
+      _txn.update(table, values, where: where, whereArgs: whereArgs);
+}
+
+// 默认存储工厂注册：见 Db.instance()（幂等）。内核 Repository 不经 sqflite，
+// 借由此工厂获得 sqflite 后端；app 启动路径由 AppServices.init 显式先行注册。

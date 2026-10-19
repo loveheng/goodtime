@@ -8,7 +8,7 @@ import 'package:shiguang/models/schedule_block.dart';
 import 'package:shiguang/util/schedule_day.dart';
 import 'helpers/ui.dart';
 
-/// 昨日遗留区（ui-spec §3.2）：missed 逐条三键——补勾（补记）/顺延今日/退回愿望池。
+/// 昨日遗留区（ui-pages §3.2）：missed 逐条三键——补勾（补记）/顺延今日/退回愿望池。
 /// 一测一文件（helpers/ui.dart 约定）。种子用跨午夜睡眠（sleep 5:00 < wake 7:00），
 /// 使放工守卫窗口落在真实时刻之外，任何钟点跑测试都确定。
 void main() {

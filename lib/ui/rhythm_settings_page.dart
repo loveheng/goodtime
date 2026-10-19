@@ -11,7 +11,7 @@ import '../util/schedule_day.dart';
 /// ISO 星期中文名（1=周一 … 7=周日），索引 0 占位。
 const _weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
-/// 一周节奏设置页（ui-spec §1 子页化 2026-10-08 拍板）：fixed_slots 增删改，
+/// 一周节奏设置页（ui-pages §1 子页化 2026-10-08 拍板）：fixed_slots 增删改，
 /// 首启后唯一编辑入口。整单批量替换经 UpdateFixedSlotsCommand——每个条目独立
 /// （工作日/周末可并存）。自 settings_page 大平铺迁出（目录页只留入口行）。
 class RhythmSettingsPage extends StatefulWidget {

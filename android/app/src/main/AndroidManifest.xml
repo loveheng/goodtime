@@ -7,6 +7,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- goodhub 本地插件签名权限（契约 §1.2.6，B2）：声明方=服务提供方（本 app），
+         goodhub 侧只 <uses-permission>；两 app 须同签名（同机 debug keystore），
+         否则 bind 直接 SecurityException（无降级）。 -->
+    <permission
+        android:name="com.zzh.goodhub.permission.MCP_SERVER"
+        android:protectionLevel="signature" />
     <!-- 好友扫码建联：相机扫码读取对方名片二维码（§1.6 / Phase 4.6） -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
@@ -49,6 +55,23 @@
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+        <!-- goodhub 本地 Binder 插件服务（goodhub-local-plugin 终点，thirdconnect.md §1.2.2）：
+             exported=true 必须（宿主跨 app bind）；signature 权限护门（B2）；
+             发现靠 intent action + SERVER_ID/SERVER_TITLE meta-data（§9.3 非包名约定）。 -->
+        <service
+            android:name=".ShiguangMcpBinderService"
+            android:exported="true"
+            android:permission="com.zzh.goodhub.permission.MCP_SERVER">
+            <intent-filter>
+                <action android:name="com.zzh.goodhub.action.MCP_SERVER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.zzh.goodhub.SERVER_ID"
+                android:value="shiguang" />
+            <meta-data
+                android:name="com.zzh.goodhub.SERVER_TITLE"
+                android:value="拾光" />
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -4,7 +4,7 @@ import 'package:shiguang/action/commands.dart';
 import 'package:shiguang/main.dart';
 import 'helpers/ui.dart';
 
-/// 清单左滑归档 + 撤销（ui-spec §6.4，2026-10-06 拍板）。
+/// 清单左滑归档 + 撤销（ui-design §5.4，2026-10-06 拍板）。
 /// 一测一文件（helpers/ui.dart 约定：UI 流程跨测试异步残留互扰）。
 void main() {
   setUp(() async {

@@ -1064,7 +1064,7 @@ final class RestoreBlockCommand extends ScheduleCommand {
 }
 
 /// 设置写（§3 UpdateSettings，人/AI）：键注册制，传 null 清空对应项。
-/// 遗留区「顺延今日」（ui-spec §3.2，2026-10-06 拍板）：missed 块整体搬到
+/// 遗留区「顺延今日」（ui-pages §3.2，2026-10-06 拍板）：missed 块整体搬到
 /// 目标日，起止钟点不变、身份不变（postpone_count+1）。仅 missed 可顺延；
 /// human 专属（AI 挪块走 adjust_blocks 校验刻度）。
 final class PostponeBlockCommand extends ScheduleCommand {
@@ -1088,7 +1088,7 @@ final class PostponeBlockCommand extends ScheduleCommand {
       };
 }
 
-/// 现实熔断（§8 五轮拍板；ui-spec §3.6，2026-10-06 UI 落地）：human 专属批量
+/// 现实熔断（§8 五轮拍板；ui-pages §3.6，2026-10-06 UI 落地）：human 专属批量
 /// 动作，命令层原子执行。mode：
 /// `clear_remaining`——今日未开始 AI 块（非 pinned）整体 melted 无痕回池；
 /// `push_2h`——今日未开始 AI 块整体 +120min（顺延计数+1），撞手动/pinned/

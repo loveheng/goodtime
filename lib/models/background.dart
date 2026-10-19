@@ -1,6 +1,5 @@
 import 'dart:convert';
-
-import 'package:flutter/foundation.dart';
+import 'dart:developer';
 
 /// backgrounds 表实体（background-context-draft.md §2）：背景信息 = 软上下文——
 /// 叙事性、定性的行程背景，仅影响 AI 软提案权重与提案理由，绝不生成硬约束
@@ -174,12 +173,12 @@ class Background {
 
   // DEGRADE: [backgrounds_read_malformed] 整列畸形丢弃——读侧兜底，不挡主路径
   static List<String> _degradeColumn(String column, String raw) {
-    debugPrint('[DEGRADE][backgrounds_read_malformed] $column 整列畸形已丢弃: $raw');
+    log('[DEGRADE][backgrounds_read_malformed] $column 整列畸形已丢弃: $raw');
     return const [];
   }
 
   // DEGRADE: [backgrounds_read_malformed] 元素畸形过滤——读侧兜底，不挡主路径
   static void _logDegrade(String column, String detail) {
-    debugPrint('[DEGRADE][backgrounds_read_malformed] $column 畸形元素已过滤: $detail');
+    log('[DEGRADE][backgrounds_read_malformed] $column 畸形元素已过滤: $detail');
   }
 }

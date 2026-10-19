@@ -68,6 +68,8 @@ command -v flutter >/dev/null 2>&1 || command -v "$HOME/flutter/bin/flutter" >/d
 VERSION_LINE="$(grep -m1 '^version:' pubspec.yaml)"
 VERSION_NAME="$(echo "$VERSION_LINE" | sed -E 's/.*:\s*([0-9.]+)\+.*/\1/')"
 VERSION_CODE="$(echo "$VERSION_LINE" | sed -E 's/.*\+([0-9]+).*/\1/')"
+# 应用包名：从 gradle 取，作为串包防御写入清单（缺失时留空，客户端宽容跳过）
+APP_ID="$(grep -m1 'applicationId' android/app/build.gradle.kts | sed -E 's/.*applicationId[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')"
 [ -z "$CHANGELOG" ] && CHANGELOG="$(git log -1 --pretty=%s 2>/dev/null || echo '')"
 # 转义 json 字符串中的反斜杠与双引号
 CHANGELOG_ESC="${CHANGELOG//\\/\\\\}"
@@ -75,7 +77,10 @@ CHANGELOG_ESC="${CHANGELOG_ESC//\"/\\\"}"
 
 APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
 PUBLIC_BASE="https://${R2_PUBLIC_DOMAIN}"
-APK_URL="${PUBLIC_BASE}/${REMOTE_PREFIX}/app-release.apk"
+# APK 用版本化 key（不可变对象）：固定 key 会被公开域 CDN 启发式缓存串版
+# （2026-10-15 实测：28021 上传后公开域仍返回 28020 旧字节，客户端 sha256 校验失败）
+APK_KEY="${REMOTE_PREFIX}/app-${VERSION_CODE}.apk"
+APK_URL="${PUBLIC_BASE}/${APK_KEY}"
 SRC_URL="${PUBLIC_BASE}/${REMOTE_PREFIX}"
 
 echo "版本: v${VERSION_NAME} (build ${VERSION_CODE})"
@@ -88,8 +93,8 @@ if [ "$DRY_RUN" = 1 ]; then
   echo "  flutter build apk --release --split-per-abi --target-platform android-arm64 -P force-version-code-ignoring-abi=true --dart-define=UPDATE_SOURCE_URL=\"$SRC_URL\""
   echo "  sha256sum $APK"
   echo "  生成 updates/shiguang-update.json (apkUrl=$APK_URL)"
-  echo "  node scripts/upload-r2.mjs $APK $REMOTE_PREFIX/app-release.apk application/vnd.android.package-archive"
-  echo "  node scripts/upload-r2.mjs updates/shiguang-update.json $REMOTE_PREFIX/shiguang-update.json application/json"
+  echo "  node scripts/upload-r2.mjs $APK $APK_KEY application/vnd.android.package-archive"
+  echo "  node scripts/upload-r2.mjs updates/shiguang-update.json $REMOTE_PREFIX/shiguang-update.json application/json no-cache"
   exit 0
 fi
 
@@ -107,6 +112,7 @@ cat > updates/shiguang-update.json <<EOF
 {
   "versionCode": ${VERSION_CODE},
   "versionName": "${VERSION_NAME}",
+  "applicationId": "${APP_ID}",
   "apkUrl": "${APK_URL}",
   "sha256": "${SHA}",
   "changelog": "${CHANGELOG_ESC}"
@@ -118,10 +124,27 @@ echo "清单已生成: updates/shiguang-update.json"
 # --no-network-family-autoselection：Node 22 Happy Eyeballs 每次连接尝试默认 250ms 上限，
 # 本机到 Cloudflare RTT ~300ms 时 fetch 必超时；关闭竞速后按解析序直连（2026-10-07 实测）
 NODE_UP=(node --no-network-family-autoselection --dns-result-order=ipv4first)
-echo "上传 APK → s3://$R2_BUCKET/$REMOTE_PREFIX/app-release.apk"
-"${NODE_UP[@]}" scripts/upload-r2.mjs "$APK" "$REMOTE_PREFIX/app-release.apk" "application/vnd.android.package-archive"
+# APK 版本化 key（不可变，CDN 缓存无害）；清单固定 key 每次「检查更新」都 GET，
+# 必须 no-cache 强制回源重校验（2026-10-15 CDN 串版事故后加）
+echo "上传 APK → s3://$R2_BUCKET/$APK_KEY"
+"${NODE_UP[@]}" scripts/upload-r2.mjs "$APK" "$APK_KEY" "application/vnd.android.package-archive"
 echo "上传清单 → s3://$R2_BUCKET/$REMOTE_PREFIX/shiguang-update.json"
-"${NODE_UP[@]}" scripts/upload-r2.mjs updates/shiguang-update.json "$REMOTE_PREFIX/shiguang-update.json" "application/json"
+"${NODE_UP[@]}" scripts/upload-r2.mjs updates/shiguang-update.json "$REMOTE_PREFIX/shiguang-update.json" "application/json" "no-cache"
+
+# 新 APK 上传成功后清理旧版本 APK（版本化 key 不可变，旧对象只能删除；避免桶里堆积旧包被 CDN/直链命中）
+# 先传新后删旧：若删完新包传失败，桶里至少还留着上一个可用版本，客户端不至于拉空
+echo "清理旧版本 APK（保留 ${APK_KEY}）"
+OLD_KEYS="$("${NODE_UP[@]}" scripts/upload-r2.mjs --list "${REMOTE_PREFIX}/" | grep -E "^${REMOTE_PREFIX}/app-[0-9]+\.apk$" || true)"
+for k in $OLD_KEYS; do
+  if [ "$k" != "$APK_KEY" ]; then
+    "${NODE_UP[@]}" scripts/upload-r2.mjs --delete "$k"
+  fi
+done
+# 旧固定路径同步（2026-10-15）：28019 及更早的包把无前缀路径编进了 UPDATE_SOURCE_URL，
+# 浏览器直链也指向旧固定 key；不同步则老客户端/直链永远拿旧版。
+echo "同步旧固定路径（无前缀清单 + app-release.apk）"
+"${NODE_UP[@]}" scripts/upload-r2.mjs updates/shiguang-update.json updates/shiguang-update.json "application/json" "no-cache"
+"${NODE_UP[@]}" scripts/upload-r2.mjs "$APK" updates/app-release.apk "application/vnd.android.package-archive" "no-cache"
 
 echo "OK: 发布完成"
 echo "  更新源 URL（App 更新页填写）: ${SRC_URL}"

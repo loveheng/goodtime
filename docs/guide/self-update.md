@@ -32,6 +32,7 @@ updated: 2026-10-07
 2. 仓库根执行：`bash scripts/release-r2.sh`（可选 `--commit` 把清单纳入版本管理）。
    > 版本号：发布前先 `toolbox run bump-version --build` 抬 versionCode（须严格大于真机已装值，否则 app 判「已是最新」不提示）。changelog 用 `CHANGELOG=文案 bash scripts/release-r2.sh` 传入，留空则取最近一条 git commit 主题；注意 `.env` 里不要留空的 `CHANGELOG=` 行——`source .env` 会用它覆盖外部传入值（2026-10-07 发布实测踩坑，该行已注释）。
    脚本自动：读取 `pubspec.yaml` 版本 → `flutter build apk --release`（arm64-v8a）→ 算 sha256 → 生成 `updates/shiguang-update.json` → 上传 apk + json 到 R2 公开域。
+   > **APK 用版本化 key**（`app-<versionCode>.apk`，不可变对象），清单以 `Cache-Control: no-cache` 上传：公开域经 CDN，固定 key 会被启发式缓存串版（2026-10-15 实测：28021 上传成功但公开域持续返回 28020 旧 APK，客户端 sha256 校验拦截）。
 3. 脚本末尾打印「更新源 URL」，形如 `https://update.example.com/updates`，填进 App「应用更新」页。
    - `release-r2.sh` 已在 `flutter build` 时通过 `--dart-define=UPDATE_SOURCE_URL=...` 把该源编进 APK，因此**装上即自带默认更新源，首次无需手动填**；App「应用更新」页仍可手动改源覆盖。
 

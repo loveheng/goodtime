@@ -7,7 +7,7 @@ import 'package:shiguang/models/schedule_block.dart';
 import 'package:shiguang/ui/global_action_sheet.dart';
 import 'helpers/ui.dart';
 
-/// 全局动作 sheet（ui-spec §3.6）：入口可达、剩余计数、两段确认取消路径。
+/// 全局动作 sheet（ui-pages §3.6）：入口可达、剩余计数、两段确认取消路径。
 /// 一测一文件（helpers/ui.dart 约定）。nowMin 注入固定时刻保证确定性；
 /// 执行链的 DB 语义由 panic_command_test 覆盖（写+notify 后的 runAsync 轮询
 /// 在本夹具下会卡死——devlog 坑7，挂账）。

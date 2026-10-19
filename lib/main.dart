@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'app_services.dart';
+// Binder 插件后台入口（headless FlutterEngine 经 ShiguangMcpBinderService 拉起）。
+// 必须 import 以使该库编译进 app kernel，否则 DartEntrypoint 解析不到 mcpBinderMain。
+// （已标 @pragma('vm:entry-point') 防 tree-shake，静态无直接引用 → 忽略 unused_import）
+// ignore: unused_import
+import 'mcp_binder_entrypoint.dart';
 import 'data/settings.dart';
 import 'theme/tokens.dart';
 import 'ui/app_gate.dart';
@@ -23,7 +28,7 @@ Future<void> main() async {
   runApp(const ShiguangApp());
 }
 
-/// 拾光 App 根（ui-spec §0：Material 3 + 固定品牌色板、关闭动态取色；
+/// 拾光 App 根（ui-design §1–§3：Material 3 + 固定品牌色板、关闭动态取色；
 /// 2026-10-06 拍板解锁双主题：跟随系统/浅色/深色三档，settings.theme_mode）。
 class ShiguangApp extends StatefulWidget {
   const ShiguangApp({super.key});

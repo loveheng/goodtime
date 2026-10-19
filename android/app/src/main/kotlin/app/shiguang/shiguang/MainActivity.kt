@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
+import android.provider.Settings
 import android.content.pm.PackageInstaller
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
@@ -48,6 +50,16 @@ class MainActivity : FlutterActivity() {
                 } else {
                     startInstall(path, result)
                 }
+            } else if (call.method == "canRequestPackageInstalls") {
+                result.success(packageManager.canRequestPackageInstalls())
+            } else if (call.method == "openUnknownSourceSettings") {
+                // 直达本应用的「安装未知应用」系统开关页（首次自更新授权引导）
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:$packageName"),
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                result.success(true)
             } else {
                 result.notImplemented()
             }

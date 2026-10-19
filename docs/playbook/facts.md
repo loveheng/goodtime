@@ -26,7 +26,7 @@ updated: 2026-10-08
 系统分享/快记进来的原文已由 app 入册（state=raw、一字不解析），`list_plans` 返回体 `raw_facts` 就是你的待提炼队列：
 
 1. 逐条读 `raw_text`，过三刀路由判定性质；
-2. 是事实 → `upsert_facts` **回填同 id**（state=structured，逐槽位填：title 摘要化 / time_anchors 机读 / badge 仅 booking 类显式给 / hero_metrics ≤3 组 / constraints 三数组）；**rule 类锚（周一闭馆/每日截止）必须显式给 `rule_scope{valid_from,valid_to}`**（单日规则两者相等），缺则命令层 `invalid_request` 拒——杜绝红线永久生效误杀；星期约束 100% 落 `constraints.forbidden_weekdays`（不另写一遍 `days_of_week`）；
+2. 是事实 → `upsert_facts` **回填同 id**（state=structured，逐槽位填：title 摘要化 / time_anchors 机读 / badge 仅 booking 类显式给 / hero_metrics ≤3 组 / constraints 三数组）；**rule 类锚（周一闭馆/每日截止）必须显式给 `rule_scope{valid_from,valid_to}`**（单日规则两者相等），缺则命令层 `invalid_request` 拒——杜绝红线永久生效误杀；星期约束 100% 落 `constraints.forbidden_weekdays`（不另写一遍 `days_of_week`）；**回填 state=structured 必须显式给 `category` 与 `source_kind`**（出生确认条款：命令层校验，缺失即 `invalid_request` 打回并附 hint，严禁静默沿用 verbal 占位）；拿不准按 `verbal`/`verbal` 填也合法但续带「口头信息 · 待核实」角标——回显请用户确认终值；
 3. 是计划意图（快记粘的是想法不是凭证）→ add_plan 建真计划，并**归档原快记畸形 plan**（见快记收尾）；
 4. **低置信槽位宁可缺省不猜**——空槽位 UI 逐层隐藏，编造时刻=造第二真相；拿不准就问用户；
 5. 归属：plan_id=null（未归属池）的按上下文主动提议归属（「这条 D8724 短信看起来属于云南行，已挂到筹备计划」），用户否决即改挂或退回未归属；改挂=upsert_facts 传 plan_id；
@@ -40,8 +40,8 @@ updated: 2026-10-08
 
 1. 新短信=行程有变 → `upsert_facts` **同一 id**：锚点/车次更新，`raw_text` 传新原文（自动追加双段只增不清，不要重发旧文）；
 2. **挪块由人执行**——乘车块是 pinned（人终审件，和平条款：AI 不可挪）：你报出新起止（「改签到 D8732 09:30 开了，请把日程里的乘车块改到 09:30–11:50」），用户点块改时间；缓冲块（不 pinned）被水流融化后晨间 propose 自愈重排；
-3. 遗漏兜底：app 派生比对在凭证卡顶亮「与日程时间不一致，点此核对」琥珀条——看到琥珀提示，先读 fact 锚点再引导用户对齐块；
-4. 退票/作废：**必须先获用户同意**再 `upsert_facts state=voided`（存证保留、读侧全通道静默；关联 pinned 块自动解除钉定）；误分享文本的物理删除你无权做，只能提议用户删。
+3. 遗漏兜底：app 派生比对在凭证卡顶亮「与日程时间不一致，点此核对」琥珀条——比对按**重叠度贪心**：多段 span（往返票/入住+预约段）只与块重叠最大的那段比，无关段不误报；看到琥珀提示，先读 fact 锚点再引导用户对齐块；
+4. 退票/作废：**必须先获用户同意**再 `upsert_facts state=voided`（存证保留、排程读侧静默——不进 get_schedule 搭载/临场通关条/一致性比对与计数；UI「已作废 · N 条」折叠组可见、可查看与长按删除、可改回 `structured` 自愈）；关联 pinned 块自动解除钉定；误分享文本的物理删除你无权做，只能提议用户删。
 
 ## 提案反哺纪律
 

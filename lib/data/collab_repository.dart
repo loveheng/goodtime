@@ -18,6 +18,13 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import 'db.dart';
+
+/// 协同仓储族共用的底层句柄（sqflite 后端单例）。UI 经此装配协同仓储
+/// （BundleKeySource/OutboxRepository/CollabBundleRepository），不直连
+/// [Db.instance]——arch-guard R5：数据访问一律走 data 层。
+Future<Database> collabDatabase() => Db.instance();
+
 /// 已落库的单条协同事件投影（供 FSM 重放 / Wake 续拉校验）。
 class StoredCollabEvent {
   final int seqId;

@@ -775,6 +775,18 @@ class CommandHandler {
     // （枚举已在入口校验，此处只判出生状态）。非出生编辑缺省=沿用现值。
     final birth = existing.state == Artifact.stateRaw &&
         cmd.state == Artifact.stateStructured;
+    // 出生确认严进（§9.5-7，2026-10-08 拍板）：raw→structured 必须显式给出
+    // category/source_kind——缺失即拒，严禁静默沿用 verbal/verbal 占位（否则
+    // booking 凭证永久挂「口头信息 · 待核实」角标）。**防漏填不防填错**：AI 拿
+    // 不准时仍可填 verbal/verbal（合法组合），真正防线是 playbook 回显义务。
+    if (birth && (cmd.category == null || cmd.sourceKind == null)) {
+      throw ActionException(
+        'raw 提炼回填（state=structured）需要显式给出 category 与 source_kind（出生确认，§9.5-7）',
+        code: ActionErrorCode.invalidRequest,
+        hint: 'category: transit/ticket/hotel/venue/verbal；'
+            'source_kind: booking/announcement/verbal；拿不准请先按最贴切值填写并在回显中请用户确认——缺失不再静默沿用 verbal 占位',
+      );
+    }
     final patch = <String, Object?>{
       'title': ?cmd.title,
       'badge': ?badge,

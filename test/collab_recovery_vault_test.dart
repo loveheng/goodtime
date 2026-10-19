@@ -7,7 +7,6 @@ import 'package:shiguang/collab/crypto/key_store.dart';
 import 'package:shiguang/collab/crypto/secret_store.dart';
 import 'package:shiguang/collab/identity_store.dart';
 import 'package:shiguang/collab/recovery_vault.dart';
-import 'package:shiguang/collab/relay/auth_api.dart';
 import 'package:shiguang/collab/relay/relay_mock.dart';
 
 

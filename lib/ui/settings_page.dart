@@ -19,10 +19,14 @@ import 'mcp_settings_page.dart';
 import 'prefs_settings_page.dart';
 import 'rhythm_settings_page.dart';
 
-/// 设置页（ui-spec §1 子页化 2026-10-08 拍板）：目录形态——本页只留高频项
-/// （作息边界/外观）+ AI 建议 + 编辑器簇入口行（一周节奏/假期与出行/排程偏好/
-/// MCP 服务=独立子页，对齐 §1「SET→MCPG/EXC/SLOTS」原 IA）+ 应用更新/数据出口。
-/// 编辑器全量迁出：rhythm/exceptions/prefs/mcp_settings_page 四子页承载。
+/// 设置页（ui-pages §1 子页化 2026-10-08 拍板）：目录形态——本页只留高频项
+/// （作息边界/外观）+ AI 建议 + 编辑器簇入口行（一周节奏/假期与出行/排程偏好，
+/// 对齐 §1「SET→EXC/SLOTS」原 IA）+ 应用更新/数据出口 + 关于。
+/// 编辑器迁出：rhythm/exceptions/prefs 子页承载；MCP 服务子页改隐藏入口
+/// （长按「关于」标题唤出调试菜单→「MCP 调试服务」，照 goodshare 范本，
+/// 2026-10-15 拍板：MCP 不对外展示、仅内部调试）。
+/// 本页内嵌 AppShell 第三 Tab（2026-10-08 拍板）：无自有 AppBar，标题栏由外壳
+/// 提供（原全页路由遗留的自有标题栏 2026-10-15 随双「设置」标题修复摘除）。
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -66,8 +70,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 无自有 AppBar：标题栏由 AppShell 三 Tab 提供（设置 Tab=「设置」），
+    // 原全页路由已退役，遗留自有标题栏 2026-10-15 摘除（双「设置」叠杠修复）。
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
       body: ListenableBuilder(
         // account 一并入监听：协同账号登录/退出后回本页，摘要行即时刷新。
         listenable: Listenable.merge(
@@ -101,11 +106,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     title: '排程偏好',
                     subtitle: '粒度/排量/填充率/我的偏好',
                     page: (_) => const PrefsSettingsPage()),
-                _entryRow(context,
-                    icon: Icons.lan_outlined,
-                    title: 'MCP 服务',
-                    subtitle: AppServices.mcp.running ? '运行中' : '已停止',
-                    page: (_) => const McpSettingsPage()),
                 const SizedBox(height: 16),
                 _appearanceSection(context, settings),
                 const SizedBox(height: 16),
@@ -123,6 +123,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 16),
                 _exportSection(context),
+                const SizedBox(height: 16),
+                _aboutSection(context),
               ],
             );
           },
@@ -338,12 +340,68 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// 关于区（照 goodshare 范本，2026-10-15）：长按唤出调试菜单。
+  /// MCP 调试服务不进常规设置树，开发者由此进入。长按目标=整卡：
+  /// 真机实测（2026-10-15）标题小目标手指微移即被列表滚动抢走手势，整卡容错。
+  Widget _aboutSection(BuildContext context) {
+    return Card(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _showDebugSheet(context),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionTitle(context, '关于'),
+              Text('用户本地持有的日程台账。',
+                  style: TextStyle(fontSize: 11, color: StColors.textSecondary)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 调试菜单（长按「关于」唤出，照 goodshare 范本）：收纳不进常规设置树的内部调试入口。
+  Future<void> _showDebugSheet(BuildContext context) {
+    final mcp = AppServices.mcp;
+    return showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('调试菜单', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.developer_mode),
+              title: const Text('MCP 调试服务'),
+              subtitle: Text(
+                mcp.running ? '运行中 · 端口 ${mcp.port}' : '未运行（仅 loopback，内部调试用）',
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  ctx,
+                  MaterialPageRoute<void>(builder: (_) => const McpSettingsPage()),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _sectionTitle(BuildContext context, String text) => Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: Text(text, style: Theme.of(context).textTheme.titleSmall),
       );
 
-  /// 外观三档（ui-spec §0，2026-10-06 拍板解锁双主题）：跟随系统/浅色/深色。
+  /// 外观三档（ui-design §3.1，2026-10-06 拍板解锁双主题）：跟随系统/浅色/深色。
   /// theme_mode 为 uiOnly 键——仅人可写（AI 经 update_settings 触碰即拒）。
   Widget _appearanceSection(
       BuildContext context, Map<String, Object?> settings) {

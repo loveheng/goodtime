@@ -1,7 +1,8 @@
 {
-  "versionCode": 28019,
-  "versionName": "1.1.0",
-  "apkUrl": "https://r2.oklhj.eu.org/updates/app-release.apk",
-  "sha256": "279e2e3b9b92c6437f804060270bf22a815e026a4b6323d3f415aedb777a8bd9",
-  "changelog": "修复应用内自更新安装：改用系统 PackageInstaller 会话 API 直接写入安装会话，解决 Android 14+ 拉起安装时报「软件包无效」的问题"
+  "versionCode": 28025,
+  "versionName": "1.2.1",
+  "applicationId": "app.shiguang.shiguang",
+  "apkUrl": "https://r2.oklhj.eu.org/updates/shiguang/app-28025.apk",
+  "sha256": "90c3583989f5faa1b99a38ef3b5245f5f5a572e0759bc12848a787d81d184c82",
+  "changelog": "chore: 重推 v1.2.1 (28021) 清单——APK 改版本化 key app-28021.apk（修 CDN 串版）"
 }
