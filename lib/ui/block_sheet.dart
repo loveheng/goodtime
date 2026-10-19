@@ -11,7 +11,7 @@ import '../util/schedule_day.dart';
 import 'fact_sheet.dart';
 import 'schedule_page.dart';
 
-/// 块浮层（M1 表单形态，ui-spec §10「点块表单」；Landing Gear 抽屉 M4）：
+/// 块浮层（M1 表单形态，ui-pages §9.3「点块表单」；Landing Gear 抽屉 M4）：
 /// proposed=确认三键，confirmed=打卡/心流专注中(+30m，AI 块)/改时间，done=只查看。
 Future<void> showBlockSheet(BuildContext context, ScheduleBlock block) {
   return showModalBottomSheet<void>(
@@ -21,7 +21,7 @@ Future<void> showBlockSheet(BuildContext context, ScheduleBlock block) {
   );
 }
 
-/// 空槽点按创建（ui-spec §3.5）：未来时段「新建事项/从清单选」；
+/// 空槽点按创建（ui-pages §3.5）：未来时段「新建事项/从清单选」；
 /// 过去时段 → 逆向记账「刚才做了什么」（§10 事实通道，豁免排程校验）。
 Future<void> showNewBlockSheet(BuildContext context, DayData data,
     {int? slotStart, bool past = false}) {
@@ -33,7 +33,7 @@ Future<void> showNewBlockSheet(BuildContext context, DayData data,
   );
 }
 
-/// 否决原因可选输入（ui-spec §3.4 拍板回归，2026-10-08）：弹框留空=不带原因
+/// 否决原因可选输入（ui-pages §3.4 拍板回归，2026-10-08）：弹框留空=不带原因
 /// 直接否决；返回 null=用户取消、''=无原因否决、非空=带原因（AI 下轮排程参考）。
 Future<String?> showRejectReasonDialog(BuildContext context,
     {String title = '否决这条提案？'}) async {
@@ -117,7 +117,7 @@ class _BlockSheetState extends State<_BlockSheet> {
         duration: undo == null
             ? const Duration(seconds: 2)
             : const Duration(seconds: 5),
-        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-spec §3 层叠规则）
+        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-design §3.2 层叠规则）
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
         action: undo,
@@ -184,7 +184,7 @@ class _BlockSheetState extends State<_BlockSheet> {
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: StColors.textSecondary),
         ),
         // Landing Gear（§7 七轮）：顶部恒为启动第一步——行动前 60 秒是认知摩擦
-        // 最大的时段；「马上开始」用 headline 级（全 app 最大字，ui-spec §0.2）
+        // 最大的时段；「马上开始」用 headline 级（全 app 最大字，ui-design §2）
         if (plan?.notes != null && plan!.notes!.trim().isNotEmpty) ...[
           const SizedBox(height: 12),
           Text('马上开始',

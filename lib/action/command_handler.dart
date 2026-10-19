@@ -1593,7 +1593,7 @@ class CommandHandler {
     );
   }
 
-  // ---- 遗留区顺延（ui-spec §3.2，2026-10-06 拍板）----
+  // ---- 遗留区顺延（ui-pages §3.2，2026-10-06 拍板）----
 
   /// missed 块整体搬目标日：起止钟点不变、身份不变（postpone_count+1）。
   /// 仅 missed 可顺延；目标位与同日活块/固定占用重叠即拒（跨午夜溢出段按
@@ -1657,7 +1657,7 @@ class CommandHandler {
     );
   }
 
-  // ---- 现实熔断（§8 五轮拍板；ui-spec §3.6，2026-10-06 落地）----
+  // ---- 现实熔断（§8 五轮拍板；ui-pages §3.6，2026-10-06 落地）----
 
   /// 批量只作用于今日「未开始的 AI 块」（非 pinned、proposed/confirmed）：
   /// clear_remaining=逐块 melted 无痕回池；push_2h=整体 +120min（顺延计数+1），
@@ -2189,7 +2189,7 @@ class CommandHandler {
           final v = e.value.toString();
           if (v != 'system' && v != 'light' && v != 'dark') {
             throw ActionException(
-              'theme_mode 须为 system/light/dark（外观三档，ui-spec §0.3/§0.5）',
+              'theme_mode 须为 system/light/dark（外观三档，ui-design §3.1/§1.2）',
               code: ActionErrorCode.invalidRequest,
             );
           }

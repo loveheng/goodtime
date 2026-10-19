@@ -6,7 +6,7 @@ import '../app_services.dart';
 import '../action/queries.dart';
 import '../data/settings.dart';
 
-/// 排程偏好设置页（ui-spec §1 子页化 2026-10-08 拍板）：最小块粒度/单日排量上限/
+/// 排程偏好设置页（ui-pages §1 子页化 2026-10-08 拍板）：最小块粒度/单日排量上限/
 /// 填充率上限/天气城市/我的偏好/身份画像。各字段独立提交（update_settings
 /// 字段级），改一个存一个；非法值由命令层拦截。自 settings_page 大平铺迁出。
 class PrefsSettingsPage extends StatefulWidget {

@@ -19,7 +19,7 @@ import '../widgets/now_next_card.dart';
 import 'block_sheet.dart';
 import 'global_action_sheet.dart';
 
-/// 今日页（ui-spec §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
+/// 今日页（ui-pages §3；M1 骨架 + M3 心理层）：双轨仪表盘（🔥今日核心×🛡️自由留白
 /// ×安全线徽章）+ 分级确认卡（火种突出/Routine 折叠/两态收缩）+ 时间轴
 /// （1dp=1min、fixed 背景带、派生保护区三级绘制过滤、确认三键、+30m、空槽创建）。
 /// 遗留区/四形态/三手势按里程碑推进。
@@ -195,7 +195,7 @@ class _SchedulePageState extends State<SchedulePage> {
         _confirmCollapsed = false;
       });
 
-  // ---- 视图横滑翻页（ui-spec §6.4，2026-10-06 拍板）----
+  // ---- 视图横滑翻页（ui-design §5.4，2026-10-06 拍板）----
 
   double _swipeDx = 0;
 
@@ -506,7 +506,7 @@ class _EnergyToggle extends StatelessWidget {
   }
 }
 
-/// 昨日遗留区（ui-spec §3.2）：昨日 missed 逐条三键——补勾（自动带补记标）/
+/// 昨日遗留区（ui-pages §3.2）：昨日 missed 逐条三键——补勾（自动带补记标）/
 /// 顺延今日/退回愿望池；守卫态与 Clean Slate 保护期整区淡出（_DayView 门控）。
 class _LeftoverSection extends StatelessWidget {
   const _LeftoverSection({required this.data});
@@ -1186,7 +1186,7 @@ class _ProtectedBand extends StatelessWidget {
   }
 }
 
-/// 单个块卡片（ui-spec §6.1 四形态 + §6.2 状态叠加 + §6.3 来源角标）
+/// 单个块卡片（ui-design §5.1 四形态 + §5.2 状态叠加 + §5.3 来源角标）
 /// 外挂三手势（§6.4/§6.5：长按坍缩/左滑换乘/右滑融化 + 手势锁 + 卡点 + 触觉）。
 class _BlockCard extends StatelessWidget {
   const _BlockCard({required this.block, required this.plan, required this.data, required this.onTap});
@@ -1350,7 +1350,7 @@ class _BlockCard extends StatelessWidget {
             style: const TextStyle(fontSize: 9, color: Colors.white, height: 1.2)),
       );
 
-  /// 🎫 凭证微标（ui-spec §0.4）：票形 + badge 文本（有则显，ellipsis 96dp 同
+  /// 🎫 凭证微标（ui-design §5.3）：票形 + badge 文本（有则显，ellipsis 96dp 同
   /// 凭证卡 badge 口径）；微标不挡块主文本（左下挂角）。
   Widget _voucherMark(String? badge, Color textColor) => Row(
         mainAxisSize: MainAxisSize.min,
@@ -1420,7 +1420,7 @@ class _GestureBlockState extends State<_GestureBlock> {
         content: Text(r.note ?? '完成'),
         duration:
             undo == null ? const Duration(seconds: 2) : const Duration(seconds: 5),
-        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-spec §3 层叠规则）
+        // 浮动+FAB 净空：撤销钮不被右下角快记 FAB 遮挡（ui-design §3.2 层叠规则）
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
         action: undo,
@@ -1440,7 +1440,7 @@ class _GestureBlockState extends State<_GestureBlock> {
         canUndo: true);
   }
 
-  /// 换乘抽屉（ui-spec §6.4 拍板形态回归，2026-10-08）：左滑过卡点呼出候选列表
+  /// 换乘抽屉（ui-design §5.4 拍板形态回归，2026-10-08）：左滑过卡点呼出候选列表
   /// （待安排池 light/anywhere，swapCandidatesFor 时长相近优先），显式挑选后经
   /// SwapBlockCommand(targetPlanId) 换入——原任务无痕回池；空池直接轻提示不开抽屉。
   Future<void> _swap() async {

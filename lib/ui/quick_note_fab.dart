@@ -9,7 +9,7 @@ import '../data/settings.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
-/// 快记入口（ui-spec §1/§3；2026-10-06 拍板）：右下角 FAB + 键盘吸附展开抽屉，
+/// 快记入口（ui-pages §1/§3；2026-10-06 拍板）：右下角 FAB + 键盘吸附展开抽屉，
 /// 自顶部常驻快记条迁改（大屏单手触达；放工守卫态不撤=「快记永不关门」平移）。
 
 /// 快记草稿仓：三字段静默持久化于 app_settings KV（quick_note_draft_* 内部键，
@@ -229,7 +229,7 @@ class _QuickNotePanelState extends State<QuickNotePanel> {
         SnackBar(
           content: const Text('已收入清单'),
           duration: const Duration(seconds: 1),
-          // 浮动+FAB 净空：不与右下角快记 FAB 重叠（ui-spec §3 层叠规则）
+          // 浮动+FAB 净空：不与右下角快记 FAB 重叠（ui-design §3.2 层叠规则）
           behavior: SnackBarBehavior.floating,
           margin:
               const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),

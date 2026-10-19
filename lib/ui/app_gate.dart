@@ -8,7 +8,7 @@ import 'app_shell.dart';
 import 'onboarding_page.dart';
 
 /// 入口闸门：settings 未初始化（缺作息边界）→ 首启引导；完成即进主框架。
-/// 引导是 propose 硬拒（§6 校验铁律）的 UI 前置（ui-spec §2）。
+/// 引导是 propose 硬拒（§6 校验铁律）的 UI 前置（ui-pages §2）。
 ///
 /// 决策响应式：初始查一次，此后随 repo 写入通知（revision 变化）重查——
 /// 引导完成播种 / 设置被清空都能即时翻转，不依赖回调续跑。

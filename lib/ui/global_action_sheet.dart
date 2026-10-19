@@ -7,7 +7,7 @@ import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
-/// 全局动作 sheet（ui-spec §3.6）：标题「遇到突发情况？」，三选项+两段式确认；
+/// 全局动作 sheet（ui-pages §3.6）：标题「遇到突发情况？」，三选项+两段式确认；
 /// 「熔断优先于微调」一级直达。human 块与 pinned 硬行程永不动（和平条款），
 /// 底部附注明示。清空/后移走 PanicClearCommand（命令层原子执行），
 /// 降档走 today_energy=low + ReflowDay 水流重算。

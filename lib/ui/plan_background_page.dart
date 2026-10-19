@@ -8,8 +8,8 @@ import '../models/background.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
-/// 计划「背景」子页（ui-spec §1/§5 子页化 2026-10-08 拍板）：自 plan_detail_page
-/// 整区迁出（背景草案 §3 入口 1；文案=ui-spec §0.4 背景区文案组）——条目卡=
+/// 计划「背景」子页（ui-pages §1/§5 子页化 2026-10-08 拍板）：自 plan_detail_page
+/// 整区迁出（背景草案 §3 入口 1；文案=ui-pages §9.4 背景区文案组）——条目卡=
 /// content＋标签小字＋日期角标（派生渲染不入库，无窗不显示）；超期沉
 /// 「过去的背景」折叠组，清理动作（逐条删/清空已过期，均二次确认）仅在组内、
 /// 主列表不加清理图标降噪。写通道=UpsertBackground/MergeBackgrounds（human），
@@ -119,7 +119,7 @@ class _PlanBackgroundPageState extends State<PlanBackgroundPage> {
     return d.last.compareTo(isoDate(DateTime.now())) < 0;
   }
 
-  /// 日期角标（ui-spec §0.4）：[10.08–10.10]，首末日记起止，派生渲染不入库。
+  /// 日期角标（ui-pages §9.4）：[10.08–10.10]，首末日记起止，派生渲染不入库。
   static String _badge(List<String> dates) {
     String f(String iso) {
       final d = tryParseIsoDate(iso)!;
@@ -345,7 +345,7 @@ class _PlanBackgroundPageState extends State<PlanBackgroundPage> {
   }
 }
 
-/// 「过去的背景」折叠组（ui-spec §0.4）：超期条目收纳＋组内清理，与「收起的旧
+/// 「过去的背景」折叠组（ui-pages §9.4）：超期条目收纳＋组内清理，与「收起的旧
 /// 想法」同收纳模式；逐条可点开编辑。
 class _PastBackgroundsGroup extends StatefulWidget {
   const _PastBackgroundsGroup({

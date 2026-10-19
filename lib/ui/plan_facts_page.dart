@@ -8,8 +8,8 @@ import '../models/artifact.dart';
 import '../theme/tokens.dart';
 import 'fact_sheet.dart';
 
-/// 计划「随行凭证」子页（ui-spec §1/§5 子页化 2026-10-08 拍板）：自
-/// plan_detail_page 整区迁出（fact 草案 §2.1 入口 1；文案=ui-spec §0.4 凭证区组）
+/// 计划「随行凭证」子页（ui-pages §1/§5 子页化 2026-10-08 拍板）：自
+/// plan_detail_page 整区迁出（fact 草案 §2.1 入口 1；文案=ui-pages §9.5 凭证区组）
 /// ——子树派生聚合（一趟旅行的根计划=行程凭证总览页）；raw=聚合琥珀卡
 /// 「N 条原文待提炼」（金样本 A1 口径）；全部锚点最晚日历日早于今日沉
 /// 「过去的凭证」折叠组；voided 不进主卡面，沉底部「已作废 · N 条」折叠组
@@ -209,7 +209,7 @@ class _RawFactsCard extends StatelessWidget {
   }
 }
 
-/// 折叠组（ui-spec §0.4）：「过去的凭证」=全部锚点最晚日历日早于今日的派生
+/// 折叠组（ui-pages §9.5）：「过去的凭证」=全部锚点最晚日历日早于今日的派生
 /// 折叠（span 取 end_date），与「过去的背景」同收纳模式；「已作废」=state=voided
 /// 存证（§1.2 双通道口径，2026-10-08 拍板）。二者同形态：逐条点开通关卡、
 /// 长按删除（§0.4 凭证删除，仅 human）。

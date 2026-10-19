@@ -5,7 +5,7 @@ import 'package:shiguang/models/schedule_block.dart';
 import 'package:shiguang/util/schedule_day.dart';
 import 'helpers/ui.dart';
 
-/// 现实熔断命令（§8/ui-spec §3.6）：clear_remaining 与 push_2h 批量语义与原子性。
+/// 现实熔断命令（§8/ui-pages §3.6）：clear_remaining 与 push_2h 批量语义与原子性。
 void main() {
   setUp(() async {
     await setUpUiTest();

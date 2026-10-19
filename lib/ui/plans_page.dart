@@ -17,9 +17,9 @@ import 'fact_sheet.dart';
 import 'plan_detail_page.dart';
 import 'quick_note_fab.dart';
 
-/// 清单页 M1（ui-spec §5 裁剪）：三分区单页滚动——今天（今日有块的 plan）/
+/// 清单页 M1（ui-pages §5 裁剪）：三分区单页滚动——今天（今日有块的 plan）/
 /// 当下推进中（有未来块）/ 待安排（四象限分组、空组隐藏、Q4=愿望池）。
-/// 卡片点按进计划详情页（全页路由，2026-10-07 对齐 ui-spec §5 定稿；
+/// 卡片点按进计划详情页（全页路由，2026-10-07 对齐 ui-pages §5 定稿；
 /// 编辑 sheet 浮层形态随背景区迁入退役）；长按归档/删除；
 /// 「待确认 N 项」角标 + 🔥 今日核心标记。
 /// 2026-10-08 三批回归（N1）：页顶搜索框按标题过滤——只影响各分区**可见条目**
@@ -408,7 +408,7 @@ class _PlanCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         borderRadius: BorderRadius.circular(StScale.radiusCard),
-        // 点按=进计划详情页（ui-spec §5 全页路由；原编辑 sheet 退役，2026-10-07）
+        // 点按=进计划详情页（ui-pages §5 全页路由；原编辑 sheet 退役，2026-10-07）
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
               builder: (_) => PlanDetailPage(planId: plan.id!)),
@@ -489,7 +489,7 @@ class _PlanCard extends StatelessWidget {
     );
     final fresh = result.snapshot?['version'] as int? ?? plan.version;
     messenger.showSnackBar(SnackBar(
-      // 浮动+FAB 净空：撤销钮不能被右下角快记 FAB 遮挡（ui-spec §3 层叠规则）
+      // 浮动+FAB 净空：撤销钮不能被右下角快记 FAB 遮挡（ui-design §3.2 层叠规则）
       behavior: SnackBarBehavior.floating,
       margin:
           const EdgeInsets.fromLTRB(16, 0, 16, StScale.fabClearanceDp),
@@ -547,7 +547,7 @@ class _PlanCard extends StatelessWidget {
     );
   }
 
-  /// 删除二次确认（词汇表「删除」，ui-spec §0.4 清单长按组）。
+  /// 删除二次确认（词汇表「删除」，ui-pages §9.3 清单长按组）。
   Future<void> _confirmDelete(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,

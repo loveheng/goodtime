@@ -7,7 +7,7 @@ import 'package:shiguang/models/plan.dart';
 import 'helpers/ui.dart';
 
 /// 计划「随行凭证」子页 voided 可见出口（fact-user-relay-draft.md §1.2 双通道
-/// 口径，2026-10-08 拍板；文案=ui-spec §0.4）：排程读侧全静默，UI 沉底部
+/// 口径，2026-10-08 拍板；文案=ui-pages §9.5）：排程读侧全静默，UI 沉底部
 /// 「已作废 · N 条」折叠组，可查看/长按删除（仅 human）。
 void main() {
   setUp(() async {

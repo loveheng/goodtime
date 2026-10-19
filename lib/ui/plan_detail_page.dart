@@ -10,7 +10,7 @@ import '../util/schedule_day.dart';
 import 'plan_background_page.dart';
 import 'plan_facts_page.dart';
 
-/// 计划详情页（ui-spec §5 定稿：全页路由；2026-10-08 二批 UX 拆分拍板）：
+/// 计划详情页（ui-pages §5 定稿：全页路由；2026-10-08 二批 UX 拆分拍板）：
 /// **默认查看态**——roadmap 进度 / notes 首行「马上开始」高亮框 / open_items
 /// 手答（人机澄清闭环）/ 子树（≤3 级）/「背景」「随行凭证」子页入口行 /
 /// 「排期」快捷动作；右上「编辑」进入编辑态（四字段表单+保存，保存后回查看态）。
@@ -256,7 +256,7 @@ class _PlanDetailPageState extends State<PlanDetailPage> {
                       color: Theme.of(context).colorScheme.primary)),
             ),
           Text(plan.title, style: Theme.of(context).textTheme.titleLarge),
-          // Landing Gear（ui-spec §5 notes 首行启动第一步高亮框）
+          // Landing Gear（ui-pages §5 notes 首行启动第一步高亮框）
           if (plan.notes != null && plan.notes!.trim().isNotEmpty) ...[
             const SizedBox(height: 12),
             Container(

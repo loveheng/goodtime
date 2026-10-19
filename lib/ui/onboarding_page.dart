@@ -8,7 +8,7 @@ import '../models/fixed_slot.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
-/// 首启引导 4 步（ui-spec §2）：①作息边界（必填不可跳）→②一周节奏（可跳）
+/// 首启引导 4 步（ui-pages §2）：①作息边界（必填不可跳）→②一周节奏（可跳）
 /// →③排程数值偏好（可跳）→④关于你（身份画像+我的偏好，可跳但推荐）。
 /// 完成即写 settings+fixed_slots；未完成无法进主框架。
 class OnboardingPage extends StatefulWidget {

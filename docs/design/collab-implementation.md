@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-08
+updated: 2026-10-19
 ---
 
 # 协同日程开发文档（collab-implementation）
@@ -71,7 +71,7 @@ updated: 2026-10-08
 
 ## 5. Phase 4：UI 组装（预计 4–5 天）
 
-**目标**：六页全通（§11.2），文案先入 ui-spec §0.4 词汇表再上屏（项目硬约束）。
+**目标**：六页全通（§11.2），文案先入 ui-design §4 / ui-pages §9 再上屏（项目硬约束）。
 
 | 步骤 | 内容 | 验收线 |
 |---|---|---|
@@ -89,7 +89,7 @@ updated: 2026-10-08
 | 5.1 | BYOS WebDAV 驱动（追加日志/快照宽限期，§5.5）+ 官方 R2 兜底（Presigned 直传） | 断网积压重连补传演练 |
 | 5.2 | 换绑向导（握手文件校验/迁移/官方 PURGE）+ 首页常驻横幅（§5.6） | 迁移后旧节点清空 |
 | 5.3 | 换机全量还原演练：新设备登录 → participating → sync → Key Ring 还原 → 时间轴重现 | 零数据丢失（设计稿 §12 表 Phase 5 验收线） |
-| 5.4 | 收尾并入：schedule-app §11 台账行、functional-spec/ui-spec 联动条目、playbook 收录、arch-guard 扩展 | docs-lint + arch-guard 全绿 |
+| 5.4 | 收尾并入：schedule-app §11 台账行、functional-spec/ui-design/ui-pages 联动条目、playbook 收录、arch-guard 扩展 | docs-lint + arch-guard 全绿 |
 
 ## 7. 联调清单（每 Phase 退出跑一遍）
 

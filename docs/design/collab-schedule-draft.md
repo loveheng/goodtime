@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-08
+updated: 2026-10-19
 ---
 
 # 协同日程设计（collab-schedule-draft）
@@ -767,4 +767,4 @@ Phase 0 协议契约冻结（信封/枚举/base_revision/DDL 脚本）
 | 4 UI 组装 | 发起人 Ghost Layer 独立轨 / 成员混合视图 / 双维拒绝弹窗 / 伪聊天时间轴 | 全流程走查（发起→拒绝→转派→CONFIRMED） |
 | 5 存储容灾 | BYOS 追加日志 / R2 Presigned 直传 / 换绑 Banner / recovery_vault | 换机拉回全量还原演练 |
 
-> 收尾并入：schedule-app §11 台账行 + functional-spec/ui-spec 联动条目 + playbook 收录 + 测试（分层一测一文件），随各 Phase 对应切片落账。Phase 2–4 依赖拾光主仓，Phase 1 在 `shiguang-relay` 独立仓推进（§8.4）。
+> 收尾并入：schedule-app §11 台账行 + functional-spec/ui-design/ui-pages 联动条目 + playbook 收录 + 测试（分层一测一文件），随各 Phase 对应切片落账。Phase 2–4 依赖拾光主仓，Phase 1 在 `shiguang-relay` 独立仓推进（§8.4）。

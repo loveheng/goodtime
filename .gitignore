@@ -48,3 +48,6 @@ context/CURRENT
 
 
 .env
+# AtomCode session-local
+.atomcode/
+*.bp.lock

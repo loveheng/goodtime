@@ -10,7 +10,7 @@
 ## 项目硬约束（详情见事实源 skill）
 
 - flutter 不在默认 PATH：先 `export PATH="$HOME/flutter/bin:$PATH"`
-- 设计变更回 `docs/design/schedule-app.md` §11 拍板台账留痕；界面文案先入 ui-spec §0.4 词汇表再上屏
+- 设计变更回 `docs/design/schedule-app.md` §11 拍板台账留痕；界面文案先入 ui-design §4 术语映射 / ui-pages §9 文案清单再上屏
 - docs/ 改动跑 `toolbox run docs-lint`
 
 ## 项目 skill

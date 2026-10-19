@@ -18,7 +18,7 @@ import 'mcp_settings_page.dart';
 import 'prefs_settings_page.dart';
 import 'rhythm_settings_page.dart';
 
-/// 设置页（ui-spec §1 子页化 2026-10-08 拍板）：目录形态——本页只留高频项
+/// 设置页（ui-pages §1 子页化 2026-10-08 拍板）：目录形态——本页只留高频项
 /// （作息边界/外观）+ AI 建议 + 编辑器簇入口行（一周节奏/假期与出行/排程偏好，
 /// 对齐 §1「SET→EXC/SLOTS」原 IA）+ 应用更新/数据出口 + 关于。
 /// 编辑器迁出：rhythm/exceptions/prefs 子页承载；MCP 服务子页改隐藏入口
@@ -387,7 +387,7 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Text(text, style: Theme.of(context).textTheme.titleSmall),
       );
 
-  /// 外观三档（ui-spec §0，2026-10-06 拍板解锁双主题）：跟随系统/浅色/深色。
+  /// 外观三档（ui-design §3.1，2026-10-06 拍板解锁双主题）：跟随系统/浅色/深色。
   /// theme_mode 为 uiOnly 键——仅人可写（AI 经 update_settings 触碰即拒）。
   Widget _appearanceSection(
       BuildContext context, Map<String, Object?> settings) {

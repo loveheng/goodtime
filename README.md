@@ -81,7 +81,7 @@ flutter build apk          # 构建安装包
 本项目有 AI 协作约定（见 `AGENTS.md`）与项目专属 skill（`shiguang-workflow` / `shiguang-index` / `shiguang-docs`）。
 
 - **设计变更**回 [`docs/design/schedule-app.md`](docs/design/schedule-app.md) §11 拍板台账留痕。
-- **界面文案**先入 `ui-spec §0.4` 词汇表再上屏（零黑话：火种→今日核心、融化→暂缓并收回清单、熔断→遇到突发情况 ...）。
+- **界面文案**先入 `ui-design §4` 术语映射 / `ui-pages §9` 文案清单再上屏（零黑话：火种→今日核心、融化→暂缓并收回清单、熔断→遇到突发情况 ...）。
 - **docs 改动**跑 `toolbox run docs-lint`（无 toolbox 可跳过）。
 - 用户侧偏好写在明处（`settings.user_rules`），AI 经 `update_settings` 维护，拒绝黑盒猜测。
 

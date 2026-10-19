@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-08
+updated: 2026-10-19
 ---
 
 # 事实挂载 · 用户/好友体系 · 外部盲中继 — 设计草案
@@ -197,7 +197,7 @@ flowchart TD
 
 - 挂载 sheet：预填原文 → 计划搜索/最近/行程例外日置顶 → 确认，两次点击内完成，不过度打断分享原任务；顶部常驻「未归属 N 条」折叠组（未归属池宿主，见下条）。
 - **未归属池**：plan_id=null 的凭证派生为「未归属 N 条」折叠组，**宿主=分享挂载 sheet 常驻组**（2026-10-07 D2 拍板——计划详情凭证区按 plan 组织，无宿主条目不进计划页；分享场景顺手归属，AI 对话主动提议归属为主回收通道）；AI 下一轮主动提议归属（「这条 D8724 短信看起来属于云南行，已挂到筹备计划」），人在 app 内长按凭证卡可改挂（human 通道，人=终审）。
-- **App 内访问主场（2026-10-07 定稿修正，堵 D2 断层）**：挂载 sheet 仅由系统分享（ACTION_SEND）触发——不在分享动作里的用户对未归属池零可见面（幽灵数据）。**计划列表页顶部增派生提示行「N 条未归属凭证 〉」**（N=0 隐藏；派生计数不入库，与「过去的凭证」同纪律），点击打开**未归属管理面板**（复用挂载 sheet 常驻组的折叠卡片列表形态：查看/长按改挂/删除，删除=DeleteArtifact 仅 human）。D2 宿主裁决不变——详情页不混入未归属条目照旧，只是给常驻组补一个不借道分享的入口；界面文案先入 ui-spec §0.4（词条已备 §2.5）。
+- **App 内访问主场（2026-10-07 定稿修正，堵 D2 断层）**：挂载 sheet 仅由系统分享（ACTION_SEND）触发——不在分享动作里的用户对未归属池零可见面（幽灵数据）。**计划列表页顶部增派生提示行「N 条未归属凭证 〉」**（N=0 隐藏；派生计数不入库，与「过去的凭证」同纪律），点击打开**未归属管理面板**（复用挂载 sheet 常驻组的折叠卡片列表形态：查看/长按改挂/删除，删除=DeleteArtifact 仅 human）。D2 宿主裁决不变——详情页不混入未归属条目照旧，只是给常驻组补一个不借道分享的入口；界面文案先入 ui-design §4 / ui-pages §9（词条已备 §2.5）。
 - **AI 消化 SOP**（playbook `facts.md`）：`list_plans` 见「N 条原文待提炼」→ 读 raw_text 解析 → `upsert_facts` 回填槽位（含出生确认，见 §1.2）→ 归属建议。将来 MCP prompts 实装时同源收编（SSOT 实现差异 6 的顺带兑现）。
 
 人机分工对照（与对话路径的差异）：
@@ -256,7 +256,7 @@ flowchart TD
 
 类别映射验收例：动车票 hero=`D8724 / 05车12F / 2B检票口`；索道票 hero=`预约段 10:30–11:00 / 预约码 994821`；博物馆须知无 hero（整层消失）、时空网格扛鼎=`周一闭馆 / 16:00 停止入场`；酒店 hero=`确认号 / 入住 10-17 / 离店 10-19`；口信卡=💬+原话+待核实。
 
-### 2.5 词汇表建议（先入 ui-spec §0.4 再上屏，硬纪律）
+### 2.5 词汇表建议（先入 ui-design §4 / ui-pages §9 再上屏，硬纪律）
 
 | 内部术语 | 界面文案 |
 |---|---|
@@ -441,7 +441,7 @@ GET  /v1/mailbox/{plan_id}/msg?since= 拉取增量
 
 | # | 原定项 | 状态 | 落点（证据） |
 |---|---|---|---|
-| 1 | 文档四件套 | ✅ | 本草案（§0 留痕 + §9 裁决）／ `schedule-app.md` §11 三行（artifacts 表 v4 + upsert_facts 通道 + 二期裁决）／ `ui-spec.md` §0.4 词汇 + §5 计划详情分区 + §6 角标（含临场通关条文案，2026-10-08）／ `golden-samples.md` #4 附录 A1–A7（附录状态行 2026-10-08 已同步为「MVP 已落地」） |
+| 1 | 文档四件套 | ✅ | 本草案（§0 留痕 + §9 裁决）／ `schedule-app.md` §11 三行（artifacts 表 v4 + upsert_facts 通道 + 二期裁决）／ `ui-design.md` §4 词汇 + `ui-pages.md` §5 计划详情分区 + `ui-design.md` §5.3 角标（含临场通关条文案，2026-10-08）／ `golden-samples.md` #4 附录 A1–A7（附录状态行 2026-10-08 已同步为「MVP 已落地」） |
 | 2 | `db.dart` **v4** | ✅ | `_ensureArtifactsTable`（v3→v4 分段幂等）+ 新建库 `_createAll`；含 attachments 预留列 + captured_by 钉子；`repository.exportAll` 六面含 artifacts |
 | 3 | 命令层 | ✅（含一处回改） | `UpsertFactsCommand`/`DeleteArtifactCommand`（双写铁律 `Artifact.payloadWithRefs`、badge 12 截断、hero_metrics 截前 3、voided 降 pinned）／ `UpsertBackground`+`MergeBackgrounds`（同批，原子批+终态预算）／ `delete_plan` 两新表：背景级联销毁 ✅、artifacts detach ✅ —— **但 `block_id` 三分支未落地（§9.5-8）** |
 | 4 | 工具面 | ✅ | `upsert_facts` schema + `get_schedule` 逐日搭载（窗口对齐返回视窗、按计划分组）+ `upcoming_facts`（~14 天四字段投影）；背景侧 +2 `upsert_background`/`merge_backgrounds` |
@@ -509,7 +509,7 @@ enum MomentRole {
 
 - **机读规则**：`kind == 'moment' && role ∈ {departure, deadline, checkin, checkout}` → 有效行动锚点；`arrival`/`reference` 自动忽略。
 - **存量兼容（硬要求）**：已落库凭证 `role` 为中文自由串（「发车」「停止检票」）。枚举上线后旧值非法——**读侧容错：未知 `role` 按 `reference` 处理（不触发）+ `[DEGRADE]` 日志；不迁移、不改写 `payload`**（payload 单一真相 + 原文永存）。工具面 `role` 由自由串改枚举且 moment 必填。
-- 契约存英文枚举值，UI 出白话（映射见 ui-spec §0.4）；§1.2 示例中的中文 `role` 为旧口径展示值，新写入一律英文枚举。
+- 契约存英文枚举值，UI 出白话（映射见 ui-pages §9.6）；§1.2 示例中的中文 `role` 为旧口径展示值，新写入一律英文枚举。
 
 **合成公式（因果叠加，非二选一）**：
 
@@ -574,7 +574,7 @@ enum MomentRole {
 
 | 分期 | 落点 |
 |---|---|
-| 分期二（临场通关条） | 工具面 `role` 枚举化（moment 必填）+ `ArtifactRules` 增 120/30 常量 + 今日页通关条组件（层序/折叠/横滑/跳转）+ 文案先入 ui-spec §0.4 |
+| 分期二（临场通关条） | 工具面 `role` 枚举化（moment 必填）+ `ArtifactRules` 增 120/30 常量 + 今日页通关条组件（层序/折叠/横滑/跳转）+ 文案先入 ui-pages §9 |
 | V1.5（硬红线） | `rule_scope` 写入口校验 + 派生失活判定 + `propose`/`adjust` 校验钩子 + `rejected_by_facts` 拒绝体 + human 通道琥珀角标 |
 | 回改（已落地项） | 多 span 贪心比对（`fact_sheet.dart`）/ raw→structured 必填（`command_handler.dart`）/ `delete_plan` 三分支（`command_handler.dart`） |
 | 测试 | 一测一文件照旧，repository/commands/tools/ui 各层增对应文件 |

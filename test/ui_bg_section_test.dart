@@ -6,7 +6,7 @@ import 'package:shiguang/models/plan.dart';
 import 'package:shiguang/util/schedule_day.dart';
 import 'helpers/ui.dart';
 
-/// 计划「背景」子页流程（背景草案 §3 入口 1；文案=ui-spec §0.4；一测一文件约定）。
+/// 计划「背景」子页流程（背景草案 §3 入口 1；文案=ui-pages §9.4；一测一文件约定）。
 /// 2026-10-08 拆分后：详情页「背景」入口行 → PlanBackgroundPage 子页承载全部 CRUD。
 void main() {
   setUp(() async {

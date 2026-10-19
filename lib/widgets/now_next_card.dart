@@ -8,7 +8,7 @@ import '../models/schedule_block.dart';
 import '../theme/tokens.dart';
 import '../util/schedule_day.dart';
 
-/// 当前/下一个任务卡片（ui-spec §3 派生 glance）：实时显示此刻在进行的事与
+/// 当前/下一个任务卡片（ui-pages §3 派生 glance）：实时显示此刻在进行的事与
 /// 紧接着要开始的事。数据经 [AppServices.repo] 监听（台账改写即时刷新）+ 每分钟
 /// 墙钟 tick（当前块到点→下一个自动顶上）。核心判定走纯函数 [pickNowAndNext]，
 /// 与 UI 解耦、可单测。

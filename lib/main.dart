@@ -17,7 +17,7 @@ Future<void> main() async {
   runApp(const ShiguangApp());
 }
 
-/// 拾光 App 根（ui-spec §0：Material 3 + 固定品牌色板、关闭动态取色；
+/// 拾光 App 根（ui-design §1–§3：Material 3 + 固定品牌色板、关闭动态取色；
 /// 2026-10-06 拍板解锁双主题：跟随系统/浅色/深色三档，settings.theme_mode）。
 class ShiguangApp extends StatefulWidget {
   const ShiguangApp({super.key});
