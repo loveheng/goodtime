@@ -4,12 +4,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
-import '../data/repository.dart';
 import '../data/settings.dart';
 import '../mcp/mcp_server.dart';
+import '../mcp/settings_kv.dart';
+import '../mcp/tool_face.dart';
 import 'http_transport.dart';
 import 'relay_client.dart';
-import 'weather.dart';
 import '../update/remote_config_store.dart';
 import 'foreground_task_init.dart';
 
@@ -22,9 +22,13 @@ import 'foreground_task_init.dart';
 /// update_settings 命令白名单）；前台服务保活（Doze 下持 CPU 锁+Wi-Fi 锁，
 /// 见 foreground_task_init）。
 class McpController extends ChangeNotifier {
-  McpController({required this.repo});
+  McpController({required this.kv, required this.toolFaceFactory});
 
-  final Repository repo;
+  /// KV 持久化端口（拾光侧由 Repository 隐式实现，走 app_settings 表）。
+  final SettingsKv kv;
+
+  /// 工具面工厂（宿主装配业务工具面 + 天气等后端；内核不沾 Repository）。
+  final McpToolFace Function() toolFaceFactory;
 
   /// AI 经 suggest_user_setting 推送的「建议用户改设置」广播通道（app UI 监听弹提示）。
   final StreamController<Map<String, Object?>> _suggestionController =
@@ -53,12 +57,12 @@ class McpController extends ChangeNotifier {
 
   /// 冷启动装配：读/生成 token，并按上次开关状态自动恢复服务。
   Future<void> restoreIfNeeded() async {
-    _token = await repo.settingsGet(_keyToken);
+    _token = await kv.settingsGet(_keyToken);
     if (_token == null || _token!.isEmpty) {
       _token = _generateToken();
-      await repo.settingsSet({_keyToken: _token!});
+      await kv.settingsSet({_keyToken: _token!});
     }
-    if ((await repo.settingsGet(_keyEnabled)) != '1') return;
+    if ((await kv.settingsGet(_keyEnabled)) != '1') return;
     final error = await enable();
     if (error != null) {
       debugPrint('[MCP] 冷启动自动恢复失败: $error');
@@ -67,7 +71,7 @@ class McpController extends ChangeNotifier {
 
   Future<void> regenerateToken() async {
     _token = _generateToken();
-    await repo.settingsSet({_keyToken: _token!});
+    await kv.settingsSet({_keyToken: _token!});
     notifyListeners();
   }
 
@@ -94,10 +98,8 @@ class McpController extends ChangeNotifier {
         debugPrint('[DEGRADE][fg_unavailable] 前台服务未启动: $e');
       }
       _server ??= McpServer(
-        repo: repo,
+        toolFace: toolFaceFactory(),
         tokenProvider: () => _token,
-        // 注入真实天气后端（dart:io 网络在 lib/service，内核不沾）
-        weather: weatherService,
         // AI 经 suggest_user_setting 推送建议时，广播给 app UI 弹提示
         onSuggestion: (args) {
           if (!_suggestionController.isClosed) _suggestionController.add(args);
@@ -110,7 +112,7 @@ class McpController extends ChangeNotifier {
           final base = remote != null && remote.trim().isNotEmpty
               ? remote.trim()
               : McpServer.builtinInstructions;
-          final prompt = await repo.settingsGet(SettingsKeys.identityPrompt);
+          final prompt = await kv.settingsGet(SettingsKeys.identityPrompt);
           if (prompt != null && prompt.trim().isNotEmpty) {
             return '$base\n\n'
                 '【用户身份画像】（由用户在 app 内填写，描述其自身身份与处境，排程时务必尊重）\n$prompt';
@@ -124,7 +126,7 @@ class McpController extends ChangeNotifier {
       // relay 传输（轴 C）：配置齐全才挂载——与 HTTP 并列的第二种传输，fail-open
       // （relay 不可达不阻断回环 HTTP 通道；schedule-app.md:331「手机不在线 AI 失联」同口径）。
       await _startRelay();
-      await repo.settingsSet({_keyEnabled: '1'});
+      await kv.settingsSet({_keyEnabled: '1'});
     } catch (e) {
       _lastError = '$e';
       await _shutdown();
@@ -137,7 +139,7 @@ class McpController extends ChangeNotifier {
 
   Future<void> disable() async {
     await _shutdown();
-    await repo.settingsSet({_keyEnabled: '0'});
+    await kv.settingsSet({_keyEnabled: '0'});
     notifyListeners();
   }
 
@@ -155,11 +157,11 @@ class McpController extends ChangeNotifier {
 
   /// relay 通道装配：读取 app_settings 配置（RelayKeys），齐全才建连。
   Future<void> _startRelay() async {
-    if (await repo.settingsGet(RelayKeys.enabled) != '1') return;
+    if (await kv.settingsGet(RelayKeys.enabled) != '1') return;
     final cfg = RelayConfig(
-      endpoint: await repo.settingsGet(RelayKeys.endpoint) ?? '',
-      username: await repo.settingsGet(RelayKeys.username) ?? '',
-      password: await repo.settingsGet(RelayKeys.password) ?? '',
+      endpoint: await kv.settingsGet(RelayKeys.endpoint) ?? '',
+      username: await kv.settingsGet(RelayKeys.username) ?? '',
+      password: await kv.settingsGet(RelayKeys.password) ?? '',
     );
     if (!cfg.isComplete) return;
     _relay ??= RelayClient(

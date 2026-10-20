@@ -58,3 +58,13 @@ related: "online（执行 epic，Step 1 接缝配方在 online/memory.md）"
   `lib/mcp_binder_entrypoint.dart`（轻量装配不经 AppServices）+ busy_timeout R1 缓解 +
   binder 等价体单测 4 例；analyze 0 / 202 测试全过。**剩余**：真机联调（同签名同批出包
   + D.1/D.2 门禁），MVP 无 `_async`/onEvent 切片（工具面无 >5s 长任务）。
+- [x] **2026-10-20 迁移至官方 SDK（AIDL 去手抄）**：`ShiguangMcpBinderService` 由「手搓
+  AIDL + 手写 IMcpChannel.Stub」改为继承 `goodhub-mcp-plugin-core` 的 `GoodHubPluginService`
+  （v0.1.0，离线 maven-repo 分发），AIDL 唯一物理副本归 SDK 仓 :contract（原 `android/app/aidl/`
+  第四份手抄副本已删，buildFeatures.aidl 清理）。shiguang 仅重写 `handleJsonRpc`（接管原
+  Stub.call 全路由，保留 ready 5s / F1 `_async`+onEvent 终帧 / 5s 超时 / -32000,-32603）
+  与 `onHostCallback`（等价原 registerCallback）；`onBind`/手写 Stub 删除。契约四常量、Manifest、
+  F1 行为、错误码语义红线不变。注意：上方「实开核对 `android-sdk/plugin-core` AIDL」为 2026-10-14
+  历史写法——彼时 goodhub 尚未拆仓；现 AIDL 契约源已改为 goodhub-mcp-sdk 仓 :contract，shiguang
+  经 plugin-core 坐标消费，不再手抄（G7 清偿的核对对象同步更新）。验证：assembleDebug
+  BUILD SUCCESSFUL + flutter analyze 0 issue；真机联调/e2e 由用户在同机执行。

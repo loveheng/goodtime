@@ -14,9 +14,11 @@ import 'collab/relay/client.dart';
 import 'collab/relay_config.dart';
 import 'data/repository.dart';
 import 'data/db.dart';
+import 'mcp/shiguang_tool_face.dart';
 import 'models/artifact.dart';
 import 'service/housekeeper.dart';
 import 'service/mcp_controller.dart';
+import 'service/weather.dart';
 import 'ui/fact_sheet.dart';
 import 'update/remote_config_store.dart';
 
@@ -95,7 +97,10 @@ class AppServices {
     Db.registerDefaultStorageFactory();
     final repo = Repository();
     _repo = repo;
-    final mcp = McpController(repo: repo);
+    final mcp = McpController(
+      kv: repo, // Repository 隐式实现 SettingsKv（app_settings 表承载）
+      toolFaceFactory: () => ShiguangToolFace(repo, weather: weatherService),
+    );
     _mcp = mcp;
     await mcp.restoreIfNeeded();
     // 远程配置缓存预读（公告/MCP instructions 热更，docs/guide/self-update.md）

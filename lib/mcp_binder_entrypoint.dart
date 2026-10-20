@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'data/db.dart';
 import 'data/repository.dart';
 import 'mcp/mcp_server.dart';
+import 'mcp/shiguang_tool_face.dart';
 import 'service/weather.dart';
 
 /// 拾光本地 Binder 插件后台入口（headless FlutterEngine，goodhub-local-plugin 终点）。
@@ -43,9 +44,8 @@ void mcpBinderMain() {
   Db.registerDefaultStorageFactory();
   final repo = Repository();
   final server = McpServer(
-    repo: repo,
+    toolFace: ShiguangToolFace(repo, weather: WeatherService()),
     tokenProvider: () => null, // Binder 同签名零鉴权
-    weather: WeatherService(),
   );
 
   final channel = MethodChannel(_kChannel);

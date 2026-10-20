@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../mcp/settings_kv.dart';
 import '../models/artifact.dart';
 import '../models/background.dart';
 import '../models/fixed_slot.dart';
@@ -19,7 +20,7 @@ import 'storage.dart';
 /// 实现 [Listenable]（非 [ChangeNotifier]）：仅暴露 addListener/removeListener 回调，
 /// 去掉 Flutter 观察者框架的其余负担——UI 的 [ListenableBuilder] 照常工作
 /// （轴 B 纯 Dart 化 G2·①：ChangeNotifier → 轻量抽象接口）。
-class Repository implements Listenable {
+class Repository implements Listenable, SettingsKv {
   ScheduleStorage? _storage;
 
   /// 惰性取存储：首次 DB 操作时经全局工厂获得后端（默认 sqflite，宿主可注入/覆盖）。
@@ -498,6 +499,7 @@ class Repository implements Listenable {
     return {for (final r in rows) r['key'] as String: r['value'] as String};
   }
 
+  @override
   Future<String?> settingsGet(String key) async {
     final store = await _store;
     final rows = await store.query('app_settings', where: 'key = ?', whereArgs: [key], limit: 1);
@@ -505,6 +507,7 @@ class Repository implements Listenable {
   }
 
   /// 批量 upsert（update_settings 走此口；合法键与类型校验在命令层）。
+  @override
   Future<void> settingsSet(Map<String, String> values) async {
     if (values.isEmpty) return;
     final store = await _store;

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang/data/db.dart';
 import 'package:shiguang/data/repository.dart';
 import 'package:shiguang/mcp/mcp_server.dart';
+import 'package:shiguang/mcp/shiguang_tool_face.dart';
 import 'package:shiguang/service/weather.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -26,7 +27,10 @@ void main() {
   });
 
   test('3 条并发 tools/call 全部返回（Dart 层无并行卡死）', () async {
-    final server = McpServer(repo: Repository(), tokenProvider: () => null, weather: WeatherService());
+    final server = McpServer(
+      toolFace: ShiguangToolFace(Repository(), weather: WeatherService()),
+      tokenProvider: () => null,
+    );
     final bodies = List.generate(3, (i) => jsonEncode({
           'jsonrpc': '2.0',
           'id': i + 1,

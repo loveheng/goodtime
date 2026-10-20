@@ -4,6 +4,12 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // 离线分发件（免认证）：goodhub-mcp-sdk v0.1.0 已构建好的 maven-repo 本地镜像。
+        // 公网坐标（需 GITHUB_TOKEN，scope 至少 read:packages）替换为本行：
+        //   maven { url = uri("https://maven.pkg.github.com/loveheng/goodhub-mcp-sdk") }
+        maven {
+            url = uri("/home/zzh/app/goodhub-mcp-sdk/dist/maven-repo")
+        }
     }
 }
 

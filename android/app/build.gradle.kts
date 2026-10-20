@@ -11,11 +11,9 @@ android {
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
-    // goodhub 本地 Binder 插件 AIDL（com.zzh.goodhub.mcp.IMcpChannel/IMcpCallback，
-    // 契约 thirdconnect.md §1.2.2；AIDL 原文随 goodhub android-sdk/plugin-core 同步）
-    buildFeatures {
-        aidl = true
-    }
+    // 本地 Binder 插件契约（com.zzh.goodhub.mcp.IMcpChannel/IMcpCallback）由官方 SDK
+    // goodhub-mcp-plugin-core（传递 goodhub-mcp-contract AAR）提供；AIDL 唯一物理副本
+    // 归 SDK 仓 :contract，shiguang 不再自拷 AIDL，故无需 buildFeatures.aidl。
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -55,4 +53,10 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // 官方 SDK：goodhub 本地 Binder 插件核心。:plugin-core 以 api 依赖 :contract，
+    // 契约类（IMcpChannel/IMcpCallback + 常量）随传递引入，无需单独声明 contract。
+    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.1.1")
 }

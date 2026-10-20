@@ -1,25 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
 
-import '../data/repository.dart';
 import 'jsonrpc.dart';
-import 'tools.dart';
-import 'weather_provider.dart';
+import 'tool_face.dart';
 
 /// 内嵌 MCP 服务：Streamable HTTP（POST /mcp，application/json 单响应）。
 /// 自拾贝原样搬运（schedule-app.md §12），仅替换 serverInfo 与 instructions。
 /// v1 不做服务端主动推送：GET/DELETE 返回 405；也不签发会话 id（规范允许 MAY，
 /// 无状态更简单，桌面桥与直连客户端都不依赖会话）。
+/// 内核纯 Dart：业务依赖经 [McpToolFace] 端口注入，不沾 Repository / 业务模型。
 class McpServer {
   McpServer({
-    required this.repo,
+    required this.toolFace,
     required this.tokenProvider,
     this.instructionsProvider,
     this.onSuggestion,
-    this.weather = const NullWeatherProvider(),
   });
 
-  final Repository repo;
+  /// 工具面端口（宿主注入；拾光侧 = ShiguangToolFace 适配器）。
+  final McpToolFace toolFace;
 
   /// 返回当前生效 token；为空表示关闭鉴权。
   final String? Function() tokenProvider;
@@ -29,9 +28,6 @@ class McpServer {
 
   /// AI 经 suggest_user_setting 推送「建议用户改设置」时的回调（app 借此弹提示）。
   final void Function(Map<String, Object?>)? onSuggestion;
-
-  /// 天气投影提供方（默认空实现；宿主经 McpController 注入真实 WeatherService）。
-  final WeatherProvider weather;
 
   /// 政策精华（§7 行为层第一层）：每次 initialize 必读。
   static const _builtinInstructions =
@@ -107,7 +103,7 @@ class McpServer {
       case 'ping':
         return <String, Object?>{};
       case 'tools/list':
-        return {'tools': toolSchemas()};
+        return {'tools': toolFace.schemas()};
       case 'tools/call':
         final p = params is Map<String, Object?> ? params : const <String, Object?>{};
         final name = p['name'];
@@ -115,7 +111,7 @@ class McpServer {
         final args = p['arguments'] is Map<String, Object?>
             ? p['arguments'] as Map<String, Object?>
             : <String, Object?>{};
-        final content = await callTool(name, args, repo, weather: weather);
+        final content = await toolFace.call(name, args);
         if (name == 'suggest_user_setting') {
           onSuggestion?.call(args);
         }

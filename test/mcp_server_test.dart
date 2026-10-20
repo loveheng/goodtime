@@ -6,6 +6,7 @@ import 'package:shiguang/data/db.dart';
 import 'package:shiguang/data/repository.dart';
 import 'package:shiguang/mcp/jsonrpc.dart';
 import 'package:shiguang/mcp/mcp_server.dart';
+import 'package:shiguang/mcp/shiguang_tool_face.dart';
 import 'package:shiguang/service/http_transport.dart';
 import 'package:shiguang/util/schedule_day.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -27,7 +28,10 @@ void main() {
   });
 
   Future<({McpServer server, HttpTransport transport, HttpClient client, String base})> spinUp({String? token}) async {
-    final server = McpServer(repo: Repository(), tokenProvider: () => token);
+    final server = McpServer(
+      toolFace: ShiguangToolFace(Repository()),
+      tokenProvider: () => token,
+    );
     final transport = HttpTransport(server: server);
     await transport.start(port: 0);
     final client = HttpClient();

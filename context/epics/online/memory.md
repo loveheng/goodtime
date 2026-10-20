@@ -235,6 +235,11 @@ Future<String> handleJsonRpc(String rawBody) async {
   Flutter 路线（工具面在 Dart，非原生 @McpTool 路线）：
   - AIDL：`IMcpChannel.aidl`/`IMcpCallback.aidl` 原文拷入
     `android/app/src/main/aidl/com/zzh/goodhub/mcp/` + `buildFeatures { aidl = true }`。
+  > ⚠️ 历史写法（2026-10-14）：当时 goodhub 尚未拆仓，AIDL 契约源记为 `android-sdk/plugin-core`。
+  > 2026-10-20 已迁移至官方 SDK `goodhub-mcp-plugin-core`（v0.1.0）：AIDL 唯一物理副本归
+  > goodhub-mcp-sdk 仓 :contract，shiguang 删自拷 `android/app/aidl/`、改经 plugin-core 坐标消费
+  > （见 `goodhub-local-plugin/memory.md` 断点区「2026-10-20 迁移」条 + `docs/design/schedule-app.md`
+  > §11「本地 Binder 插件接入官方 SDK」）。
   - 原生：`ShiguangMcpBinderService.kt`（照抄 goodshare McpBinderService，通道
     `shiguang/mcp_binder`、entrypoint `mcpBinderMain`；B1 per-call ≤5s 超时、B3 id 回显、
     ready 竞态 5s、FlutterInjector loader 坑全落）。差异：shiguang 工具面无 >5s 长任务，

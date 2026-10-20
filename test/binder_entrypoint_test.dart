@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang/data/db.dart';
 import 'package:shiguang/data/repository.dart';
 import 'package:shiguang/mcp/mcp_server.dart';
+import 'package:shiguang/mcp/shiguang_tool_face.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Binder 插件等价体单测（goodhub-local-plugin 终点，模式照抄 goodshare
@@ -30,7 +31,7 @@ void main() {
   McpServer binderServer() {
     Db.registerDefaultStorageFactory(); // entrypoint 同款显式注册
     return McpServer(
-      repo: Repository(),
+      toolFace: ShiguangToolFace(Repository()),
       tokenProvider: () => null, // Binder 同签名零鉴权
     );
   }
