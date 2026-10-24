@@ -36,8 +36,19 @@ enum BundleFsmStatus {
   abandonedLocally, // §4.5 本地自保性退化（非全局终态，发起人信令可重新激活）
 }
 
-/// 步骤子状态（§4.2 Step FSM）。
-enum StepFsmStatus { pending, ready, timeClash, roleClash, optional, pruned }
+/// 步骤子状态（§4.2 Step FSM；[recheck]=敲定后改期待重确认，§4.3 2026-10-25）。
+enum StepFsmStatus {
+  pending,
+  ready,
+  timeClash,
+  roleClash,
+  optional,
+  pruned,
+
+  /// PATCH_STEP_TIME 敲定后改期：包保持 CONFIRMED，本步骤等责任人重确认
+  /// （重发 ACCEPT 复活为 ready，再 REJECT 派生 clash → STALLED）。
+  recheck,
+}
 
 /// 步骤成员表决态（§4.3 PATCH 回音壁：accepted 成员联动降 pendingRecheck）。
 enum MemberVoteState { pending, accepted, pendingRecheck, rejected }
@@ -56,7 +67,9 @@ const int kMaxCandidateSlots = 8;
 /// 发起人失联死锁熔断 TTL（STALLED 持续超此时长 → 本地 ABANDONED_LOCALLY）。
 const Duration kStalledDeadlockTtl = Duration(hours: 48);
 
-/// Consensus Soft-Lock TTL（§3.6：24h 无交集 → EXPIRED；对齐 relay TTL 约定）。
+/// 幽灵软锁淡出 TTL（§3.6 2026-10-25 双语义拆分：本地视觉层 24h 自动淡出，
+/// 防日历僵尸）。EXPIRED（提案流局）判据与此正交——用 PROPOSE 载荷
+/// `expires_at_ms`（提案存活 `proposal_alive_ttl`，见 propose.dart）。
 const Duration kConsensusSoftLockTtl = Duration(hours: 24);
 
 // ---- 输入信号 ---------------------------------------------------------------
@@ -205,6 +218,11 @@ class CollabStepState {
       }
     }
     final need = s.threshold <= 0 ? s.requiredUids.length : s.threshold;
+    // 敲定后改期（§4.3 PATCH_STEP_TIME）：重发 ACCEPT 复活为 ready，未重确认
+    // 前保持 recheck（包侧派生把 recheck 按 ready 同侪计，见 _derive）。
+    if (s.status == StepFsmStatus.recheck) {
+      return s.acceptCount >= need ? StepFsmStatus.ready : StepFsmStatus.recheck;
+    }
     return s.acceptCount >= need ? StepFsmStatus.ready : StepFsmStatus.pending;
   }
 }
@@ -352,7 +370,12 @@ CollabBundleState _derive(CollabBundleState s, int serverAtMs) {
   final BundleFsmStatus derived;
   if (binding.any((st) => _isClash(st.status))) {
     derived = BundleFsmStatus.stalled;
-  } else if (binding.isNotEmpty && binding.every((st) => st.status == StepFsmStatus.ready)) {
+  } else if (binding.isNotEmpty &&
+      binding.every((st) =>
+          st.status == StepFsmStatus.ready ||
+          st.status == StepFsmStatus.recheck)) {
+    // recheck=敲定后改期待重确认（§4.3 PATCH_STEP_TIME 2026-10-25）：包保持
+    // CONFIRMED，等责任人重表决；重表决出现 REJECT 即 clash → STALLED。
     derived = BundleFsmStatus.confirmed;
   } else {
     derived = BundleFsmStatus.proposed;
@@ -440,6 +463,34 @@ CollabBundleState _reduceDirective(CollabBundleState s, CollabSignal e) {
           steps: {...base.steps, step.stepId: updated},
           baseRevision: base.baseRevision + 1,
         ),
+        e.serverAtMs,
+      );
+
+    case ActionType.PATCH_STEP_TIME:
+      // 敲定后微调轻通道（§4.3 2026-10-25）：CONFIRMED 包内发起人改单步骤时间。
+      // 包状态保持 CONFIRMED（_derive 把 recheck 计入 ready 同侪），仅该步骤
+      // 责任人重确认——accepted 联动降 pendingRecheck（回音壁同款），重发 ACCEPT
+      // 复活；再 REJECT 派生 clash → STALLED。非 CONFIRMED 态丢弃（协商期改期
+      // 走既有 PATCH_TIME）。
+      if (!_isInitiator(s, e) || e.stepId == null) return s;
+      if (s.status != BundleFsmStatus.confirmed) return s;
+      final step = s.steps[e.stepId!];
+      if (step == null || step.isOptional || step.status == StepFsmStatus.pruned) {
+        return s;
+      }
+      final ballots = <String, MemberBallot>{
+        for (final entry in step.ballots.entries)
+          entry.key: entry.value.state == MemberVoteState.accepted
+              ? MemberBallot.pendingRecheck
+              : entry.value,
+      };
+      final updated = step.copyWith(
+        ballots: ballots,
+        revision: step.revision + 1,
+        status: StepFsmStatus.recheck,
+      );
+      return _derive(
+        s.copyWith(steps: {...s.steps, step.stepId: updated}),
         e.serverAtMs,
       );
 
@@ -577,6 +628,54 @@ CollabBundleState _reduceDirective(CollabBundleState s, CollabSignal e) {
       if (!_isInitiator(s, e) || e.uids.isEmpty) return s;
       return s.copyWith(participants: {...s.participants, ...e.uids});
 
+    case ActionType.LEAVE:
+      // 成员自主退出（§4.5 2026-10-25）：平权、不触发 REKEY。解挂自己的必需
+      // 步骤：名单剔除+门限收缩 min(M, 剩余)（BYPASS 同款），步骤空名单转
+      // optional 移出强一致；发起人不可 LEAVE（服务端 INITIATOR_CANNOT_LEAVE
+      // 拦截，退出走 TRANSFER_INITIATOR）。participants 剔除防退出后继续投票；
+      // 服务端 participant_uids 不动——退出者保留读取面，看得见自己退出后的终局。
+      if (_isInitiator(s, e) || !s.participants.contains(e.senderId)) return s;
+      const allowed = {
+        BundleFsmStatus.proposed,
+        BundleFsmStatus.stalled,
+        BundleFsmStatus.confirmed,
+        BundleFsmStatus.abandonedLocally,
+      };
+      if (!allowed.contains(s.status)) return s;
+      var steps = s.steps;
+      for (final st in s.steps.values) {
+        if (!st.requiredUids.contains(e.senderId)) continue;
+        final kept = st.requiredUids.where((u) => u != e.senderId).toList();
+        final ballots = <String, MemberBallot>{
+          for (final entry in st.ballots.entries)
+            if (entry.key != e.senderId) entry.key: entry.value,
+        };
+        steps = {
+          ...steps,
+          st.stepId: kept.isEmpty
+              ? st.copyWith(
+                  requiredUids: kept,
+                  ballots: ballots,
+                  isOptional: true,
+                  status: StepFsmStatus.optional,
+                )
+              : st.copyWith(
+                  requiredUids: kept,
+                  threshold:
+                      kept.length < st.threshold ? kept.length : st.threshold,
+                  ballots: ballots,
+                  revision: st.revision + 1,
+                ),
+        };
+      }
+      return _derive(
+        s.copyWith(
+          steps: steps,
+          participants: {...s.participants}..remove(e.senderId),
+        ),
+        e.serverAtMs,
+      );
+
     // 回音壁的成员再确认不走独立线上动作（冻结 proto 无 PENDING_RECHECK 枚举）：
     // 成员直接重发 ACCEPT，表决被覆盖为 accepted（上方 ACCEPT 分支已支持）。
 
@@ -661,15 +760,48 @@ CollabBundleState _reduceConsensus(CollabBundleState s, CollabSignal e) {
       return s.copyWith(candidateSlots: [...s.candidateSlots, e.slotId!]);
 
     case ActionType.FORCE_FINALIZE:
-      // 分票死锁落槌（§4.4）：任一成员平权可落槌；并发竞态由服务端行级门禁
-      // 先到先得（First-Commit-Wins），端侧按 seq 次序回放自然幂等。
-      if (s.status != BundleFsmStatus.proposed ||
-          !s.participants.contains(e.senderId) ||
+      // 分票死锁落槌（§4.4）：发起人独占（2026-10-24 对账收敛，§7-7）——原「任一
+      // 成员平权」分支为死路径已清理（服务端 NOT_INITIATOR 必拦）；并发竞态由
+      // 服务端行级门禁先到先得（First-Commit-Wins），端侧按 seq 次序回放自然幂等。
+      if (!_isInitiator(s, e) ||
+          s.status != BundleFsmStatus.proposed ||
           e.slotId == null ||
           !s.candidateSlots.contains(e.slotId)) {
         return s;
       }
       return s.copyWith(status: BundleFsmStatus.confirmed, winningSlot: e.slotId);
+
+    case ActionType.PATCH_STEP_TIME:
+      // Consensus 敲定后改期（§4.3 2026-10-25）：发起人把已固化时段退回重议——
+      // 候选保留、旧票清空，全员重投（受影响「步骤」即唯一胜出 slot）；包从
+      // CONFIRMED 回 PROPOSED。服务端白名单放行，发起人独占与 Directive 同款。
+      if (!_isInitiator(s, e) || s.status != BundleFsmStatus.confirmed) return s;
+      if (e.slotId != null && e.slotId != s.winningSlot) return s;
+      return s.copyWith(
+        status: BundleFsmStatus.proposed,
+        votes: const {},
+        winningSlot: null,
+      );
+
+    case ActionType.LEAVE:
+      // 成员自主退出（§4.5 2026-10-25）：撤自己在各候选的三值票（赞成票计数
+      // 随之下降，门限按剩余成员重算），不触发 REKEY；发起人不可退出
+      // （服务端 INITIATOR_CANNOT_LEAVE 拦截，走 TRANSFER_INITIATOR）。
+      if (_isInitiator(s, e) || !s.participants.contains(e.senderId)) return s;
+      if (s.status != BundleFsmStatus.proposed &&
+          s.status != BundleFsmStatus.confirmed) {
+        return s;
+      }
+      return s.copyWith(
+        participants: {...s.participants}..remove(e.senderId),
+        votes: {
+          for (final entry in s.votes.entries)
+            entry.key: {
+              for (final v in entry.value.entries)
+                if (v.key != e.senderId) v.key: v.value,
+            },
+        },
+      );
 
     case ActionType.REOPEN:
       return _reopenConsensus(s, e);
@@ -688,8 +820,9 @@ CollabBundleState _reduceConsensus(CollabBundleState s, CollabSignal e) {
 
 // ---- 本地伪事件（非网络事件，时钟注入式纯函数） -----------------------------
 
-/// Consensus Soft-Lock TTL（§4.4：PROPOSING 24h 无交集 → EXPIRED；服务端扫描
-/// 为准，端侧本地同判据兜底）。
+/// 提案流局（§4.4：PROPOSED 超 proposal_alive_ttl 无交集 → EXPIRED；判据=PROPOSE
+/// 载荷携带的 `expires_at_ms`，服务端扫描为准，端侧本地同判据兜底。与软锁淡出
+/// 24h 双语义拆分，§3.6 2026-10-25）。
 CollabBundleState maybeExpire(CollabBundleState s, int nowMs) {
   final ttl = s.expiresAtMs;
   if (ttl == null) return s;

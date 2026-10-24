@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-19
+updated: 2026-10-24
 ---
 
 # 事实挂载 · 用户/好友体系 · 外部盲中继 — 设计草案
@@ -300,6 +300,8 @@ roster(id, display_name, relation[me|family|friend|other], is_self, color)
 
 最小契约（✅ 骨架，已与冻结契约 relay_protocol.proto v0.1.6-contract 对齐）：
 
+> **口径锚注（2026-10-24）**：下列账号域字段已被 Plan A 取代（见本节顶部 v2 修订注记与 relay 仓 README）——`user_id` 客户端自生成 → 服务端发号、`signed_pop` 已出契约（注册=add `username`+`password`）、好友=lookup+Ticket 双通道；本清单保留作 v0.1.6 冻结契约留痕，现行契约 SSOT=relay 仓 README。
+
 - 注册：`POST /v1/users` —— `user_id`(客户端自生成 UUID) + `identity_key_pub` + `signed_prekey_pub` + `push_token` + `encrypted_profile`(端侧全密文，含昵称/备注) + `signed_pop`(对服务端 challenge 的 Ed25519 签名) + `pow_solution`(Hashcash)。**服务端零明文昵称**——`display_name` 已剔除，昵称仅存 `encrypted_profile`。
 - 鉴权：双 Token（access/refresh），详见 `collab-schedule-draft.md §1.4`；请求外层强制 `client_msg_id` + 时间戳，服务端 Redis `SETEX 300` 幂等去重（防重放）。
 - 好友：`POST /v1/friends/invite {ticket, encrypted_intro}` —— 凭**好友凭证 Ticket**（二维码/防篡改签名，含短期 nonce + 过期时间 + B 自签名），服务端验签通过才写 `friendships(status=pending, encrypted_intro)`；`encrypted_intro`=A 用 Ticket 内 B 的 **X25519 加密公钥**（`enc_key_pub`=signed_prekey_pub）做 ECIES（X25519+HKDF+AES-256-GCM）加密的自报家门（解纯 UUID 审批死锁；**Ticket 不携 Ed25519 身份钥做加密**——签名钥与加密钥坐标系不同，跨端 ECIES 直用必炸）；杜绝 `to_user` 撞库。
@@ -366,7 +368,7 @@ flowchart LR
 
 ### 5.1 职责边界（✅）
 
-外部服务 = **盲状态机中继（blind state-machine relay）**：内容层面纯盲——**永远看不见事实明文**（座位/身份证/金额/`entity_key` 业务代号）；结构层面持有 `bundles` / `bundle_skeletons` / `team_schedule_events` 两级 FSM，进行 topology Quorum 仲裁、乐观锁与全局 `seq_id` 定序。**服务端不运行任何重叠解析逻辑**（见 §4 宿主铁律）。
+外部服务 = **盲校验中继**：内容层面纯盲——**永远看不见事实明文**（座位/身份证/金额/`entity_key` 业务代号）；结构层面持有 `bundles` / `bundle_skeletons` / `team_schedule_events`，只做行锁 `seq_id` 定序、乐观锁校验、ACL/配额与显式终态布尔门禁——**不做拓扑状态推导/Quorum 聚合（2026-10-24 对账：FSM 单实现归端侧回放器，见 collab-schedule-draft §4.1）**。**服务端不运行任何重叠解析逻辑**（见 §4 宿主铁律）。
 
 ### 5.2 服务契约（✅ 骨架，已与冻结契约 v0.1.6-contract 对齐）
 

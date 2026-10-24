@@ -38,10 +38,12 @@ import 'sealing.dart';
 /// 单 Bundle 成员上限（含发起人，relay `store.MaxBundleMembers`=16，§1.7）。
 const int kMaxBundleMembers = 16;
 
-/// 发起默认 TTL（§3.6 幽灵软锁 24h：超时未达成一致则本地虚线自动淡出）。
+/// 24h 底座 TTL（§3.6 2026-10-25 双语义拆分）：一物两用——①幽灵软锁淡出判据
+/// （本地视觉层恒 24h）；②提案存活 `proposal_alive_ttl` 的下限与「无时间锚草稿」
+/// 的回落值（上限由 [proposalAliveTtlMs] 按目标日抬高）。
 ///
-/// 与 `fsm.kConsensusSoftLockTtl` 同值同类目（软锁释放判据），这里写成常量字面量
-/// 是因为 [BundleDraft] 是 const 构造，只能吃编译期常量。
+/// 与 `fsm.kConsensusSoftLockTtl` 同值同类目；写成常量字面量是因为 [BundleDraft]
+/// 是 const 构造，只能吃编译期常量。
 const int kProposalDefaultTtlMs = 24 * 60 * 60 * 1000;
 
 /// 集体投票的候选时段上限（与 §4.4 ADD_SLOT 硬上限同一个值，`fsm` 是 SSOT）。
@@ -142,6 +144,28 @@ void validateDraft(BundleDraft draft) {
   }
 }
 
+/// 提案存活 TTL（§3.6 双语义拆分，2026-10-25 拍板）：
+/// `proposal_alive_ttl = max(24h, 目标日前一天 − 发起时刻)`。
+///
+/// 目标日取草稿步骤最早的 `startsAtMs` 所在 UTC 日历日——发起时目标日在明文，
+/// 成员端 FSM 骨架优先于内容（铁律 1）读不到密文时段，故存活时刻必须由发起端
+/// 算好随载荷 `expires_at_ms` 下发；无任何时间锚的草稿回落 24h 底座。
+/// 返回 TTL 时长（ms），不是绝对时刻。
+int proposalAliveTtlMs({
+  required int nowMs,
+  required List<ProposalStepDraft> steps,
+}) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  var aliveUntilMs = nowMs + kProposalDefaultTtlMs;
+  for (final s in steps) {
+    final start = s.startsAtMs;
+    if (start == null) continue;
+    final dayBefore = (start ~/ dayMs) * dayMs - dayMs; // 目标日 00:00 UTC 的前一天
+    if (dayBefore > aliveUntilMs) aliveUntilMs = dayBefore;
+  }
+  return aliveUntilMs - nowMs;
+}
+
 /// **服务端可见面**（§4.2 隐私边界）：只有纯结构四件套，标题/真实时间/备注一概
 /// 不露——服务端据此推进 quorum 计数器，但读不到「几点做什么」。
 Map<String, Object?> serverTopologyOf(BundleDraft draft) => {
@@ -158,11 +182,13 @@ Map<String, Object?> serverTopologyOf(BundleDraft draft) => {
 
 /// 加密载荷（全体成员可解）：结构 + 内容（标题/时段/备忘），字段取值与
 /// `replay.signalFromPayload` 严格互逆——FSM 派发就是靠这几个键。
+/// [aliveTtlMs] 为发起端算好的提案存活 TTL（§3.6，缺省回落 draft.ttlMs）。
 Map<String, Object?> proposalPayloadOf({
   required String initiatorId,
   required BundleDraft draft,
   required int nowMs,
   List<Object?> envelopes = const [],
+  int? aliveTtlMs,
 }) {
   final topology = serverTopologyOf(draft);
   return <String, Object?>{
@@ -186,7 +212,7 @@ Map<String, Object?> proposalPayloadOf({
       'initial_slots': [for (final s in draft.steps) s.stepId],
     if (draft.kind == ProposalKind.consensus) 'quorum': draft.quorum,
     'topology': topology,
-    'expires_at_ms': nowMs + draft.ttlMs,
+    'expires_at_ms': nowMs + (aliveTtlMs ?? draft.ttlMs),
     if (draft.briefing != null) 'briefing': draft.briefing,
     'envelopes': envelopes,
   };
@@ -320,11 +346,15 @@ class BundleProposalService {
       ));
     }
 
+    final now = nowMs();
+    final aliveTtl = proposalAliveTtlMs(nowMs: now, steps: draft.steps);
     final payload = proposalPayloadOf(
       initiatorId: meId,
       draft: draft,
-      nowMs: nowMs(),
+      nowMs: now,
       envelopes: envelopes,
+      // 显式 ttl（draft.ttlMs）是发起人下限覆盖：实际存活取 max(显式, 目标日推算)
+      aliveTtlMs: aliveTtl > draft.ttlMs ? aliveTtl : draft.ttlMs,
     );
     final entry = await outbox.enqueue(
       bundleId: draft.localId,

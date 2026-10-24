@@ -5,9 +5,10 @@ import '../../theme/tokens.dart';
 
 /// 双维拒绝面板（§11.2 D 页）的结构化结果。
 ///
-/// 四步：主维度分流（时间冲突 / 权责异议）→ 子类芯片（四选一）→ 隐私分级
-/// （全员可见 / 仅发起人可见）→ 可选建议转派 @成员。理由默认全员可见；私密理由
-/// 经发起人 IK_A 单向加密（§3.5 隐私分级），非发起人端时间轴只渲染骨架提示。
+/// 默认态一屏完事：主维度 → 子类芯片 → 可选备注 → 一键拒绝；隐私分级与建议
+/// 转派收进【详细说明】展开态（§3.4 减层版，2026-10-25 拍板——必填正是制造
+/// 敷衍的根源）。理由默认全员可见；私密理由经发起人 IK_A 单向加密（§3.5 隐私
+/// 分级），非发起人端时间轴只渲染骨架提示。
 class RejectResult {
   /// 主维度（对齐 FSM `RejectReason` 枚举名：TIME_CONFLICT / ROLE_UNWILLING）。
   final String reason;
@@ -40,7 +41,8 @@ const Map<String, String> _kSubReasons = {
   'PERSONAL': '个人原因',
 };
 
-/// 双维拒绝面板（§11.2 D 页）：四步结构化反馈，破除「有空但不想做被迫撒谎说没空」。
+/// 双维拒绝面板（§11.2 D 页 §3.4 减层版）：默认一屏（维度+子类+可选备注即可
+/// 提交），隐私分级与建议转派收进展开态。
 ///
 /// 纯渲染层（不依赖 DB/异步），结构化结果经 [onConfirm] 回调；调用方负责落库与反馈。
 class RejectPanel extends StatefulWidget {
@@ -62,11 +64,11 @@ class RejectPanel extends StatefulWidget {
 }
 
 class _RejectPanelState extends State<RejectPanel> {
-  int _step = 0; // 0 主维度 / 1 子类 / 2 隐私 / 3 转派
   _RejectDimension? _dimension;
   String? _subReason;
   String _privacy = 'PUBLIC';
   String? _suggestReassign;
+  bool _showAdvanced = false;
   final _detailCtrl = TextEditingController();
   bool _submitting = false;
 
@@ -80,8 +82,10 @@ class _RejectPanelState extends State<RejectPanel> {
       .where((u) => u != widget.currentUserId)
       .toList();
 
+  bool get _canSubmit => _dimension != null && _subReason != null;
+
   Future<void> _submit() async {
-    if (_dimension == null || _subReason == null) return;
+    if (!_canSubmit) return;
     setState(() => _submitting = true);
     final result = RejectResult(
       reason: _dimension == _RejectDimension.time
@@ -126,32 +130,12 @@ class _RejectPanelState extends State<RejectPanel> {
           Text('提出异议',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
           const SizedBox(width: 8),
-          Chip(
-            label: Text('${_step + 1} / 4'),
-            visualDensity: VisualDensity.compact,
-            backgroundColor: StColors.sparkBg,
-          ),
-          const Spacer(),
           Text('步骤 ${widget.step.id}',
               style: TextStyle(color: StColors.textSecondary)),
         ],
       );
 
-  Widget _body() {
-    switch (_step) {
-      case 0:
-        return _dimensionStep();
-      case 1:
-        return _subReasonStep();
-      case 2:
-        return _privacyStep();
-      default:
-        return _reassignStep();
-    }
-  }
-
-  /// 步骤 0：主维度分流。
-  Widget _dimensionStep() => Column(
+  Widget _body() => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('主要卡在哪一类？',
@@ -162,10 +146,7 @@ class _RejectPanelState extends State<RejectPanel> {
             title: '时间冲突',
             subtitle: '这个时段我已有安排',
             selected: _dimension == _RejectDimension.time,
-            onTap: () => setState(() {
-              _dimension = _RejectDimension.time;
-              _step = 1;
-            }),
+            onTap: () => setState(() => _dimension = _RejectDimension.time),
           ),
           const SizedBox(height: 10),
           _bigOption(
@@ -173,18 +154,9 @@ class _RejectPanelState extends State<RejectPanel> {
             title: '权责异议',
             subtitle: '这件事不该由我来做',
             selected: _dimension == _RejectDimension.role,
-            onTap: () => setState(() {
-              _dimension = _RejectDimension.role;
-              _step = 1;
-            }),
+            onTap: () => setState(() => _dimension = _RejectDimension.role),
           ),
-        ],
-      );
-
-  /// 步骤 1：子类芯片（四选一）+ 选填详细说明。
-  Widget _subReasonStep() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+          const SizedBox(height: 14),
           Text('更具体的原因（四选一）',
               style: TextStyle(color: StColors.textSecondary, fontSize: 13)),
           const SizedBox(height: 10),
@@ -208,38 +180,60 @@ class _RejectPanelState extends State<RejectPanel> {
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 8),
+          _advancedToggle(),
+          if (_showAdvanced) ..._advancedSection,
         ],
       );
 
-  /// 步骤 2：隐私分级开关。
-  Widget _privacyStep() => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('谁可以看到你的理由？',
-              style: TextStyle(color: StColors.textSecondary, fontSize: 13)),
-          const SizedBox(height: 10),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                  value: 'PUBLIC', label: Text('全员可见')),
-              ButtonSegment(
-                  value: 'INITIATOR_ONLY', label: Text('仅发起人可见')),
+  /// 展开态入口：隐私分级 + 建议转派收进来，默认折叠（§3.4 减层）。
+  Widget _advancedToggle() => InkWell(
+        onTap: () => setState(() => _showAdvanced = !_showAdvanced),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                _showAdvanced ? Icons.expand_less : Icons.expand_more,
+                size: 18,
+                color: StColors.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '详细说明与隐私（选填）',
+                style: TextStyle(color: StColors.textSecondary, fontSize: 13),
+              ),
             ],
-            selected: {_privacy},
-            onSelectionChanged: (s) => setState(() => _privacy = s.first),
           ),
-          const SizedBox(height: 10),
-          Text(
-            _privacy == 'INITIATOR_ONLY'
-                ? '理由经发起人公钥单向加密，其他成员端只看到骨架提示，永远解不开。'
-                : '理由用协同包密钥加密，所有参与成员的时间轴都能看到。',
-            style: TextStyle(color: StColors.textSecondary, fontSize: 12),
-          ),
-        ],
+        ),
       );
 
-  /// 步骤 3：可选建议转派 @成员。
-  Widget _reassignStep() {
+  List<Widget> get _advancedSection => [
+        Text('谁可以看到你的理由？',
+            style: TextStyle(color: StColors.textSecondary, fontSize: 13)),
+        const SizedBox(height: 10),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'PUBLIC', label: Text('全员可见')),
+            ButtonSegment(
+                value: 'INITIATOR_ONLY', label: Text('仅发起人可见')),
+          ],
+          selected: {_privacy},
+          onSelectionChanged: (s) => setState(() => _privacy = s.first),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _privacy == 'INITIATOR_ONLY'
+              ? '理由经发起人公钥单向加密，其他成员端只看到骨架提示，永远解不开。'
+              : '理由用协同包密钥加密，所有参与成员的时间轴都能看到。',
+          style: TextStyle(color: StColors.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 14),
+        _reassignChips(),
+        const SizedBox(height: 6),
+      ];
+
+  Widget _reassignChips() {
     final candidates = _reassignCandidates;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -313,34 +307,17 @@ class _RejectPanelState extends State<RejectPanel> {
 
   Widget _footer() => Row(
         children: [
-          if (_step > 0)
-            TextButton(
-              onPressed: () => setState(() => _step--),
-              child: const Text('上一步'),
-            ),
           const Spacer(),
-          if (_step < 3)
-            FilledButton(
-              onPressed: _canAdvance() ? () => setState(() => _step++) : null,
-              child: const Text('下一步'),
-            )
-          else
-            FilledButton(
-              onPressed: _submitting ? null : _submit,
-              child: _submitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('提交异议'),
-            ),
+          FilledButton(
+            onPressed: _canSubmit && !_submitting ? _submit : null,
+            child: _submitting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('提交异议'),
+          ),
         ],
       );
-
-  bool _canAdvance() {
-    if (_step == 0) return _dimension != null;
-    if (_step == 1) return _subReason != null;
-    return true; // 步骤 2（隐私）与步骤 3（转派可选）恒可前进
-  }
 }

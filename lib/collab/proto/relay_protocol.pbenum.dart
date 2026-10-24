@@ -80,6 +80,12 @@ class ActionType extends $pb.ProtobufEnum {
   static const ActionType ADD_MEMBER =
       ActionType._(27, _omitEnumNames ? '' : 'ADD_MEMBER');
 
+  /// —— 敲定后生命周期（2026-10-25 拍板 §4.3/§4.5；终态门禁白名单仅有的两个非终态动作）——
+  static const ActionType PATCH_STEP_TIME =
+      ActionType._(28, _omitEnumNames ? '' : 'PATCH_STEP_TIME');
+  static const ActionType LEAVE =
+      ActionType._(29, _omitEnumNames ? '' : 'LEAVE');
+
   static const $core.List<ActionType> values = <ActionType>[
     PROPOSE,
     ACCEPT,
@@ -109,10 +115,12 @@ class ActionType extends $pb.ProtobufEnum {
     CLIENT_ACK,
     PING,
     ADD_MEMBER,
+    PATCH_STEP_TIME,
+    LEAVE,
   ];
 
   static final $core.List<ActionType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 27);
+      $pb.ProtobufEnum.$_initByValueList(values, 29);
   static ActionType? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

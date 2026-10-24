@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-19
+updated: 2026-10-25
 ---
 
 # 协同日程开发文档（collab-implementation）
@@ -13,6 +13,8 @@ updated: 2026-10-19
 - **五阶段硬序**（设计稿 §12）：契约 → 服务端骨架 → 端侧管道 → 端侧状态机 → UI → 存储容灾。Phase 2 起才碰拾光主仓。
 - **双仓边界**（设计稿 §8.4）：`shiguang-relay`（Go，独立新仓）不 import 拾光任何代码；拾光主仓只增不破坏（db v5 幂等迁移）。**落地形态（2026-10-09）**：中继已落为与拾光主仓同级的**独立 git 仓**（`/home/zzh/app/shiguang-relay`，主仓内不再含 `shiguang-relay/` 目录），契约/DDL/生成物/Go 代码全在该仓，本文出现的 `shiguang-relay/...` 路径均指独立仓内相对路径。
 - **每阶段收尾必做**：`toolbox run docs-lint`（文档轮）+ devlog 断点落账（context/epics）。
+
+> **对账修正（2026-10-24，评审驱动，四项；本轮仅文档、代码零改动）**：①**账号体系**——§2.3 注册流记录中的 PoP 自签描述属 Plan A 之前的史实（2026-10-09 落地、2026-10-11 被取代），现行契约=用户名+密码（relay README v0.1.7-contract，`signed_pop` 已出契约，Dart 侧 `account.dart` 已迁移），设计稿 §1.4/§1.5 已改写；②**好友建联**=搜索 `GET /v1/users/lookup` + 扫码 Ticket 双通道（设计稿 §1.6 已改写，防骚扰口径改 lookup 限流 + 待审批配额）；③**`FORCE_FINALIZE` 落槌权=发起人独占**（relay `NOT_INITIATOR` 门禁为准，设计稿 §4.4 已改写；端侧 fsm.dart 的平权落槌分支为死路径，待随下轮代码切片清理）；④**服务端定位=盲校验器**（行锁定序 + ACL/配额 + 显式终态布尔门禁；不落 votes、不派生状态——设计稿 §4.1 已改写并封顶「服务端禁止新增状态推导」，§4.2/§4.3 同步换口径）。
 
 ## 1. Phase 0：协议契约冻结（预计 0.5–1 天）
 
@@ -111,7 +113,7 @@ updated: 2026-10-19
 | 步骤 | 内容 | 验收线 |
 |---|---|---|
 | 4.1 | 页面 B 成员混合日历（预占三级渲染 + 一键响应浮条） | widget 测试 |
-| 4.2 | 页面 D 拒绝面板（四步含隐私开关）+ 页面 F 审计时间轴（含便签抽屉） | 私密理由在非发起人端只渲染骨架提示 |
+| 4.2 | 页面 D 拒绝面板（**减层版**，§3.4：默认一屏+可选备注一键拒绝，隐私开关/建议转派收【详细说明】展开态）+ 页面 F 审计时间轴（含便签抽屉）；文案先入 ui-design §4/ui-pages §9 再上屏 | 私密理由在非发起人端只渲染骨架提示 |
 | 4.3 | 页面 A 发起人画板（双轨/幽灵图层/共振条磁吸）+ 页面 C 决策矩阵（门限进度/铃铛/三键） | 全流程走查：发起→拒绝→转派→CONFIRMED |
 | 4.3a | **本地发起 bundle**（`lib/collab/propose.dart` + `relay_session.dart` + `ui/collab/compose_bundle_page.dart`）：K_bundle 生成落户 → 逐成员 X3DH 封信封 → 服务端可见 topology/quorum/envelopes 抬出 → 入发件箱 → 弹出即「认祖归宗」（临时本地 id → 服务端发号） | 23 例新增全绿（含离线留箱、幂等重放、改绑验证） |
 | 4.4 | 页面 E Consensus 看板（三态矩阵/ADD_SLOT 上限 8 置灰/落槌） | 分票死锁→Force Finalize 走查 |
@@ -127,6 +129,10 @@ updated: 2026-10-19
 配套两处**真实缺陷修复**（非绕过）：① `OutboxDrainer.drain` 改为「每发一条重新取首条」——原实现开局缓存整批，认祖归宗改绑后缓存里的后续条目仍拿临时 id 发，必 404；② `CollabDrainScheduler.dispose` 与在途 drain 竞赛时 `reports.add` 打在已关闭管道上（未处理异步错误），现先等在途链落地再关管道并在 `trigger` 侧加 `isClosed` 守卫。
 
 验证：`test/collab_propose_test.dart` 11 例（拓扑边界/载荷与 FSM 互逆/信封互逆且换人必炸/草稿配额四类/发起端到端/传输字段/既有请求体不变/认祖归宗三项+幂等/离线留箱）、`test/collab_relay_session_test.dart` 7 例（Ed25519 私钥字节→seed 还原公钥一致、上锁取不出、好友清单过滤、SPK 32B、套件三态）、`test/collab_compose_form_test.dart` 5 例（白话文案/空态/交互回响/模式切换/连不上说原因）；全量 **374/374** 全绿。
+
+**功能评审增量（2026-10-25 四项拍板，全部待施工；契约 SSOT=设计稿 §7-8）**：①**契约补丁**——`ActionType` 增 `PATCH_STEP_TIME`/`LEAVE`（proto + 双端 codegen + `check-proto-sync.sh` 同步）；服务端 `bundles.go` 终态门禁开白名单（两者为 `BUNDLE_CONFIRMED_IMMUTABLE` 仅有的两个非终态豁免，仅 CONFIRMED 态放行：`PATCH_STEP_TIME` 限发起人、`LEAVE` 禁发起人——发起人退出走 `TRANSFER_INITIATOR`）；②**FSM**（`fsm.dart`）——敲定后单步骤改期转移（受影响步骤回 PENDING_RECHECK、包派生态不变，重确认再拒派生 STALLED）+ LEAVE 解挂（对自己 MAKE_OPTIONAL + 门限收缩 min(M, 剩余人数)）+ TTL 双参数（`soft_lock_ttl`=24h / `proposal_alive_ttl`=max(24h, 目标日前一天−发起时刻)，EXPIRED 判据换源；既有 24h EXPIRED 测试随迁）；③**UI**——页面 D 减层版（4.2 行已同步）；④施工序：契约+FSM 先行，UI 随 4.2（拒绝面板本轮已按减层版重构落地）。
+
+**落地对账（2026-10-25，本轮切片全绿）**：①proto **v0.1.9-contract**（relay README 契约版本账）双端 codegen 生成并同步 `lib/collab/proto/`；②relay 服务端：终态门禁白名单 + `PATCH_STEP_TIME` 发起人独占 + `LEAVE` 禁投发起人（新错误码 `INITIATOR_CANNOT_LEAVE`），PG 集成测试新增 `TestPatchStepTimeAndLeaveAfterConfirm`/`TestTerminalGateClosesAfterCancel` 全绿（敲定后改期 200 保态、非发起人 403、发起人退出 403、成员退出 200 保态、CANCELLED 白名单关闭），Guards/并发回归全绿——模拟套件 7 条 DEFECT 均为既有缺口与本次无关（base_revision 不自增 / ADD_MEMBER 越权 / TRANSFER_INITIATOR、MEMBER_REMOVED 不生效 / quorum 不仲裁 / 幂等跨端点 / 读接口缓存）；③端侧 fsm.dart：`StepFsmStatus.recheck`（包侧派生把 recheck 计入 ready 同侪，重 ACCEPT 复活、再 REJECT 落 STALLED）+ Directive/Consensus 双模式 PATCH_STEP_TIME/LEAVE + **FORCE_FINALIZE 平权死路径清理（§7-7 遗留清账，测试同步改发起人独占）**；④propose.dart `proposalAliveTtlMs`（max(24h, 目标日前一天−发起时刻)）随载荷 `expires_at_ms` 下发，显式 ttl 为下限覆盖；⑤reject_panel.dart 减层重构（默认一屏+展开态，`RejectResult` 形状不变，调用方零改动）。全量 `flutter test` **464/464**（新增 fsm 敲定后生命周期 5 例 + propose 存活 TTL 1 例 + 面板重写 5 例）、`flutter analyze` 改动面零 issue。identity.dart PoP 注释待下轮清理。
 
 ## 6. Phase 5：存储容灾与收尾（预计 2–3 天）
 

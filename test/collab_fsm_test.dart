@@ -283,7 +283,7 @@ void main() {
       expect(s.winningSlot, 'fri18');
     });
 
-    test('✕不行 不计赞成票；FORCE_FINALIZE 平权落槌；非参与者落槌丢弃', () {
+    test('✕不行 不计赞成票；FORCE_FINALIZE 发起人独占（§7-7 对账清理）；越权落槌丢弃', () {
       var s = propose();
       s = replay(s, [
         sig(ActionType.VOTE, 'a', 2, slotId: 'fri18', pref: ConsensusPreference.prefer),
@@ -292,14 +292,17 @@ void main() {
       ]);
       expect(s.status, BundleFsmStatus.proposed); // 2 赞成 + 1 反对
 
-      final member = replay(s,
+      final hijack = replay(s,
           [sig(ActionType.FORCE_FINALIZE, 'b', 5, slotId: 'sat12')]);
-      expect(member.status, BundleFsmStatus.confirmed); // 分票死锁，平权一锤定音
-      expect(member.winningSlot, 'sat12');
-
+      expect(hijack.status, BundleFsmStatus.proposed); // 非发起人 → 丢弃（死路径已清）
       final outsider = replay(s,
           [sig(ActionType.FORCE_FINALIZE, 'z', 5, slotId: 'sat12')]);
       expect(outsider.status, BundleFsmStatus.proposed);
+
+      final boss = replay(s,
+          [sig(ActionType.FORCE_FINALIZE, 'A', 5, slotId: 'sat12')]);
+      expect(boss.status, BundleFsmStatus.confirmed); // 发起人一锤定音
+      expect(boss.winningSlot, 'sat12');
     });
 
     test('REOPEN 平权重开：旧票作废、候选保留；ADD_SLOT 满 8 上限置灰', () {
@@ -339,6 +342,158 @@ void main() {
         sig(ActionType.VOTE, 'c', 4, slotId: 'fri18', pref: ConsensusPreference.ok),
       ]);
       expect(maybeExpire(done, 48 * hour).status, BundleFsmStatus.confirmed);
+    });
+  });
+
+  group('敲定后生命周期（§4.3/§4.5 2026-10-25）', () {
+    CollabBundleState confirmed() => replay(CollabBundleState.empty('b1'), [
+          sig(ActionType.PROPOSE, 'A', 1, uids: ['b', 'c'], skeleton: [
+            const CollabStepSpec(stepId: 's1', requiredUids: ['a', 'b']),
+            const CollabStepSpec(stepId: 's2', requiredUids: ['c']),
+          ]),
+          sig(ActionType.ACCEPT, 'a', 2, stepId: 's1'),
+          sig(ActionType.ACCEPT, 'b', 3, stepId: 's1'),
+          sig(ActionType.ACCEPT, 'c', 4, stepId: 's2'),
+        ]);
+
+    test('PATCH_STEP_TIME：包保持 CONFIRMED，受影响步骤入 recheck，其余步骤不动', () {
+      final s = replay(confirmed(), [
+        sig(ActionType.PATCH_STEP_TIME, 'A', 5,
+            stepId: 's1', serverAtMs: 5 * hour),
+      ]);
+      expect(s.status, BundleFsmStatus.confirmed); // 包派生态不变
+      final s1 = s.steps['s1']!;
+      expect(s1.status, StepFsmStatus.recheck);
+      expect(s1.revision, 2);
+      expect(s1.ballots['a']!.state, MemberVoteState.pendingRecheck);
+      expect(s1.ballots['b']!.state, MemberVoteState.pendingRecheck);
+      expect(s.steps['s2']!.status, StepFsmStatus.ready); // 其余步骤不动
+    });
+
+    test('PATCH_STEP_TIME 守卫与复活：非发起人/非 CONFIRMED 丢弃；重确认 ACCEPT 复活、REJECT 落 STALLED', () {
+      final base = confirmed();
+      final hijack =
+          replay(base, [sig(ActionType.PATCH_STEP_TIME, 'b', 5, stepId: 's1')]);
+      expect(hijack.status, BundleFsmStatus.confirmed);
+      expect(hijack.steps['s1']!.status, StepFsmStatus.ready); // 原样
+
+      final stalledBase = replay(CollabBundleState.empty('b1'), [
+        sig(ActionType.PROPOSE, 'A', 1, uids: ['b'], skeleton: [
+          const CollabStepSpec(stepId: 's1', requiredUids: ['a', 'b']),
+        ]),
+        sig(ActionType.REJECT, 'b', 2, stepId: 's1',
+            reason: RejectReason.timeConflict),
+      ]);
+      expect(stalledBase.status, BundleFsmStatus.stalled);
+      final stray = replay(stalledBase,
+          [sig(ActionType.PATCH_STEP_TIME, 'A', 3, stepId: 's1')]);
+      expect(stray.steps['s1']!.status, StepFsmStatus.timeClash); // 协商期改期走 PATCH_TIME，本动作丢弃
+
+      // 重确认：a 重发 ACCEPT 复活，b 未重确认仍 recheck，包保持 CONFIRMED
+      final half = replay(confirmed(), [
+        sig(ActionType.PATCH_STEP_TIME, 'A', 5, stepId: 's1'),
+        sig(ActionType.ACCEPT, 'a', 6, stepId: 's1'),
+      ]);
+      expect(half.status, BundleFsmStatus.confirmed);
+      expect(half.steps['s1']!.status, StepFsmStatus.recheck);
+      expect(half.steps['s1']!.ballots['a']!.state, MemberVoteState.accepted);
+
+      // 重确认再拒 → clash → STALLED
+      final out = replay(confirmed(), [
+        sig(ActionType.PATCH_STEP_TIME, 'A', 5, stepId: 's1'),
+        sig(ActionType.REJECT, 'b', 6, stepId: 's1',
+            reason: RejectReason.timeConflict),
+      ]);
+      expect(out.status, BundleFsmStatus.stalled);
+      expect(out.steps['s1']!.status, StepFsmStatus.timeClash);
+    });
+
+    test('LEAVE：必需名单剔除+门限收缩；空名单步骤转 optional；participants 移除', () {
+      final base = confirmed(); // s1(a,b) s2(c)，全部 ready
+      final s = replay(base, [sig(ActionType.LEAVE, 'c', 5)]);
+      expect(s.participants, isNot(contains('c')));
+      expect(s.steps['s2']!.requiredUids, isEmpty);
+      expect(s.steps['s2']!.status, StepFsmStatus.optional); // 空名单移出强一致
+      expect(s.status, BundleFsmStatus.confirmed); // s1 不受影响
+
+      // 门限收缩：5 选 3，d 退出后 min(3, 剩余 4)=3 不变
+      final five = [
+        const CollabStepSpec(
+            stepId: 's3', requiredUids: ['a', 'b', 'c', 'd', 'e'], threshold: 3),
+      ];
+      var t = replay(CollabBundleState.empty('b1'), [
+        sig(ActionType.PROPOSE, 'A', 1,
+            uids: ['a', 'b', 'c', 'd', 'e'], skeleton: five),
+        sig(ActionType.ACCEPT, 'a', 2, stepId: 's3'),
+        sig(ActionType.ACCEPT, 'b', 3, stepId: 's3'),
+      ]);
+      expect(t.status, BundleFsmStatus.proposed); // 2/3
+      t = replay(t, [sig(ActionType.LEAVE, 'd', 4)]);
+      expect(t.steps['s3']!.threshold, 3); // min(3, 4)
+      t = replay(t, [sig(ActionType.ACCEPT, 'c', 5, stepId: 's3')]);
+      expect(t.status, BundleFsmStatus.confirmed);
+    });
+
+    test('LEAVE 守卫：发起人退出丢弃；非成员丢弃；CANCELLED 终态不可再退', () {
+      final base = confirmed();
+      final boss = replay(base, [sig(ActionType.LEAVE, 'A', 5)]);
+      expect(boss.participants, contains('A')); // 发起人不可 LEAVE
+      final stranger = replay(base, [sig(ActionType.LEAVE, 'z', 5)]);
+      expect(stranger.participants.length, base.participants.length);
+      final dead = replay(base, [sig(ActionType.CANCEL, 'A', 5)]);
+      final after = replay(dead, [sig(ActionType.LEAVE, 'c', 6)]);
+      expect(after.participants, contains('c'));
+    });
+
+    test('Consensus：PATCH_STEP_TIME 发起人退回重议（候选保留/票清空）；LEAVE 撤票', () {
+      var s = replay(
+          CollabBundleState.empty('b1',
+              proposalType: CollabProposalType.consensus), [
+        sig(ActionType.PROPOSE, 'A', 1,
+            uids: ['a', 'b', 'c', 'd'],
+            slots: ['fri18', 'sat12'],
+            quorum: 3),
+        sig(ActionType.VOTE, 'a', 2, slotId: 'fri18', pref: ConsensusPreference.prefer),
+        sig(ActionType.VOTE, 'b', 3, slotId: 'fri18', pref: ConsensusPreference.ok),
+        sig(ActionType.VOTE, 'c', 4, slotId: 'fri18', pref: ConsensusPreference.ok),
+      ]);
+      expect(s.status, BundleFsmStatus.confirmed);
+
+      // 非发起人改期丢弃
+      final hijack =
+          replay(s, [sig(ActionType.PATCH_STEP_TIME, 'a', 5, slotId: 'fri18')]);
+      expect(hijack.status, BundleFsmStatus.confirmed);
+
+      // 发起人改期 → 退回重议：候选保留、票清空、胜出位清空
+      final amend =
+          replay(s, [sig(ActionType.PATCH_STEP_TIME, 'A', 5, slotId: 'fri18')]);
+      expect(amend.status, BundleFsmStatus.proposed);
+      expect(amend.winningSlot, isNull);
+      expect(amend.candidateSlots, containsAll(['fri18', 'sat12']));
+      expect((amend.votes['fri18'] ?? const <String, ConsensusPreference>{}),
+          isEmpty);
+
+      // LEAVE：c 撤自己的 no 票；此后 c 投票被丢弃；d 补票达标
+      var t = replay(
+          CollabBundleState.empty('b1',
+              proposalType: CollabProposalType.consensus), [
+        sig(ActionType.PROPOSE, 'A', 1,
+            uids: ['a', 'b', 'c', 'd'], slots: ['fri18'], quorum: 3),
+        sig(ActionType.VOTE, 'a', 2, slotId: 'fri18', pref: ConsensusPreference.prefer),
+        sig(ActionType.VOTE, 'b', 3, slotId: 'fri18', pref: ConsensusPreference.ok),
+        sig(ActionType.VOTE, 'c', 4, slotId: 'fri18', pref: ConsensusPreference.no),
+      ]);
+      t = replay(t, [sig(ActionType.LEAVE, 'c', 5)]);
+      expect(t.participants, isNot(contains('c')));
+      expect((t.votes['fri18'] ?? const <String, ConsensusPreference>{})
+          .containsKey('c'), isFalse);
+      final revote =
+          replay(t, [sig(ActionType.VOTE, 'c', 6, slotId: 'fri18', pref: ConsensusPreference.ok)]);
+      expect((revote.votes['fri18'] ?? const <String, ConsensusPreference>{})
+          .containsKey('c'), isFalse); // 已退出 → 投票丢弃
+      final done =
+          replay(t, [sig(ActionType.VOTE, 'd', 6, slotId: 'fri18', pref: ConsensusPreference.ok)]);
+      expect(done.status, BundleFsmStatus.confirmed); // 剩余成员补齐门限
     });
   });
 }

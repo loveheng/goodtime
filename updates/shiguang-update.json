@@ -1,8 +1,8 @@
 {
-  "versionCode": 44030,
+  "versionCode": 44031,
   "versionName": "1.3.0",
   "applicationId": "app.shiguang.shiguang",
-  "apkUrl": "https://r2.oklhj.eu.org/updates/shiguang/app-44030.apk",
-  "sha256": "6dbc00b372b9ebb344e6d64cb3fff6127522499c167ec7af4df0daf19c1f1c86",
-  "changelog": "refactor(mcp): 内核依赖反转（工具面/KV 端口注入）+ Binder 迁移官方 SDK（AIDL 去手抄）"
+  "apkUrl": "https://r2.oklhj.eu.org/updates/shiguang/app-44031.apk",
+  "sha256": "48d688d24e4677fea1f89358d32b6250022e9330ed8b68f96eeb724298d1a715",
+  "changelog": "chore(release): Binder SDK 升级 0.2.0 + 发布清单 v1.3.0 (44030)"
 }

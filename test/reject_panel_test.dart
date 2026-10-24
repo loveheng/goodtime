@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiguang/data/collab_repository.dart';
 import 'package:shiguang/ui/collab/reject_panel.dart';
 
-/// 双维拒绝面板（§11.2 D 页）组件测试：四步结构化流程 + 隐私分级 + 建议转派。
+/// 双维拒绝面板（§11.2 D 页 §3.4 减层版，2026-10-25）组件测试：
+/// 默认一屏（维度+子类+可选备注一键拒绝）+ 展开态（隐私分级/建议转派）。
 void main() {
   const bundle = CollabBundleHeader(
     id: 'b1',
@@ -45,45 +46,66 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('初始显示主维度分流（时间冲突 / 权责异议），四步指示',
+  testWidgets('默认一屏：维度/子类/备注/提交同屏，隐私与转派收在展开态',
       (tester) async {
     await pump(tester, onConfirm: (_) async {});
     expect(find.text('提出异议'), findsOneWidget);
-    expect(find.text('1 / 4'), findsOneWidget);
+    expect(find.text('1 / 4'), findsNothing); // 四步向导指示已退役
     expect(find.text('时间冲突'), findsOneWidget);
     expect(find.text('权责异议'), findsOneWidget);
+    expect(find.text('非我职责'), findsOneWidget);
+    expect(find.text('提交异议'), findsOneWidget);
+    // 展开态默认折叠：隐私与转派不可见
+    expect(find.text('谁可以看到你的理由？'), findsNothing);
+    expect(find.text('建议转给谁？（选填）'), findsNothing);
+    expect(find.text('详细说明与隐私（选填）'), findsOneWidget);
   });
 
-  testWidgets('四步流程：时间冲突 + 子类 + 隐私私密 + 转派 → 结构化结果',
+  testWidgets('一屏提交：维度+子类即可，备注留空 → 默认隐私、无转派',
       (tester) async {
     late RejectResult got;
     await pump(tester, onConfirm: (r) async => got = r, currentUserId: 'u2');
 
-    // 步骤 0：选时间冲突
+    await tester.tap(find.text('权责异议'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('非我职责'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('提交异议'));
+    await tester.pumpAndSettle();
+
+    expect(got.reason, 'ROLE_UNWILLING');
+    expect(got.subReason, 'NOT_MY_JOB');
+    expect(got.detail, isNull);
+    expect(got.privacy, 'PUBLIC');
+    expect(got.suggestReassign, isNull);
+  });
+
+  testWidgets('展开态：隐私私密 + 建议转派 → 结构化结果带 INITIATOR_ONLY/转派',
+      (tester) async {
+    late RejectResult got;
+    await pump(tester, onConfirm: (r) async => got = r, currentUserId: 'u2');
+
     await tester.tap(find.text('时间冲突'));
     await tester.pumpAndSettle();
-    expect(find.text('2 / 4'), findsOneWidget);
-
-    // 步骤 1：子类四选一 + 选填说明
     await tester.tap(find.text('缺前置条件'));
     await tester.pumpAndSettle();
-    await tester.enterText(
-        find.byType(TextField), '场地还没订');
+    await tester.enterText(find.byType(TextField), '场地还没订');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('下一步'));
-    await tester.pumpAndSettle();
-    expect(find.text('3 / 4'), findsOneWidget);
 
-    // 步骤 2：隐私分级 → 仅发起人可见
-    await tester.tap(find.text('仅发起人可见'));
+    await tester.tap(find.text('详细说明与隐私（选填）'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('下一步'));
+    expect(find.text('谁可以看到你的理由？'), findsOneWidget);
+    // 建议转派排除自己 u2，候选为 u1/u3（单屏+展开态超出测试视口，先滚动可见）
+    await tester.ensureVisible(find.text('u3'));
     await tester.pumpAndSettle();
-    expect(find.text('4 / 4'), findsOneWidget);
-
-    // 步骤 3：建议转派（排除自己 u2，候选为 u1/u3）
     expect(find.text('u1'), findsOneWidget);
     expect(find.text('u3'), findsOneWidget);
+    await tester.ensureVisible(find.text('仅发起人可见'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('仅发起人可见'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('u3'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('u3'));
     await tester.pumpAndSettle();
 
@@ -97,45 +119,35 @@ void main() {
     expect(got.suggestReassign, 'u3');
   });
 
-  testWidgets('隐私默认全员可见，转派不选 → 默认隐私 + 无转派',
-      (tester) async {
+  testWidgets('未选维度时提交禁用；维度选中后未选子类仍禁用', (tester) async {
+    await pump(tester, onConfirm: (_) async {});
+    FilledButton submit() => tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '提交异议'));
+    expect(submit().onPressed, isNull); // 维度未选 → 禁用
+
+    await tester.tap(find.text('时间冲突'));
+    await tester.pumpAndSettle();
+    expect(submit().onPressed, isNull); // 子类未选 → 禁用
+
+    await tester.tap(find.text('个人原因'));
+    await tester.pumpAndSettle();
+    expect(submit().onPressed, isNotNull); // 齐 → 可提交
+  });
+
+  testWidgets('主维度单选可切换：后选覆盖先选', (tester) async {
     late RejectResult got;
     await pump(tester, onConfirm: (r) async => got = r, currentUserId: 'u2');
 
+    await tester.tap(find.text('时间冲突'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('权责异议'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('非我职责'));
+    await tester.tap(find.text('个人原因'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('下一步'));
-    await tester.pumpAndSettle();
-    // 步骤 2 默认 PUBLIC，直接前进
-    await tester.tap(find.text('下一步'));
-    await tester.pumpAndSettle();
-    // 步骤 3 不选转派，直接提交
     await tester.tap(find.text('提交异议'));
     await tester.pumpAndSettle();
 
-    expect(got.reason, 'ROLE_UNWILLING');
-    expect(got.subReason, 'NOT_MY_JOB');
-    expect(got.privacy, 'PUBLIC');
-    expect(got.suggestReassign, isNull);
-  });
-
-  testWidgets('未选子类时「下一步」禁用（必填）', (tester) async {
-    await pump(tester, onConfirm: (_) async {});
-    await tester.tap(find.text('时间冲突'));
-    await tester.pumpAndSettle();
-    final next = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, '下一步'));
-    expect(next.onPressed, isNull); // 禁用
-  });
-
-  testWidgets('上一步可回退到主维度', (tester) async {
-    await pump(tester, onConfirm: (_) async {});
-    await tester.tap(find.text('时间冲突'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('上一步'));
-    await tester.pumpAndSettle();
-    expect(find.text('1 / 4'), findsOneWidget);
+    expect(got.reason, 'ROLE_UNWILLING'); // 后选覆盖
+    expect(got.subReason, 'PERSONAL');
   });
 }

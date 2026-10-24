@@ -369,14 +369,17 @@ class AuthChallenge extends $pb.GeneratedMessage {
 
 class RegisterRequest extends $pb.GeneratedMessage {
   factory RegisterRequest({
-    $core.String? userId,
+    @$core.Deprecated('This field is deprecated.') $core.String? userId,
     $core.List<$core.int>? identityKeyPub,
     $core.List<$core.int>? signedPrekeyPub,
     $core.List<$core.int>? signedPrekeySig,
     $core.String? pushToken,
     $core.List<$core.int>? encryptedProfile,
+    @$core.Deprecated('This field is deprecated.')
     $core.List<$core.int>? signedPop,
     $core.String? powSolution,
+    $core.String? username,
+    $core.String? password,
   }) {
     final result = RegisterRequest._();
     if (userId != null) result.userId = userId;
@@ -387,6 +390,8 @@ class RegisterRequest extends $pb.GeneratedMessage {
     if (encryptedProfile != null) result.encryptedProfile = encryptedProfile;
     if (signedPop != null) result.signedPop = signedPop;
     if (powSolution != null) result.powSolution = powSolution;
+    if (username != null) result.username = username;
+    if (password != null) result.password = password;
     return result;
   }
 
@@ -417,6 +422,8 @@ class RegisterRequest extends $pb.GeneratedMessage {
     ..a<$core.List<$core.int>>(
         7, _omitFieldNames ? '' : 'signedPop', $pb.PbFieldType.OY)
     ..aOS(8, _omitFieldNames ? '' : 'powSolution')
+    ..aOS(9, _omitFieldNames ? '' : 'username')
+    ..aOS(10, _omitFieldNames ? '' : 'password')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -441,12 +448,16 @@ class RegisterRequest extends $pb.GeneratedMessage {
           RegisterRequest.$_createMessage);
   static RegisterRequest? _defaultInstance;
 
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(1)
   $core.String get userId => $_getSZ(0);
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(1)
   set userId($core.String value) => $_setString(0, value);
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(1)
   $core.bool hasUserId() => $_has(0);
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(1)
   void clearUserId() => $_clearField(1);
 
@@ -495,12 +506,16 @@ class RegisterRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(6)
   void clearEncryptedProfile() => $_clearField(6);
 
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(7)
   $core.List<$core.int> get signedPop => $_getN(6);
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(7)
   set signedPop($core.List<$core.int> value) => $_setBytes(6, value);
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(7)
   $core.bool hasSignedPop() => $_has(6);
+  @$core.Deprecated('This field is deprecated.')
   @$pb.TagNumber(7)
   void clearSignedPop() => $_clearField(7);
 
@@ -512,20 +527,45 @@ class RegisterRequest extends $pb.GeneratedMessage {
   $core.bool hasPowSolution() => $_has(7);
   @$pb.TagNumber(8)
   void clearPowSolution() => $_clearField(8);
+
+  /// —— Plan A：用户名+密码（账号体系，与 E2EE 密钥解耦；服务端仅存派生哈希，零明文密码）——
+  @$pb.TagNumber(9)
+  $core.String get username => $_getSZ(8);
+  @$pb.TagNumber(9)
+  set username($core.String value) => $_setString(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasUsername() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearUsername() => $_clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.String get password => $_getSZ(9);
+  @$pb.TagNumber(10)
+  set password($core.String value) => $_setString(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasPassword() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearPassword() => $_clearField(10);
 }
 
 class LoginRequest extends $pb.GeneratedMessage {
   factory LoginRequest({
-    $core.String? userId,
+    @$core.Deprecated('This field is deprecated.') $core.String? userId,
+    @$core.Deprecated('This field is deprecated.')
     $core.List<$core.int>? identityKeyPub,
+    @$core.Deprecated('This field is deprecated.')
     $core.List<$core.int>? signedPop,
-    $core.String? powSolution,
+    @$core.Deprecated('This field is deprecated.') $core.String? powSolution,
+    $core.String? username,
+    $core.String? password,
   }) {
     final result = LoginRequest._();
     if (userId != null) result.userId = userId;
     if (identityKeyPub != null) result.identityKeyPub = identityKeyPub;
     if (signedPop != null) result.signedPop = signedPop;
     if (powSolution != null) result.powSolution = powSolution;
+    if (username != null) result.username = username;
+    if (password != null) result.password = password;
     return result;
   }
 
@@ -549,6 +589,8 @@ class LoginRequest extends $pb.GeneratedMessage {
     ..a<$core.List<$core.int>>(
         3, _omitFieldNames ? '' : 'signedPop', $pb.PbFieldType.OY)
     ..aOS(4, _omitFieldNames ? '' : 'powSolution')
+    ..aOS(5, _omitFieldNames ? '' : 'username')
+    ..aOS(6, _omitFieldNames ? '' : 'password')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -573,6 +615,213 @@ class LoginRequest extends $pb.GeneratedMessage {
           LoginRequest.$_createMessage);
   static LoginRequest? _defaultInstance;
 
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(1)
+  $core.String get userId => $_getSZ(0);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(1)
+  set userId($core.String value) => $_setString(0, value);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(1)
+  $core.bool hasUserId() => $_has(0);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(1)
+  void clearUserId() => $_clearField(1);
+
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get identityKeyPub => $_getN(1);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(2)
+  set identityKeyPub($core.List<$core.int> value) => $_setBytes(1, value);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(2)
+  $core.bool hasIdentityKeyPub() => $_has(1);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(2)
+  void clearIdentityKeyPub() => $_clearField(2);
+
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get signedPop => $_getN(2);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(3)
+  set signedPop($core.List<$core.int> value) => $_setBytes(2, value);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(3)
+  $core.bool hasSignedPop() => $_has(2);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(3)
+  void clearSignedPop() => $_clearField(3);
+
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(4)
+  $core.String get powSolution => $_getSZ(3);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(4)
+  set powSolution($core.String value) => $_setString(3, value);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(4)
+  $core.bool hasPowSolution() => $_has(3);
+  @$core.Deprecated('This field is deprecated.')
+  @$pb.TagNumber(4)
+  void clearPowSolution() => $_clearField(4);
+
+  /// —— Plan A：用户名+密码登录（服务端校验哈希签发双 Token）——
+  @$pb.TagNumber(5)
+  $core.String get username => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set username($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasUsername() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearUsername() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $core.String get password => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set password($core.String value) => $_setString(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasPassword() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearPassword() => $_clearField(6);
+}
+
+class ChangePasswordRequest extends $pb.GeneratedMessage {
+  factory ChangePasswordRequest({
+    $core.String? oldPassword,
+    $core.String? newPassword,
+  }) {
+    final result = ChangePasswordRequest._();
+    if (oldPassword != null) result.oldPassword = oldPassword;
+    if (newPassword != null) result.newPassword = newPassword;
+    return result;
+  }
+
+  ChangePasswordRequest._();
+
+  factory ChangePasswordRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      ChangePasswordRequest()..mergeFromBuffer(data, registry);
+  factory ChangePasswordRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      ChangePasswordRequest()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ChangePasswordRequest',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'shiguang.relay.v1'),
+      createEmptyInstance: ChangePasswordRequest.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'oldPassword')
+    ..aOS(2, _omitFieldNames ? '' : 'newPassword')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ChangePasswordRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ChangePasswordRequest copyWith(
+          void Function(ChangePasswordRequest) updates) =>
+      super.copyWith((message) => updates(message as ChangePasswordRequest))
+          as ChangePasswordRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated(
+      'Use ChangePasswordRequest() / ChangePasswordRequest.new instead')
+  static ChangePasswordRequest create() => ChangePasswordRequest._();
+  static $pb.GeneratedMessage $_createMessage() => ChangePasswordRequest._();
+  @$core.override
+  ChangePasswordRequest createEmptyInstance() => ChangePasswordRequest._();
+  @$core.pragma('dart2js:noInline')
+  static ChangePasswordRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ChangePasswordRequest>(
+          ChangePasswordRequest.$_createMessage);
+  static ChangePasswordRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get oldPassword => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set oldPassword($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasOldPassword() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearOldPassword() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get newPassword => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set newPassword($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasNewPassword() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearNewPassword() => $_clearField(2);
+}
+
+class LookupUserResponse extends $pb.GeneratedMessage {
+  factory LookupUserResponse({
+    $core.String? userId,
+    $core.String? username,
+    $core.List<$core.int>? identityKeyPub,
+    $core.List<$core.int>? signedPrekeyPub,
+    $core.List<$core.int>? signedPrekeySig,
+  }) {
+    final result = LookupUserResponse._();
+    if (userId != null) result.userId = userId;
+    if (username != null) result.username = username;
+    if (identityKeyPub != null) result.identityKeyPub = identityKeyPub;
+    if (signedPrekeyPub != null) result.signedPrekeyPub = signedPrekeyPub;
+    if (signedPrekeySig != null) result.signedPrekeySig = signedPrekeySig;
+    return result;
+  }
+
+  LookupUserResponse._();
+
+  factory LookupUserResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      LookupUserResponse()..mergeFromBuffer(data, registry);
+  factory LookupUserResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      LookupUserResponse()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'LookupUserResponse',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'shiguang.relay.v1'),
+      createEmptyInstance: LookupUserResponse.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'userId')
+    ..aOS(2, _omitFieldNames ? '' : 'username')
+    ..a<$core.List<$core.int>>(
+        3, _omitFieldNames ? '' : 'identityKeyPub', $pb.PbFieldType.OY)
+    ..a<$core.List<$core.int>>(
+        4, _omitFieldNames ? '' : 'signedPrekeyPub', $pb.PbFieldType.OY)
+    ..a<$core.List<$core.int>>(
+        5, _omitFieldNames ? '' : 'signedPrekeySig', $pb.PbFieldType.OY)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  LookupUserResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  LookupUserResponse copyWith(void Function(LookupUserResponse) updates) =>
+      super.copyWith((message) => updates(message as LookupUserResponse))
+          as LookupUserResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use LookupUserResponse() / LookupUserResponse.new instead')
+  static LookupUserResponse create() => LookupUserResponse._();
+  static $pb.GeneratedMessage $_createMessage() => LookupUserResponse._();
+  @$core.override
+  LookupUserResponse createEmptyInstance() => LookupUserResponse._();
+  @$core.pragma('dart2js:noInline')
+  static LookupUserResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<LookupUserResponse>(
+          LookupUserResponse.$_createMessage);
+  static LookupUserResponse? _defaultInstance;
+
   @$pb.TagNumber(1)
   $core.String get userId => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -583,31 +832,40 @@ class LoginRequest extends $pb.GeneratedMessage {
   void clearUserId() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $core.List<$core.int> get identityKeyPub => $_getN(1);
+  $core.String get username => $_getSZ(1);
   @$pb.TagNumber(2)
-  set identityKeyPub($core.List<$core.int> value) => $_setBytes(1, value);
+  set username($core.String value) => $_setString(1, value);
   @$pb.TagNumber(2)
-  $core.bool hasIdentityKeyPub() => $_has(1);
+  $core.bool hasUsername() => $_has(1);
   @$pb.TagNumber(2)
-  void clearIdentityKeyPub() => $_clearField(2);
+  void clearUsername() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $core.List<$core.int> get signedPop => $_getN(2);
+  $core.List<$core.int> get identityKeyPub => $_getN(2);
   @$pb.TagNumber(3)
-  set signedPop($core.List<$core.int> value) => $_setBytes(2, value);
+  set identityKeyPub($core.List<$core.int> value) => $_setBytes(2, value);
   @$pb.TagNumber(3)
-  $core.bool hasSignedPop() => $_has(2);
+  $core.bool hasIdentityKeyPub() => $_has(2);
   @$pb.TagNumber(3)
-  void clearSignedPop() => $_clearField(3);
+  void clearIdentityKeyPub() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $core.String get powSolution => $_getSZ(3);
+  $core.List<$core.int> get signedPrekeyPub => $_getN(3);
   @$pb.TagNumber(4)
-  set powSolution($core.String value) => $_setString(3, value);
+  set signedPrekeyPub($core.List<$core.int> value) => $_setBytes(3, value);
   @$pb.TagNumber(4)
-  $core.bool hasPowSolution() => $_has(3);
+  $core.bool hasSignedPrekeyPub() => $_has(3);
   @$pb.TagNumber(4)
-  void clearPowSolution() => $_clearField(4);
+  void clearSignedPrekeyPub() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.List<$core.int> get signedPrekeySig => $_getN(4);
+  @$pb.TagNumber(5)
+  set signedPrekeySig($core.List<$core.int> value) => $_setBytes(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasSignedPrekeySig() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearSignedPrekeySig() => $_clearField(5);
 }
 
 class AuthResponse extends $pb.GeneratedMessage {
@@ -947,6 +1205,79 @@ class FriendshipRequest extends $pb.GeneratedMessage {
   void clearEncryptedIntro() => $_clearField(2);
 }
 
+/// 用户名搜索路径（Plan A）：A 以 Bearer 身份凭 user_id 直发，无 Ticket。
+/// 防滥用靠限流 + 接收方待审批配额 ≤50 + 关系去重 409 + 接收方可拉黑；与扫码路径殊途同归落 pending。
+class FriendRequest extends $pb.GeneratedMessage {
+  factory FriendRequest({
+    $core.String? toUserId,
+    $core.List<$core.int>? encryptedIntro,
+  }) {
+    final result = FriendRequest._();
+    if (toUserId != null) result.toUserId = toUserId;
+    if (encryptedIntro != null) result.encryptedIntro = encryptedIntro;
+    return result;
+  }
+
+  FriendRequest._();
+
+  factory FriendRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      FriendRequest()..mergeFromBuffer(data, registry);
+  factory FriendRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      FriendRequest()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'FriendRequest',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'shiguang.relay.v1'),
+      createEmptyInstance: FriendRequest.$_createMessage)
+    ..aOS(1, _omitFieldNames ? '' : 'toUserId')
+    ..a<$core.List<$core.int>>(
+        2, _omitFieldNames ? '' : 'encryptedIntro', $pb.PbFieldType.OY)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  FriendRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  FriendRequest copyWith(void Function(FriendRequest) updates) =>
+      super.copyWith((message) => updates(message as FriendRequest))
+          as FriendRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  @$core.Deprecated('Use FriendRequest() / FriendRequest.new instead')
+  static FriendRequest create() => FriendRequest._();
+  static $pb.GeneratedMessage $_createMessage() => FriendRequest._();
+  @$core.override
+  FriendRequest createEmptyInstance() => FriendRequest._();
+  @$core.pragma('dart2js:noInline')
+  static FriendRequest getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<FriendRequest>(
+          FriendRequest.$_createMessage);
+  static FriendRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get toUserId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set toUserId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasToUserId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearToUserId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get encryptedIntro => $_getN(1);
+  @$pb.TagNumber(2)
+  set encryptedIntro($core.List<$core.int> value) => $_setBytes(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasEncryptedIntro() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearEncryptedIntro() => $_clearField(2);
+}
+
 class FriendshipResponse extends $pb.GeneratedMessage {
   factory FriendshipResponse({
     $core.String? inviteId,
@@ -1023,12 +1354,14 @@ class FriendshipView extends $pb.GeneratedMessage {
     $core.String? status,
     $fixnum.Int64? createdAt,
     $core.List<$core.int>? encryptedIntro,
+    $core.String? username,
   }) {
     final result = FriendshipView._();
     if (userId != null) result.userId = userId;
     if (status != null) result.status = status;
     if (createdAt != null) result.createdAt = createdAt;
     if (encryptedIntro != null) result.encryptedIntro = encryptedIntro;
+    if (username != null) result.username = username;
     return result;
   }
 
@@ -1051,6 +1384,7 @@ class FriendshipView extends $pb.GeneratedMessage {
     ..aInt64(3, _omitFieldNames ? '' : 'createdAt')
     ..a<$core.List<$core.int>>(
         4, _omitFieldNames ? '' : 'encryptedIntro', $pb.PbFieldType.OY)
+    ..aOS(5, _omitFieldNames ? '' : 'username')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1110,6 +1444,15 @@ class FriendshipView extends $pb.GeneratedMessage {
   $core.bool hasEncryptedIntro() => $_has(3);
   @$pb.TagNumber(4)
   void clearEncryptedIntro() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get username => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set username($core.String value) => $_setString(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasUsername() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearUsername() => $_clearField(5);
 }
 
 /// ---------------------------------------------------------------------------
@@ -1348,6 +1691,7 @@ class RelayMessage extends $pb.GeneratedMessage {
     $core.String? kind,
     $core.List<$core.int>? cipher,
     $fixnum.Int64? expiresAt,
+    $core.Iterable<$core.MapEntry<$core.String, $core.String>>? header,
   }) {
     final result = RelayMessage._();
     if (msgId != null) result.msgId = msgId;
@@ -1356,6 +1700,7 @@ class RelayMessage extends $pb.GeneratedMessage {
     if (kind != null) result.kind = kind;
     if (cipher != null) result.cipher = cipher;
     if (expiresAt != null) result.expiresAt = expiresAt;
+    if (header != null) result.header.addEntries(header);
     return result;
   }
 
@@ -1380,6 +1725,11 @@ class RelayMessage extends $pb.GeneratedMessage {
     ..a<$core.List<$core.int>>(
         5, _omitFieldNames ? '' : 'cipher', $pb.PbFieldType.OY)
     ..aInt64(6, _omitFieldNames ? '' : 'expiresAt')
+    ..m<$core.String, $core.String>(7, _omitFieldNames ? '' : 'header',
+        entryClassName: 'RelayMessage.HeaderEntry',
+        keyFieldType: $pb.PbFieldType.OS,
+        valueFieldType: $pb.PbFieldType.OS,
+        packageName: const $pb.PackageName('shiguang.relay.v1'))
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1457,6 +1807,17 @@ class RelayMessage extends $pb.GeneratedMessage {
   $core.bool hasExpiresAt() => $_has(5);
   @$pb.TagNumber(6)
   void clearExpiresAt() => $_clearField(6);
+
+  /// v0.1.8 加性扩展：明文路由头（服务端盲转发不解析值，仅透传）。
+  /// `kind="mcp"` 通道约定（MCP over relay，轴 C 最小闭环）：
+  ///   header["role"]    = "req" | "resp"              —— 请求/响应方向
+  ///   header["corr_id"] = 请求方生成的 UUID            —— 请求-响应匹配（双端各自生成，服务端不校验）
+  ///   header["token"]   = MCP x-api-key（仅 req 携带）  —— MCP 层双保险门禁（好友 ACL 之外的第二道）
+  /// cipher = JSON-RPC 2.0 单条消息 UTF-8 文本。
+  /// MVP 口径：应用层暂为明文（依赖 TLS + 好友 ACL；E2EE 后续切片，勿在此基础上传输
+  /// 超出 MCP 会话的敏感数据）。服务端对该通道零解析、只路由。
+  @$pb.TagNumber(7)
+  $pb.PbMap<$core.String, $core.String> get header => $_getMap(6);
 }
 
 /// 瞬时信令拉取确认（v0.1.3）：对应 REST `POST /v1/relay/ack {message_ids}`。

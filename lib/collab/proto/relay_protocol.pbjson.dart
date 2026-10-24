@@ -47,6 +47,8 @@ const ActionType$json = {
     {'1': 'CLIENT_ACK', '2': 25},
     {'1': 'PING', '2': 26},
     {'1': 'ADD_MEMBER', '2': 27},
+    {'1': 'PATCH_STEP_TIME', '2': 28},
+    {'1': 'LEAVE', '2': 29},
   ],
 };
 
@@ -60,7 +62,7 @@ final $typed_data.Uint8List actionTypeDescriptor = $convert.base64Decode(
     '0KCVNURVBfTk9URRASEg8KC0FUVEFDSF9GQUNUEBMSDwoLVVBEQVRFX0ZBQ1QQFBIPCgtERVRB'
     'Q0hfRkFDVBAVEhIKDkZSRUVNQVNLX1FVRVJZEBYSFQoRRlJFRU1BU0tfUkVTUE9OU0UQFxIQCg'
     'xERUxJVkVSWV9BQ0sQGBIOCgpDTElFTlRfQUNLEBkSCAoEUElORxAaEg4KCkFERF9NRU1CRVIQ'
-    'Gw==');
+    'GxITCg9QQVRDSF9TVEVQX1RJTUUQHBIJCgVMRUFWRRAd');
 
 @$core.Deprecated('Use envelopeDescriptor instead')
 const Envelope$json = {
@@ -140,7 +142,14 @@ final $typed_data.Uint8List authChallengeDescriptor = $convert.base64Decode(
 const RegisterRequest$json = {
   '1': 'RegisterRequest',
   '2': [
-    {'1': 'user_id', '3': 1, '4': 1, '5': 9, '10': 'userId'},
+    {
+      '1': 'user_id',
+      '3': 1,
+      '4': 1,
+      '5': 9,
+      '8': {'3': true},
+      '10': 'userId',
+    },
     {'1': 'identity_key_pub', '3': 2, '4': 1, '5': 12, '10': 'identityKeyPub'},
     {
       '1': 'signed_prekey_pub',
@@ -164,36 +173,122 @@ const RegisterRequest$json = {
       '5': 12,
       '10': 'encryptedProfile'
     },
-    {'1': 'signed_pop', '3': 7, '4': 1, '5': 12, '10': 'signedPop'},
+    {
+      '1': 'signed_pop',
+      '3': 7,
+      '4': 1,
+      '5': 12,
+      '8': {'3': true},
+      '10': 'signedPop',
+    },
     {'1': 'pow_solution', '3': 8, '4': 1, '5': 9, '10': 'powSolution'},
+    {'1': 'username', '3': 9, '4': 1, '5': 9, '10': 'username'},
+    {'1': 'password', '3': 10, '4': 1, '5': 9, '10': 'password'},
   ],
 };
 
 /// Descriptor for `RegisterRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List registerRequestDescriptor = $convert.base64Decode(
-    'Cg9SZWdpc3RlclJlcXVlc3QSFwoHdXNlcl9pZBgBIAEoCVIGdXNlcklkEigKEGlkZW50aXR5X2'
-    'tleV9wdWIYAiABKAxSDmlkZW50aXR5S2V5UHViEioKEXNpZ25lZF9wcmVrZXlfcHViGAMgASgM'
-    'Ug9zaWduZWRQcmVrZXlQdWISKgoRc2lnbmVkX3ByZWtleV9zaWcYBCABKAxSD3NpZ25lZFByZW'
-    'tleVNpZxIdCgpwdXNoX3Rva2VuGAUgASgJUglwdXNoVG9rZW4SKwoRZW5jcnlwdGVkX3Byb2Zp'
-    'bGUYBiABKAxSEGVuY3J5cHRlZFByb2ZpbGUSHQoKc2lnbmVkX3BvcBgHIAEoDFIJc2lnbmVkUG'
-    '9wEiEKDHBvd19zb2x1dGlvbhgIIAEoCVILcG93U29sdXRpb24=');
+    'Cg9SZWdpc3RlclJlcXVlc3QSGwoHdXNlcl9pZBgBIAEoCUICGAFSBnVzZXJJZBIoChBpZGVudG'
+    'l0eV9rZXlfcHViGAIgASgMUg5pZGVudGl0eUtleVB1YhIqChFzaWduZWRfcHJla2V5X3B1YhgD'
+    'IAEoDFIPc2lnbmVkUHJla2V5UHViEioKEXNpZ25lZF9wcmVrZXlfc2lnGAQgASgMUg9zaWduZW'
+    'RQcmVrZXlTaWcSHQoKcHVzaF90b2tlbhgFIAEoCVIJcHVzaFRva2VuEisKEWVuY3J5cHRlZF9w'
+    'cm9maWxlGAYgASgMUhBlbmNyeXB0ZWRQcm9maWxlEiEKCnNpZ25lZF9wb3AYByABKAxCAhgBUg'
+    'lzaWduZWRQb3ASIQoMcG93X3NvbHV0aW9uGAggASgJUgtwb3dTb2x1dGlvbhIaCgh1c2VybmFt'
+    'ZRgJIAEoCVIIdXNlcm5hbWUSGgoIcGFzc3dvcmQYCiABKAlSCHBhc3N3b3Jk');
 
 @$core.Deprecated('Use loginRequestDescriptor instead')
 const LoginRequest$json = {
   '1': 'LoginRequest',
   '2': [
-    {'1': 'user_id', '3': 1, '4': 1, '5': 9, '10': 'userId'},
-    {'1': 'identity_key_pub', '3': 2, '4': 1, '5': 12, '10': 'identityKeyPub'},
-    {'1': 'signed_pop', '3': 3, '4': 1, '5': 12, '10': 'signedPop'},
-    {'1': 'pow_solution', '3': 4, '4': 1, '5': 9, '10': 'powSolution'},
+    {
+      '1': 'user_id',
+      '3': 1,
+      '4': 1,
+      '5': 9,
+      '8': {'3': true},
+      '10': 'userId',
+    },
+    {
+      '1': 'identity_key_pub',
+      '3': 2,
+      '4': 1,
+      '5': 12,
+      '8': {'3': true},
+      '10': 'identityKeyPub',
+    },
+    {
+      '1': 'signed_pop',
+      '3': 3,
+      '4': 1,
+      '5': 12,
+      '8': {'3': true},
+      '10': 'signedPop',
+    },
+    {
+      '1': 'pow_solution',
+      '3': 4,
+      '4': 1,
+      '5': 9,
+      '8': {'3': true},
+      '10': 'powSolution',
+    },
+    {'1': 'username', '3': 5, '4': 1, '5': 9, '10': 'username'},
+    {'1': 'password', '3': 6, '4': 1, '5': 9, '10': 'password'},
   ],
 };
 
 /// Descriptor for `LoginRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List loginRequestDescriptor = $convert.base64Decode(
-    'CgxMb2dpblJlcXVlc3QSFwoHdXNlcl9pZBgBIAEoCVIGdXNlcklkEigKEGlkZW50aXR5X2tleV'
-    '9wdWIYAiABKAxSDmlkZW50aXR5S2V5UHViEh0KCnNpZ25lZF9wb3AYAyABKAxSCXNpZ25lZFBv'
-    'cBIhCgxwb3dfc29sdXRpb24YBCABKAlSC3Bvd1NvbHV0aW9u');
+    'CgxMb2dpblJlcXVlc3QSGwoHdXNlcl9pZBgBIAEoCUICGAFSBnVzZXJJZBIsChBpZGVudGl0eV'
+    '9rZXlfcHViGAIgASgMQgIYAVIOaWRlbnRpdHlLZXlQdWISIQoKc2lnbmVkX3BvcBgDIAEoDEIC'
+    'GAFSCXNpZ25lZFBvcBIlCgxwb3dfc29sdXRpb24YBCABKAlCAhgBUgtwb3dTb2x1dGlvbhIaCg'
+    'h1c2VybmFtZRgFIAEoCVIIdXNlcm5hbWUSGgoIcGFzc3dvcmQYBiABKAlSCHBhc3N3b3Jk');
+
+@$core.Deprecated('Use changePasswordRequestDescriptor instead')
+const ChangePasswordRequest$json = {
+  '1': 'ChangePasswordRequest',
+  '2': [
+    {'1': 'old_password', '3': 1, '4': 1, '5': 9, '10': 'oldPassword'},
+    {'1': 'new_password', '3': 2, '4': 1, '5': 9, '10': 'newPassword'},
+  ],
+};
+
+/// Descriptor for `ChangePasswordRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List changePasswordRequestDescriptor = $convert.base64Decode(
+    'ChVDaGFuZ2VQYXNzd29yZFJlcXVlc3QSIQoMb2xkX3Bhc3N3b3JkGAEgASgJUgtvbGRQYXNzd2'
+    '9yZBIhCgxuZXdfcGFzc3dvcmQYAiABKAlSC25ld1Bhc3N3b3Jk');
+
+@$core.Deprecated('Use lookupUserResponseDescriptor instead')
+const LookupUserResponse$json = {
+  '1': 'LookupUserResponse',
+  '2': [
+    {'1': 'user_id', '3': 1, '4': 1, '5': 9, '10': 'userId'},
+    {'1': 'username', '3': 2, '4': 1, '5': 9, '10': 'username'},
+    {'1': 'identity_key_pub', '3': 3, '4': 1, '5': 12, '10': 'identityKeyPub'},
+    {
+      '1': 'signed_prekey_pub',
+      '3': 4,
+      '4': 1,
+      '5': 12,
+      '10': 'signedPrekeyPub'
+    },
+    {
+      '1': 'signed_prekey_sig',
+      '3': 5,
+      '4': 1,
+      '5': 12,
+      '10': 'signedPrekeySig'
+    },
+  ],
+};
+
+/// Descriptor for `LookupUserResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List lookupUserResponseDescriptor = $convert.base64Decode(
+    'ChJMb29rdXBVc2VyUmVzcG9uc2USFwoHdXNlcl9pZBgBIAEoCVIGdXNlcklkEhoKCHVzZXJuYW'
+    '1lGAIgASgJUgh1c2VybmFtZRIoChBpZGVudGl0eV9rZXlfcHViGAMgASgMUg5pZGVudGl0eUtl'
+    'eVB1YhIqChFzaWduZWRfcHJla2V5X3B1YhgEIAEoDFIPc2lnbmVkUHJla2V5UHViEioKEXNpZ2'
+    '5lZF9wcmVrZXlfc2lnGAUgASgMUg9zaWduZWRQcmVrZXlTaWc=');
 
 @$core.Deprecated('Use authResponseDescriptor instead')
 const AuthResponse$json = {
@@ -265,6 +360,20 @@ final $typed_data.Uint8List friendshipRequestDescriptor = $convert.base64Decode(
     '5GcmllbmRzaGlwVGlja2V0UgZ0aWNrZXQSJwoPZW5jcnlwdGVkX2ludHJvGAIgASgMUg5lbmNy'
     'eXB0ZWRJbnRybw==');
 
+@$core.Deprecated('Use friendRequestDescriptor instead')
+const FriendRequest$json = {
+  '1': 'FriendRequest',
+  '2': [
+    {'1': 'to_user_id', '3': 1, '4': 1, '5': 9, '10': 'toUserId'},
+    {'1': 'encrypted_intro', '3': 2, '4': 1, '5': 12, '10': 'encryptedIntro'},
+  ],
+};
+
+/// Descriptor for `FriendRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List friendRequestDescriptor = $convert.base64Decode(
+    'Cg1GcmllbmRSZXF1ZXN0EhwKCnRvX3VzZXJfaWQYASABKAlSCHRvVXNlcklkEicKD2VuY3J5cH'
+    'RlZF9pbnRybxgCIAEoDFIOZW5jcnlwdGVkSW50cm8=');
+
 @$core.Deprecated('Use friendshipResponseDescriptor instead')
 const FriendshipResponse$json = {
   '1': 'FriendshipResponse',
@@ -287,6 +396,7 @@ const FriendshipView$json = {
     {'1': 'status', '3': 2, '4': 1, '5': 9, '10': 'status'},
     {'1': 'created_at', '3': 3, '4': 1, '5': 3, '10': 'createdAt'},
     {'1': 'encrypted_intro', '3': 4, '4': 1, '5': 12, '10': 'encryptedIntro'},
+    {'1': 'username', '3': 5, '4': 1, '5': 9, '10': 'username'},
   ],
 };
 
@@ -294,7 +404,7 @@ const FriendshipView$json = {
 final $typed_data.Uint8List friendshipViewDescriptor = $convert.base64Decode(
     'Cg5GcmllbmRzaGlwVmlldxIXCgd1c2VyX2lkGAEgASgJUgZ1c2VySWQSFgoGc3RhdHVzGAIgAS'
     'gJUgZzdGF0dXMSHQoKY3JlYXRlZF9hdBgDIAEoA1IJY3JlYXRlZEF0EicKD2VuY3J5cHRlZF9p'
-    'bnRybxgEIAEoDFIOZW5jcnlwdGVkSW50cm8=');
+    'bnRybxgEIAEoDFIOZW5jcnlwdGVkSW50cm8SGgoIdXNlcm5hbWUYBSABKAlSCHVzZXJuYW1l');
 
 @$core.Deprecated('Use keyBundleQueryDescriptor instead')
 const KeyBundleQuery$json = {
@@ -368,7 +478,26 @@ const RelayMessage$json = {
     {'1': 'kind', '3': 4, '4': 1, '5': 9, '10': 'kind'},
     {'1': 'cipher', '3': 5, '4': 1, '5': 12, '10': 'cipher'},
     {'1': 'expires_at', '3': 6, '4': 1, '5': 3, '10': 'expiresAt'},
+    {
+      '1': 'header',
+      '3': 7,
+      '4': 3,
+      '5': 11,
+      '6': '.shiguang.relay.v1.RelayMessage.HeaderEntry',
+      '10': 'header'
+    },
   ],
+  '3': [RelayMessage_HeaderEntry$json],
+};
+
+@$core.Deprecated('Use relayMessageDescriptor instead')
+const RelayMessage_HeaderEntry$json = {
+  '1': 'HeaderEntry',
+  '2': [
+    {'1': 'key', '3': 1, '4': 1, '5': 9, '10': 'key'},
+    {'1': 'value', '3': 2, '4': 1, '5': 9, '10': 'value'},
+  ],
+  '7': {'7': true},
 };
 
 /// Descriptor for `RelayMessage`. Decode as a `google.protobuf.DescriptorProto`.
@@ -376,7 +505,9 @@ final $typed_data.Uint8List relayMessageDescriptor = $convert.base64Decode(
     'CgxSZWxheU1lc3NhZ2USFQoGbXNnX2lkGAEgASgJUgVtc2dJZBIqChFyZWNpcGllbnRfdXNlcl'
     '9pZBgCIAEoCVIPcmVjaXBpZW50VXNlcklkEiQKDnNlbmRlcl91c2VyX2lkGAMgASgJUgxzZW5k'
     'ZXJVc2VySWQSEgoEa2luZBgEIAEoCVIEa2luZBIWCgZjaXBoZXIYBSABKAxSBmNpcGhlchIdCg'
-    'pleHBpcmVzX2F0GAYgASgDUglleHBpcmVzQXQ=');
+    'pleHBpcmVzX2F0GAYgASgDUglleHBpcmVzQXQSQwoGaGVhZGVyGAcgAygLMisuc2hpZ3Vhbmcu'
+    'cmVsYXkudjEuUmVsYXlNZXNzYWdlLkhlYWRlckVudHJ5UgZoZWFkZXIaOQoLSGVhZGVyRW50cn'
+    'kSEAoDa2V5GAEgASgJUgNrZXkSFAoFdmFsdWUYAiABKAlSBXZhbHVlOgI4AQ==');
 
 @$core.Deprecated('Use relayAckRequestDescriptor instead')
 const RelayAckRequest$json = {

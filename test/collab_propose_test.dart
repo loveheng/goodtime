@@ -162,6 +162,34 @@ void main() {
       expect(state.candidateSlots, ['slot-a', 'slot-b']);
       expect(state.quorum, 2);
     });
+
+    test('提案存活 TTL（§3.6 拆分）：远期目标日抬高到前一天，无锚回落 24h', () {
+      const day = 24 * 60 * 60 * 1000;
+      const hour = 60 * 60 * 1000;
+      // now=0；目标时刻 10d+6h 落在 UTC 日界 10d 内 → 前一天 9d → 存活 9 天
+      final far = proposalAliveTtlMs(
+        nowMs: 0,
+        steps: const [
+          ProposalStepDraft(
+              stepId: 's1', requiredUids: ['u-b'], startsAtMs: 10 * day + 6 * hour),
+        ],
+      );
+      expect(far, 9 * day);
+      // 无任何时间锚 → 24h 底座（软锁淡出同源）
+      final bare = proposalAliveTtlMs(
+        nowMs: 0,
+        steps: const [ProposalStepDraft(stepId: 's1', requiredUids: ['u-b'])],
+      );
+      expect(bare, 24 * hour);
+      // 发起端显式下传：expires_at_ms = now + aliveTtl（成员端 FSM 直接消费）
+      final payload = proposalPayloadOf(
+        initiatorId: 'u-a',
+        draft: _directiveDraft(),
+        nowMs: 0,
+        aliveTtlMs: 9 * day,
+      );
+      expect(payload['expires_at_ms'], 9 * day);
+    });
   });
 
   group('成员密钥信封', () {

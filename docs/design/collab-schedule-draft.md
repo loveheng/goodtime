@@ -1,11 +1,11 @@
 ---
 status: active
-updated: 2026-10-19
+updated: 2026-10-25
 ---
 
 # 协同日程设计（collab-schedule-draft）
 
-> 结论先行：在拾光「本地持有的日程台账」之上增加**多人协同日程层**，采用**端到端加密（E2EE）+ 盲中继（Blind Relay）+ 服务端盲状态机 + BYOS 自带存储**四件套架构。服务端不接触任何业务明文，只做「认证、路由、防骚扰、流程仲裁、密文暂存」；所有内容（日程标题、时间锚点、拒绝理由、备注）在出设备前加密。**2026-10-08 §7 六项全部拍板定稿转 active**（拍板留痕=§7 台账；SSOT 并入=schedule-app §11 台账行，随施工切片 1 落地）。
+> 结论先行：在拾光「本地持有的日程台账」之上增加**多人协同日程层**，采用**端到端加密（E2EE）+ 盲中继（Blind Relay）+ 服务端盲校验（定序/ACL/配额/终态门禁）+ BYOS 自带存储**四件套架构。服务端不接触任何业务明文、不派生业务状态（§4.1 对账定稿），只做「认证、路由、防骚扰、盲校验仲裁、密文暂存」；所有内容（日程标题、时间锚点、拒绝理由、备注）在出设备前加密。**2026-10-08 §7 六项全部拍板定稿转 active**（拍板留痕=§7 台账；SSOT 并入=schedule-app §11 台账行，随施工切片 1 落地）。
 
 ## 0. 定位与总览
 
@@ -26,7 +26,7 @@ flowchart TB
     subgraph relay ["中转服务（盲）"]
         AUTH[身份认证 + 公钥托管]
         ACL[好友关系 ACL 拦截]
-        FSM_S[盲状态机仲裁<br/>只见动作枚举不见内容]
+        FSM_S[盲校验仲裁<br/>ACL/配额/终态门禁<br/>只见动作枚举不见内容]
         QUEUE[密文信箱 + 重试队列<br/>TTL 暂存]
         PTR[存储配置指针托管]
     end
@@ -49,9 +49,9 @@ flowchart TB
 
 | # | 子系统 | 核心设计 | 解决的问题 |
 |---|--------|---------|-----------|
-| 1 | 身份与好友 | 服务端只存 `account_id + 公钥 + prekey`；好友关系明文配对存服务端（Blind Social Graph），备注/资料端侧加密上存 | 寻址、防垃圾信令、换机不丢好友 |
+| 1 | 身份与好友 | 账号体系 Plan A：服务端存 `username + password_hash + account_id(服务端发号) + 公钥材料 + prekey`；好友关系明文配对存服务端（Blind Social Graph），备注/资料端侧加密上存 | 寻址、防垃圾信令、换机不丢好友 |
 | 2 | 消息中转 | 密文信封投递 + 指数退避重试 + 动态 TTL + DELIVERY_ACK 后物理删除 | 弱网/杀进程下接收方收不到消息 |
-| 3 | 协同状态机 | 服务端盲状态机（两级联动 FSM）+ 密文载荷原子绑定 + 全局递增 seq_id | 状态分叉、乱序覆盖、换机拼不出数据 |
+| 3 | 协同状态机 | 服务端盲校验（行锁 seq_id 定序 + ACL/配额 + 显式终态布尔门禁，不做状态推导）+ 端侧 FSM 单实现回放 + 密文载荷原子绑定（§4.1 对账定稿） | 状态分叉、乱序覆盖、换机拼不出数据 |
 | 4 | 存储 | 本地 WAL 优先 + BYOS 追加式事件日志 + 官方默认节点兜底 | 换机丢数据、多端覆盖冲突、平台合规风险 |
 
 ### 0.4 与现有拾光体系的关系
@@ -68,7 +68,8 @@ flowchart TB
 
 | 表 | 字段 | 说明 |
 |---|------|------|
-| users | account_id (UUIDv4) | 网络寻址句柄 |
+| users | username / password_hash | 账号体系 Plan A（用户名+密码，PBKDF2 零明文落库；登录唯一凭证，E2EE 密钥藏于其后、对用户透明） |
+| users | account_id (UUIDv4) | 网络寻址句柄（v0.1.7 契约：由服务端发号，不再客户端自生成） |
 | users | identity_key_pub (Ed25519) | 身份公钥 |
 | users | prekey_bundle (X25519) | E2EE 握手（Signal Protocol） |
 | users | push_token | FCM/APNs 唤醒拉密文 |
@@ -98,37 +99,40 @@ flowchart LR
 
 ### 1.3 换机与多设备恢复
 
-1. 新设备身份认证（Passkey / 手机号 / 恢复助记词）；
+1. 用户名+密码登录（Plan A；助记词/Passkey 等备通道为后续候选，未施工）；
 2. `GET /api/v1/friends` 拉回 friend_id 列表 + 各自最新公钥 + 加密备注；
-3. 经 recovery_vault（§5.3）还原身份私钥；
+3. 经 recovery_vault（§5.3）还原身份私钥——金库包裹钥=登录密码派生 KEK（relay README v0.1.7 v3 拍板：改密即原子重封，新哈希与新金库密文单事务同落）；
 4. 本地批量解密备注、验证公钥指纹 → 好友通信薄无缝还原。
 
-### 1.4 认证与鉴权协议（Challenge-Response + 双 Token，评审补齐）
+### 1.4 认证与鉴权协议（Plan A 用户名+密码 + 双 Token，2026-10-24 对账改写）
 
-「Ed25519 签名鉴权」的具体通信协议此前空白——不能每个 API 请求对整包 Body 做私钥签名（性能开销大且防重放复杂）。定稿：
+> 原定稿为「Ed25519 签名登录 + PoP 所有权证明」的匿名模型；2026-10-11 账号体系 Plan A 拍板后该模型退役（`signed_pop` 字段已从契约删除），契约 SSOT=relay 仓 README「鉴权与账号体系」节。E2EE 密钥是加密引擎而非登录凭证，对用户全程透明。
 
 ```mermaid
 sequenceDiagram
     participant C as 客户端
     participant G as 网关
-    C->>G: POST /auth/challenge (account_id)
-    G-->>C: 随机 Nonce + 60s 有效期
-    C->>G: Sign(Nonce + Timestamp) with IK
+    C->>G: POST /v1/auth/challenge（一次性 nonce + PoW 题面）
+    C->>G: POST /v1/users（username + password + 公钥材料 + PoW 解）
+    G-->>C: 注册完成（user_id 服务端发号，单事务绑定账号与密钥材料）
+    C->>G: POST /v1/auth/login（username + password）
     G-->>C: access_token(JWT 2h, 存内存) + refresh_token(存 secure_storage)
 ```
 
+- **账号域硬约束**：PBKDF2 哈希零明文落库；用户不存在与密码错误同一 401（防账号枚举）；`POST /v1/auth/change-password` 新哈希与新金库密文**单事务同落**并纪元踢全端；refresh 强制轮换（重用即 `TOKEN_REVOKED`）；access 只存内存。
 - **HTTP**：日常请求带 `Authorization: Bearer <access_token>`，网关无状态 JWT 校验；仅关键管理动作（改公钥、删数据）才要求私钥签名二次确认。
 - **WSS**：纯路径 `wss://relay/ws` 建连（**禁止 token 进 URL**——反代/网关 Access Log 会明文泄露凭证），连接后**第 1 条消息必须是 `{"action":"AUTH","token":...}` 握手帧**，3s 内无效即掐线。
 - **重放防范**：信令外层强制携带单调递增 `client_msg_id`(UUID) + 请求时间戳；服务端 Redis `SETEX msg_id 300`，300s 内重复提交幂等去重——抓包原样重放 `POST /v1/schedule/action` 无效。
 
-### 1.5 注册所有权证明与 OPK 补仓（PoP + PreKey 管理，评审补齐）
+### 1.5 注册防刷与 OPK 补仓（PreKey 管理，评审补齐；2026-10-24 对账）
 
-- **公钥置换攻击防线（Proof-of-Possession）**：`POST /auth/register` 必须附带私钥自签名 `Sign(account_id + timestamp, IK_priv)`——服务端验证公钥能解开该签名（确认请求方真正持有私钥）才允许入库，截获请求替换公钥的攻击无效。
+- **公钥绑定口径（Plan A，原 PoP 防线退役）**：注册请求经 TLS + 一次性 nonce（Challenge-Response）+ PoW，公钥材料与账号**单事务绑定**、`user_id` 服务端发号；原「PoP 自签证明私钥持有」随匿名账号模型一并退役（`signed_pop` 已出契约），端到端公钥置换的最终校验入口保留 §1.6 安全码核对（待施工）。
 - **OPK 枯竭风暴防线（v0.1.1 瘦身）**：注册时首批**仅允许上传 10~20 个** One-Time PreKey（单账号 DB 占用 <1KB，即便被刷万号也撑不爆磁盘）；用户登录/心跳时服务端检测存量 **< 5** 即在心跳回包夹带 `NEED_PREKEYS` 标记，客户端后台静默生成新一批 10~20 个批量补传；极端耗尽时 X3DH **安全降级为仅依赖 Signed PreKey（SPK）**，不卡死建联。
 
-### 1.6 好友添加防刷与 MITM 防线（Ticket + 安全码，评审补齐）
+### 1.6 好友建联双通道与 MITM 防线（搜索 + Ticket + 安全码，2026-10-24 对账改写）
 
-- **防撞库骚扰（Friendship Ticket）**：禁止拿纯 account_id 全局发好友申请（UUID 泄漏库会被垃圾信令塞满收件箱）。定稿：接收方 B 端侧生成带防篡改签名的一次性名片凭证（二维码/短链接）：`Ticket_B = {account_id_B, ephemeral_nonce, expires_at, signature_B}`——A 扫码携完整 Ticket 提交，服务端验签 + 验未过期才写 `friendships(pending)`。
+- **双通道并存（Plan A 契约）**：①**搜索通道**——`GET /v1/users/lookup?username=`（Bearer + 限流防枚举）定位对方 → `POST /v1/friends/request {to_user_id, encrypted_intro}` 直发；②**扫码通道**——接收方 B 端侧生成带防篡改签名的一次性名片凭证 `Ticket_B = {account_id_B, ephemeral_nonce, expires_at, signature_B}`，A 扫码携完整 Ticket 提交 `POST /v1/friends/invite {ticket, encrypted_intro}`，服务端验签 + 验未过期 + nonce 一次性才写 `friendships(pending)`。两路同落 pending、被邀方手动 approve（客户端不自动接受，fact 草案 §3.3）。
+- **防骚扰口径（原「UUID 不可枚举」前提已变）**：用户名可搜索后，撞库骚扰防线收敛为三层——lookup 限流、待审批配额 ≤50（§10.4 `EXCEED_PENDING_INVITES`）、被邀方手动批准；扫码 Ticket 保留为面对面高可信通道（nonce 一次性 + 签名防篡改）。
 - **公钥指纹核对（Safety Number）**：好友建立后，端侧计算双方身份公钥哈希指纹，展示为 **6 组 5 位数字安全码**——用户可在线下/微信核对，提供防「恶意中继置换公钥」的 MITM 校验入口（中继理论上不可信，端侧可验证）。
 
 ### 1.7 双层 ACL（Bundle 作用域授权，解 N 方连通图悖论，评审补齐）
@@ -141,8 +145,9 @@ func CheckGatewayACL(sender_id, recipient_id, bundle_id, route) bool {
     -- 1. 好友建联是独立系统路由，凭 FriendshipTicket 签名鉴权，
     --    绝不走 IsDirectFriend（否则 pending 关系永远 403，好友永远建不起来）；
     --    验签落盘 pending 后，由服务端向 B 发一次受限系统 Wake Push。
-    if route == "POST /v1/friends/invite" {
-        return VerifyTicketSignature(ticket)   -- 与好友 ACL 解耦
+    if route == "POST /v1/friends/invite" || route == "POST /v1/friends/request" {
+        return VerifyTicketSignature(ticket)   -- 扫码通道验签（与好友 ACL 解耦）
+            || LookupRateLimitPassed(caller)   -- 搜索通道限流放行（Plan A 双通道）
     }
     -- 2. 瞬时单聊信令（直投 Ping 等）：必须全局互为好友
     if bundle_id == "" {
@@ -242,7 +247,7 @@ func CheckGatewayACL(sender_id, recipient_id, bundle_id, route) bool {
    ③ 裁撤步骤（PRUNE，剩余部分不受影响）
 ```
 
-拒绝面板强制分流两大类 + 四子类（非我职责/优先级不符/缺前置条件/个人原因），必填详细说明，可选建议转派对象——破除「有空但不想做被迫撒谎说没空」的拉锯战。
+拒绝面板分流两大类 + 四子类（非我职责/优先级不符/缺前置条件/个人原因，词汇保留——工作语境贴切）；**默认态一屏完事：维度 → 子类芯片 → 可选备注 → 一键拒绝**（「详细说明」2026-10-25 拍板改可选——必填正是制造敷衍的根源），隐私分级开关（§3.5）与建议转派对象收进【详细说明】展开态——破除「有空但不想做被迫撒谎说没空」的拉锯战。
 
 ### 3.5 伪聊天系统事件流
 
@@ -263,23 +268,30 @@ func CheckGatewayACL(sender_id, recipient_id, bundle_id, route) bool {
 - **发起人双轨独立**：团队日程独立轨道规划，**不被自己的私事绑架**；私事仅作半透明幽灵图层（Ghost Layer）视觉参考，是否让路由发起人自主决断。
 - **成员混合承载**：单人日程与团队步骤同屏混合渲染，成员据真实负载反馈冲突或异议。
 - **空白探测分流**：成员本地算 FreeMask（生活日程+已有团队日程取交集，不暴露明文）；发起人以公约工时为基准池，不以自身私事设限。**FreeMask 传输协议（作息泄漏防线，评审补齐）**：禁止全局作息探测（整周空区可反推几点睡觉几点上班）——定稿三约束：①**靶向范围**：只能针对具体提议候选区间（如 10月24日 09:00–18:00）发起探测；②**粗粒度量化桶**：区间按 30 分钟切片生成二进制掩码串（`01110001`，1=有空）；③**单向加密**：掩码用发起人 IK_A 加密经临时信箱透传，发起人端内存中按位与（BITWISE AND）算全员重叠区，即 §11.2「全员共振条」数据源。
-- **幽灵预占（Tentative Soft-Lock）**：收到提案即在本地该时段生成半透明虚线块，防止空白时段被多方抢占。**软锁必须自动释放（TTL）**：每个 Proposal 携带 `expires_at`（默认发起后 24h）；超时未达成一致且未收到延期信令，本地虚线软锁自动淡出、时段重新计入 FreeMask——杜绝提案人掉线或成员迟迟未表态导致的「日历僵尸死锁」。**预占分级（防「幽灵超占」，评审补齐）**：
+- **幽灵预占（Tentative Soft-Lock）**：收到提案即在本地该时段生成半透明虚线块，防止空白时段被多方抢占。**软锁必须自动释放（TTL）**：软锁淡出 TTL=24h（本地视觉层，杜绝提案人掉线或成员迟迟未表态导致的「日历僵尸死锁」）。**提案存活与软锁双语义拆分（2026-10-25 拍板）**：提案流局改独立参数 `proposal_alive_ttl = max(24h, 目标日前一天 − 发起时刻)`（发起人可显式改）——周一提周六聚餐存活到周五、当天提当晚 24h 兜底，远期提案不再被 24h 静默流局；超时未达成一致即 EXPIRED（§4.4），软锁淡出与提案流局互不牵连。`proposal_alive_ttl` 由发起人建包时算成绝对时刻随载荷 `expires_at_ms` 携带（发起时目标日在明文，成员端 FSM 直接消费；`bundles.expires_at` 同值供服务端扫描——拓扑级元数据，§2.3 同一暴露口径）。**预占分级（防「幽灵超占」，评审补齐）**：
   - `HARD_TENTATIVE`（强占位，排他）：团队确定性步骤（Directive 已被指派的具体时段）——对外 FreeMask 标记不可用；
   - `SOFT_CANDIDATE`（弱占位）：生活多候选时段（Consensus 场景，成员周末可能同时挂 3 个候选）——仅自身日历显示半透明虚线，**对外计算 FreeMask 时仍标记可用/备选**，不阻断其他邀约，防止「可用时间虚假枯竭」；
   - 固化（CONFIRMED）后统一升格为实体日程（强占位）。
 
 ## 4. 协同状态机（盲 FSM）
 
-### 4.1 持有方式拍板：服务端持有盲状态机
+### 4.1 持有方式对账定稿（2026-10-24）：服务端=盲校验器，FSM 单实现归端侧
 
-状态机**由服务端持有**（盲状态），不采用纯客户端分布式推导。理由：
+> 原拍板（2026-10-08）为「服务端持有盲状态机、客户端只做显示终端」；施工对账（relay 仓代码核实）证实该前提不成立——端侧无论如何都需要全量回放引擎（离线回放、换机还原、UI 渲染都吃本地派生态），「客户端复杂度极低」不成立。定稿以实现现状收口：
 
-| 维度 | 服务端盲状态机（选定） | 纯客户端分布式 |
-|---|---|---|
-| 一致性 | 数据库单点仲裁，永不分叉 | 依赖向量时钟与冲突消解，复杂度高 |
-| 客户端复杂度 | 极低（显示终端 + 加解密） | 极高（事件溯源引擎） |
-| 服务端视角 | 知道「谁对哪步做了什么动作」，**不知道具体内容/理由** | 全盲只见字节流 |
-| 隐私 | 动作枚举外置 + 密文载荷内置，隐私无损 | 极致但工程代价大 |
+**服务端仲裁面（全部现存实现，禁止扩张出此清单）**：
+
+- 行锁 seq_id 定序（§5.1）+ `client_msg_id` 幂等；
+- ACL 与配额（§1.7 双层 ACL、§10.4 防爆仓硬配额）；
+- **显式终态布尔门禁**：`FORCE_FINALIZE`/`CANCEL` 置位 CONFIRMED/CANCELLED，发起人独占（`NOT_INITIATOR`），终态后一切动作 409 `BUNDLE_CONFIRMED_IMMUTABLE`；
+- 骨架表只读持久化 PROPOSE 提交的拓扑（topology JSONB）——**不落 votes、不改 step_status、不做 Quorum 聚合、不派生任何状态**；
+- WSS 广播 + 游标推送。
+
+**端侧回放器（FSM 单实现，`lib/collab/fsm.dart` 纯函数 Reducer）**：母子联动、threshold 门限、Consensus 三值聚合、STALLED/CONFIRMED 派生、ABANDONED_LOCALLY 本地熔断——§4.2–§4.5 全部转移表归此一处。**封顶条款：服务端严禁新增任何状态推导**——两份转移表（Go/Dart）的漂移风险即由此杜绝。
+
+**已知边界（诚实留痕）**：「全部必需步骤 READY → CONFIRMED」的派生敲定不落服务端 status（服务端只见 ACCEPT 流水），故 `BUNDLE_CONFIRMED_IMMUTABLE` 只对显式终态动作生效；派生敲定后各端一致性由「同一事件流 + 同一 Reducer」收敛保证。若未来确需服务端侧拦截派生敲定后的迟到动作，走「端侧上报派生态、服务端缓存」方案讨论，不在服务端重新推导。
+
+**服务端视角与隐私口径不变**：服务端知道「谁对哪步做了什么动作」+ 拓扑骨架，不知道具体内容/理由；动作枚举外置 + 密文载荷内置，隐私无损。
 
 ### 4.2 两级联动 FSM
 
@@ -309,7 +321,7 @@ stateDiagram-v2
 
 Bundle 状态为**派生态**：由全部必需步骤的状态聚合推导（任一 TIME_CLASH/ROLE_CLASH → STALLED；全部 READY → CONFIRMED）。
 
-**半盲骨架投影（Semi-Blind Skeleton Projection，解「全盲 vs 仲裁」悖论）**：服务端若全盲（只有一团密文）则数学上无法做聚合推导；若 knows 每步的表态人即泄露任务分工。定稿口径：**内容加密、拓扑明文**——PROPOSE 信封外层携带明文协作骨架 DAG，服务端只维护纯数学票数计数器（Quorum Counter）：
+**半盲骨架投影（Semi-Blind Skeleton Projection，解「全盲 vs 仲裁」悖论）**：服务端若全盲（只有一团密文）则端侧无法换机重建拓扑；若知道每步的表态人即泄露任务分工。定稿口径：**内容加密、拓扑明文**——PROPOSE 信封外层携带明文协作骨架 DAG，服务端只读持久化（计数与判定归端侧，§4.1 对账）：
 
 ```json
 {
@@ -325,12 +337,12 @@ Bundle 状态为**派生态**：由全部必需步骤的状态聚合推导（任
 }
 ```
 
-- 服务端知道：节点 s_101 需 2 票、s_102 需 1 票、谁已投——据此合法推进 FSM；服务端不知道：步骤是什么事、何时何地、拒绝理由。
-- **门限表决（M-of-N，评审补齐）**：每步骤增 `threshold` 字段（默认 = required_uids 全员数；可指定 min_accept_count，如 5 人中 ≥3 到场）——「架构评审 A 或 B 到一人即可」「核心成员 5 选 3」不再因一人没空全盘标黄。Quorum 计数器按 `accept_count >= threshold` 判定该步骤 READY，而非强制全员。
+- 服务端知道：拓扑骨架只读持久化（s_101 需 2 票、谁已投过什么动作）——但票数统计与 READY/CONFIRMED 判定在端侧回放器完成（§4.1 对账，服务端不派生）；服务端不知道：步骤是什么事、何时何地、拒绝理由。
+- **门限表决（M-of-N，评审补齐）**：每步骤增 `threshold` 字段（默认 = required_uids 全员数；可指定 min_accept_count，如 5 人中 ≥3 到场）——「架构评审 A 或 B 到一人即可」「核心成员 5 选 3」不再因一人没空全盘标黄。端侧回放器按 `accept_count >= threshold` 判定该步骤 READY，而非强制全员。
 - 隐私边界重定义（修订 §4.1 服务端视角行）：服务端可见面 = 签名身份 + 动作枚举 + **拓扑骨架**（step_id/required_uids/is_optional/threshold）；不可见面 = 一切内容。骨架属设计内元数据，受 §2.3 同一哲学约束（最小暴露，仅仲裁所需）。
-- PATCH/REASSIGN/PRUNE 类结构变更信令须同时携带**新版 topology_skeleton**（同事务原子更新骨架表与事件流），保证 Quorum 计数器与事实一致。
+- PATCH/REASSIGN/PRUNE 类结构变更信令须同时携带**新版 topology_skeleton**（同事务原子更新骨架表与事件流），保证端侧回放所据骨架与事实一致。
 
-### 4.3 状态转移表（服务端仲裁规则）
+### 4.3 状态转移表（端侧回放规则；服务端仅 ACL/显式终态门禁，§4.1）
 
 | 当前状态 | 触发事件 | 新状态 | 伴随行为 |
 |---|---|---|---|
@@ -342,6 +354,7 @@ Bundle 状态为**派生态**：由全部必需步骤的状态聚合推导（任
 | STALLED | MAKE_OPTIONAL | 重新聚合（其余全过则 CONFIRMED） | 移出强一致约束名单 |
 | STALLED | PRUNE | 重新聚合 | 步骤删除广播 |
 | CONFIRMED | 发起人 REOPEN（紧急退回） | STALLED（受影响步骤回 PENDING，revision+1） | 执行当日核心成员突发缺席等紧急场景；全端事件流留痕，已 READY 步骤不受影响 |
+| CONFIRMED | 发起人 PATCH_STEP_TIME（单步骤改期，2026-10-25 新增） | 仍 CONFIRMED（受影响步骤回 PENDING_RECHECK） | **敲定后微调轻通道**：仅该步骤责任人/选民重确认（覆盖复活语义同 PATCH 回音壁），包状态与其余步骤不动、其余成员仅普通推送（无系统级强通知、块不回退），受影响块加「已更新」角标；**与 `LEAVE`（§4.5）同为终态门禁白名单仅有的两个非终态动作**（服务端白名单，仅 CONFIRMED 态放行）；重确认再拒 → 端侧派生 STALLED；REOPEN 保留给结构性/多步骤变更 |
 | 任意 | 发起人 CANCEL | CANCELLED | 全员虚线日程销毁擦除 |
 
 **PATCH 二次冲突回音壁防线（评审补齐）**：步骤同时分配 B、C 时，C 已同意 10:00，A 改到 14:00 后 C 在 14:00 未必有空——若只重置拒绝者，会陷入「A 改 14:00→C 拒→改 16:00→B 又不行」的无限拉锯。定稿：
@@ -358,18 +371,18 @@ stateDiagram-v2
     [*] --> PROPOSING: 任一成员发起（平权）
     PROPOSING --> PROPOSING: 成员反馈可用度向量 / 追加候选时段（反提议，刷新投票看板）
     PROPOSING --> CONFIRMED: 达成规则（如首个集齐 N 票的时段）自动固化
-    PROPOSING --> EXPIRED: 24h 超时无交集（§3.6 Soft-Lock TTL）
+    PROPOSING --> EXPIRED: proposal_alive_ttl 超时无交集（§3.6，默认 max(24h, 目标日前一天−发起时刻)）
     CONFIRMED --> PROPOSING: REOPEN（参与者临时有事，平权重开）
     EXPIRED --> [*]
 ```
 
 要点：
 
-- **无 STALLED、无审批**：拒绝不是状态事件，只是可用度向量里的「不行」票；服务端 Quorum 计数器按票数统计候选时段，规则达成即 CONFIRMED。
+- **无 STALLED、无审批**：拒绝不是状态事件，只是可用度向量里的「不行」票；端侧回放器按票数统计候选时段，规则达成即 CONFIRMED（服务端只见 VOTE 动作流水，§4.1）。
 - **平权反提议**：任何成员可 ADD_SLOT 追加候选（服务端校验互为好友即可，无发起人特权），看板刷新对全员可见。**候选硬上限（防看板撑爆，评审补齐）**：单个 Rendezvous 方案包最多挂载 **8 个**候选时段（覆盖全部聚餐聚会诉求）；满额后【+ 我想提议其他时间】置灰不可点（提示「候选已满，可先落槌或等流局后重开」）——防纠结症/恶搞把矩阵横向撑爆、投票视线涣散。
 - **拓扑骨架退化**：单步骤多候选（每候选一个 slot_id，threshold=达成规则票数），服务端只数票，依旧零内容泄露。
 - CONFIRMED 固化后同样可 REOPEN（生活场景「临时有事」高频，无需发起人仲裁）。**REOPEN 预占回退强通知（防按老日程赴约扑空，评审补齐）**：REOPEN 到达端侧时，已下沉的实体日程块立即转「感叹号 + 闪烁虚线」回退态，并触发**系统级本地强通知**：「原定活动已进入紧急重新协商状态」——哪怕 App 进程未开也要让用户在赴约前知道，此为端侧本地下沉事务（§11.3）的反向通道（仅改本地块呈现态，不删台账行，最终态以 FSM 收敛为准）。
-- **分票死锁落槌（Force Finalize，评审补齐）**：4 人中 2 投 Slot 1、2 投 Slot 2 且门限 3 票，谁都不改票就会拖到 24h 流局。现实社交需要有人一锤定音：投票期内若多候选均达次优票数（如均过半但未满门限），**任一成员**（平权）可点击【就定这个时段】触发 `FORCE_FINALIZE(slot_id)`，方案直接锁定 CONFIRMED，其余成员收到敲定通知——还原「挑个时间直接定」的果断体验。**并发竞态门禁（评审补齐）**：B 落槌 Slot 1 与 C 落槌 Slot 2 同秒到达时，以 PG 行级原子门禁先到先得（First-Commit-Wins）：
+- **分票死锁落槌（Force Finalize，评审补齐）**：4 人中 2 投 Slot 1、2 投 Slot 2 且门限 3 票，谁都不改票就会拖到流局（proposal_alive_ttl，§3.6）。现实社交需要有人一锤定音：投票期内若多候选均达次优票数（如均过半但未满门限），**发起人**可点击【就定这个时段】触发 `FORCE_FINALIZE(slot_id)`，方案直接锁定 CONFIRMED，其余成员收到敲定通知——还原「挑个时间直接定」的果断体验。**落槌权=发起人独占（2026-10-24 对账收敛）**：与 relay `NOT_INITIATOR` 门禁、fact 草案 §7-Q5「发起人落槌」口径一致，原「任一成员平权落槌」表述作废（非发起人请求由服务端 403 拦截；端侧回放只按发起人信令处理，fsm.dart 的平权分支为死路径待清理）。**并发竞态门禁（评审补齐）**：B 落槌 Slot 1 与 C 落槌 Slot 2 同秒到达时，以 PG 行级原子门禁先到先得（First-Commit-Wins）：
 
 ```sql
 UPDATE bundles SET status = 'CONFIRMED'
@@ -383,11 +396,13 @@ WHERE bundle_id = $1 AND status = 'PROPOSING';
 | 操作 | 发起人 | 步骤责任人 | 其他成员 |
 |---|---|---|---|
 | 发起/终止/裁撤/转派/改期 | 独占 | 无 | 无 |
-| 同意/拒绝自己的步骤 | 默认同意 | 有权（拒绝必带理由） | 无 |
+| 同意/拒绝自己的步骤 | 默认同意 | 有权（拒绝理由可选，2026-10-25） | 无 |
+| 自主退出（LEAVE，2026-10-25 新增） | 不适用（走 TRANSFER_INITIATOR） | 有权 | 有权 |
 | 查看事件时间轴 | 可见 | 可见 | 可见 |
 
-- 服务端盲状态机做**动作合法性仲裁**（越权信令直接拒绝推进）。
+- 服务端盲校验做**动作合法性仲裁**（ACL/配额/终态门禁，越权信令直接拒绝，§4.1）。
 - 各端本地断言兜底：信令私钥签名 + `actor_id` 角色与步骤归属校验，非法事件丢弃。
+- **LEAVE 语义（2026-10-25）**：成员平权退出，自动解挂自己的必需步骤（等效对自己 MAKE_OPTIONAL，门限收缩 min(M, 剩余人数) 同款）、不触发 REKEY；CONFIRMED 前后均可用——敲定后退出仅撤自己本地下沉块，事件流留痕。发起人退出仍走 TRANSFER_INITIATOR。
 - **未响应成员处置（「静默黑洞」防线，评审补齐）**：4 人 10 分钟内同意、唯 D 迟迟不开手机，发起人陷入信息真空（没看到/已读不回/离线无从区分），而 FORCE_REMOVE_MEMBER 会触发昂贵的全员 REKEY。定稿两档轻量工具：
   - **定向轻提醒（Nudge）**：决策矩阵看板上 PENDING 超 2h 的成员出现【提醒确认】按钮，向其设备投递高优先级系统通知/静默唤醒信令（走既有 Wake Push 通道，零新机制）；
   - **一键降级表决（Bypass = MAKE_OPTIONAL 单人化）**：对迟迟不响应的成员按单人单步骤一键 MAKE_OPTIONAL，移出强一致名单、方案直接收敛推进——**不触发 REKEY**，成本远低于剔除成员。
@@ -503,7 +518,7 @@ sequenceDiagram
 ```
 
 - 断网重连/启动时按 `since_seq` 增量拉取，跳号即触发补拉，绝不脱节。
-- **并发防护（区分「时序追加」与「因果冲突」，防假性冲突惊群）**：全局 `seq_id` **仅用于事件绝对定序**——无冲突动作直接顺序入库，**不拒绝**；`base_revision` 乐观锁仅作用于**靶向实体**：仅当同一 `step_id` 被并发修改（如 B 拒绝步骤 1 与 A 改步骤 1 时间竞态）才触发 `STALE_REVISION` 打回；发起人整体重构时才校验 `bundle_revision`。否则 B 同意步骤 1、C 同意步骤 2 的互不相干操作会因全局序号递增互相打回，引发多人协作下的重试惊群风暴。**`ATTACH_FACT` / `UPDATE_FACT` / `DETACH_FACT` 显式豁免（v0.1.3）**：三类事实动作不校验、不递增 `base_revision`，仅原子自增 `max_seq_id` 入流水——事实是静态凭证挂载，与日程起止/步骤重构互不竞态，否则 B 挂大巴票、C 挂门票会假性 `409 STALE_REVISION` 互打回（详见 fact 草案 §5.2）。
+- **并发防护（区分「时序追加」与「因果冲突」，防假性冲突惊群；2026-10-25 选案 A 拍板定型）**：全局 `seq_id` **仅用于事件绝对定序**——无冲突动作直接顺序入库，**不拒绝**。服务端 `bundles.base_revision` 定型为 **bundle 级结构版本**（schema 仅此一列，不建步骤级版本列）：每个**非事实**动作成功落流水即自增 1，失败动作不推进。校验为 **opt-in**：仅当请求显式携带 `expected_revision` 才与当前值比对，不符打回 `409 STALE_REVISION`——客户端只在**整体重构/结构变更类**提交（携带新拓扑的信令）时携带；普通平权动作（ACCEPT/VOTE/STEP_NOTE 等）不携带、永不因版本互打回，B 同意步骤 1、C 同意步骤 2 不会互相惊群。**靶向实体级冲突判定归端侧**：步骤级 revision/骨架 version 由端侧 FSM 回放维护（骨架每次拓扑变更服务端自增 `version` 落库，端侧回放即得可比对的版本链），步骤竞态（如 B 拒绝步骤 1 与 A 改步骤 1 时间）由端侧 Reducer 识别处理——服务端不建步骤级版本、不新增状态推导面（封顶条款 §4.1）。**`ATTACH_FACT` / `UPDATE_FACT` / `DETACH_FACT` 显式豁免（v0.1.3）**：三类事实动作不校验、不递增 `base_revision`，仅原子自增 `max_seq_id` 入流水——事实是静态凭证挂载，与日程起止/步骤重构互不竞态，否则 B 挂大巴票、C 挂门票会假性 `409 STALE_REVISION` 互打回（详见 fact 草案 §5.2）。
 
 ### 5.5 三层存储容灾（BYOS）
 
@@ -530,7 +545,7 @@ sequenceDiagram
 
 ## 6. 边缘场景备忘
 
-- **成员退组 / 发起人移交**：`FORCE_REMOVE_MEMBER`（自动解挂其步骤）、`TRANSFER_INITIATOR`（Ownership 签名移交）。
+- **成员退组 / 发起人移交**：`LEAVE`（成员自主退出，2026-10-25，§4.5）、`FORCE_REMOVE_MEMBER`（发起人强制移除，自动解挂其步骤）、`TRANSFER_INITIATOR`（Ownership 签名移交）。
 - **消息投递失败**：A 端标记 + 一键重发（§2.2）。
 - **离线重放**：密文按 seq_id 时序还原，事件溯源保证最终一致。
 - **生活预约与团队调度共用同一套信封/队列/存储设施**，仅业务状态机不同。
@@ -546,6 +561,10 @@ sequenceDiagram
    - 团队调度 = schedules 数组含多个**必选/依赖时段**，决策规则「全员对所有必选 Step 达成一致」；
    - 传输信封、原子事件流、seq_id 步进 100% 复用，仅客户端 FSM 按类型加载不同决策规则。
 6. **fact-user-relay-draft 多人轨口径**：本稿转 active 时同步回改该稿多人轨段落指向本稿（§1.3 身份体系承接其预留）。
+7. **Directive 全动作面维持一期范围（2026-10-24 用户拍板）**：REASSIGN / MAKE_OPTIONAL / PRUNE / BYPASS / NUDGE / PENDING_RECHECK 与步骤级 M-of-N 门限**不收敛到二期**——目标场景不止生活出游，**含工作团队内协调**（步骤分派/转派/降级/缺席兜底在工作语境有真实对应物），功能评审提出的「一期收敛窄子集」建议就此否决。
+8. **功能评审四项采纳（2026-10-25 用户拍板）**：①**敲定后单步骤微调轻通道**——新增 `PATCH_STEP_TIME`（与 `LEAVE` 同为 `BUNDLE_CONFIRMED_IMMUTABLE` 门禁白名单仅有的两个非终态动作）：CONFIRMED 包内发起人可对单步骤改时间，仅该步骤责任人/选民重确认（复用 PENDING_RECHECK 覆盖复活语义），包状态与其余步骤不动、其余成员仅普通推送，REOPEN 保留给结构性/多步骤变更（§4.3 新增转移行）；②**TTL 双语义拆分**——软锁淡出保留 24h（本地视觉），提案流局改独立 `proposal_alive_ttl = max(24h, 目标日前一天 − 发起时刻)`（发起人可显式改），远期提案不再静默流局（§3.6/§4.4 已同步）；③**新增 `LEAVE` 成员自主退出**——平权、解挂自己必需步骤（等效对自己 MAKE_OPTIONAL）、不触发 REKEY，CONFIRMED 前后均可用，发起人退出仍走 TRANSFER_INITIATOR（§4.5/§6 已同步）；④**拒绝面板减层**——「详细说明」必填改可选，默认态=维度+子类+可选备注一键拒绝，隐私分级开关与建议转派收进展开态，四子类词汇保留（§3.4/§11.2-D 已同步）。`PATCH_STEP_TIME`/`LEAVE` 两枚举为契约补丁，随下轮 codegen 落 relay_protocol.proto。
+
+9. **缺陷评估轮对账（2026-10-25 用户拍板，经 sim_activity 8 项缺陷评估任务书下达；relay 仓 v0.1.10-contract）**：①**REOPEN 服务端实装口径**——入终态门禁白名单（与 `PATCH_STEP_TIME`/`LEAVE` 并列第三），仅 CONFIRMED 态放行（PROPOSED/STALLED 态 409 `REOPEN_INVALID_STATE`，CANCELLED/EXPIRED 一律拦），权限按 proposal_type 分流（DIRECTIVE 发起人独占 §4.3 / CONSENSUS 包内平权 §4.4），通过后服务端显式置 `status='STALLED'` 让普通动作重新可入——显式门禁转移行落位，非状态推导（§4.1 封顶条款不破）；②**ADD_MEMBER 准入收敛**——发起人独占（§5.3.1「管理员」=发起人）+ 每个被加人与发起人双向 accepted（对齐 PROPOSE §1.7），堵任意成员越权拉发起人非好友入包；③**TRANSFER_INITIATOR / MEMBER_REMOVED 明文实装**——action 请求体加性增 `transfer_to` / `remove_member_uids`（服务端改写 `initiator_id` / 移出 `participant_uids` 必须见明文 uid），零枚举/零 DDL；④**MEMBER_REMOVED 全语义挂账**——连带 REKEY（`key_version`+1 剩余成员重裹，§5.3.1/§9.2）依赖信封重包裹链路，随密钥域切片实施，本轮仅落地 ACL 即时生效的最小修复；⑤**quorum 不仲裁口径重申**（§4.1 2026-10-24 对账定稿：服务端不做票数聚合，判定归端侧 FSM）——模拟测试原期望陈旧，改判 OBSERVATION；⑥**base_revision 选案 A 拍板实装（2026-10-25 用户拍板，§5.4 表述已同步）**——定型 bundle 级结构版本：每非事实动作自增 1（失败不推进）、`expected_revision` opt-in 校验（客户端仅整体重构/结构变更类携带）、事实三动作豁免维持（v0.1.3）；靶向实体级冲突判定归端侧 FSM，服务端不建步骤级版本（封顶条款 §4.1）。
 
 ### 7.1 随拍板补齐的两个防护规则（并入正文）
 
@@ -609,7 +628,6 @@ shiguang-relay/
 ├── main.go
 ├── handler/                  # auth / friendship / schedule_action / sync / storage_ptr
 ├── hub/websocket_hub.go      # 在线连接池 + 广播
-├── fsm/blind_fsm.go          # 盲状态机转移合法性断言（只看枚举）
 └── queue/delayed_retry.go    # Redis 延迟重试 + TTL 超时监控
 ```
 
@@ -681,7 +699,7 @@ CREATE TABLE bundles (
     initiator_id VARCHAR(64) NOT NULL,
     proposal_type VARCHAR(32) NOT NULL,        -- 'DIRECTIVE'（团队）| 'CONSENSUS'（小团体）
     status VARCHAR(32) NOT NULL DEFAULT 'PROPOSED',  -- PROPOSED/STALLED/CONFIRMED/CANCELLED/EXPIRED
-    base_revision INT NOT NULL DEFAULT 1,      -- 方案整体版本号（§5.4 整包重构校验）
+    base_revision INT NOT NULL DEFAULT 1,      -- bundle 级结构版本：每非事实动作自增、expected_revision opt-in 校验（§5.4 案A 2026-10-25）
     max_seq_id BIGINT NOT NULL DEFAULT 0,      -- 当前最大单调自增序号
     participant_uids TEXT[] NOT NULL,          -- 参与全员（寻址 + 拉取权限 ACL）
     expires_at TIMESTAMPTZ NOT NULL,           -- TTL 超时（§3.6 Soft-Lock / §4.4 EXPIRED 扫描依据）
@@ -748,7 +766,7 @@ CREATE TABLE bundle_member_cursors (
 | 单消息 Payload | ≤256KB | Nginx/Caddy `client_max_body_size 256k` + 网关 | HTTP 413 `ATTACHMENT_OVERSIZE` |
 | 单用户待审批邀请 | ≤50 | `POST /v1/friends/invite`（按被邀方 pending 计数） | `EXCEED_PENDING_INVITES`（防扫码灌爆 Pending 列表） |
 
-**全局错误码字典**（统一响应体；HTTP 状态码只做大类，`error_code` 承载精确阻断原因）：
+**全局错误码字典**（统一响应体；HTTP 状态码只做大类，`error_code` 承载精确阻断原因。**唯一维护出处=relay 仓 README 错误码字典**，本表为设计域摘录——新增码先落 README 再回摘，防双源漂移）：
 
 ```json
 {
@@ -766,6 +784,8 @@ CREATE TABLE bundle_member_cursors (
 | `TICKET_EXPIRED` / `TICKET_SIGNATURE_INVALID` | 400 / 401 | 好友名片凭证失效或被篡改 |
 | `RECIPIENT_NOT_FRIEND` | 403 | 向非双向好友发起非白名单瞬时信令 |
 | `RELATION_TERMINATED` | 403 | 单向删除/拉黑（§1.2 既有） |
+| `NOT_PARTICIPANT` / `NOT_INITIATOR` / `INITIATOR_CANNOT_LEAVE` | 403 | 非方案包成员 / 非发起人专属动作（FORCE_FINALIZE/CANCEL/PATCH_STEP_TIME）/ 发起人不可 LEAVE（§4.5） |
+| `USERNAME_INVALID` / `USERNAME_EXISTS` / `PASSWORD_TOO_WEAK` / `USER_OR_PASSWORD_INVALID` / `PASSWORD_MISMATCH` | 400/409/401 | Plan A 账号域（用户名 3~32 小写字母数字下划线 / 已占用 / 密码 <8 位 / 登录失败不区分原因 / 改密旧密码错） |
 | `BUNDLE_CONFIRMED_IMMUTABLE` | 409 | 方案包已敲定，禁止再提交协同 Action |
 | `STALE_REVISION` | 409 | 同步骤因果冲突乐观锁命中（事实三动作豁免，v0.1.3） |
 | `EXCEED_MAX_MEMBERS` / `EXCEED_ACTIVE_BUNDLES` / `EVENT_QUOTA_EXCEEDED` / `EXCEED_PENDING_INVITES` | 400 | 上表配额族 |
@@ -805,8 +825,8 @@ flowchart TB
 | A 发起人排期画板 | 双轨切换（团队大盘/个人总览）；私事以半透明斜纹**幽灵图层**投影、拖入重叠时段仅琥珀色温和提示（非阻断，决断权在发起人）；**全员共振条**（Quorum Density Bar，FreeMask 重叠区越绿人越多）+ 拖拽磁吸吸附全员交集 |
 | B 成员混合日历 | 预占视觉三级：`HARD_TENTATIVE` 主色虚线块+「待确认」徽标（排他）；`SOFT_CANDIDATE` 超细浅灰虚线+候选标签（透明底不遮挡）；`CONFIRMED` 实心卡+状态条。点未确认步骤弹底部**一键响应浮条**（同意/拒绝并说明） |
 | C 方案包决策矩阵 | 树状 Bundle 详情；**M-of-N 门限进度条**（2/3 人同意，达标亮绿）；Charlie 待确认旁浅灰小铃铛=离线催办（Nudge）入口；STALLED 步骤动态挂发起人闭环三键（转派/降级/裁撤）；顶部 Briefing Sticky 置顶备忘 |
-| D 双维拒绝面板 | 四步：主维度分流（⏰时间冲突/🚫权责异议）→ 子细项芯片（四选一）→ **隐私分级开关**（公开/仅发起人可见）→ 可选建议转派 @成员 |
-| E Consensus 看板 | **时段偏好矩阵**（横轴候选纵轴好友，🌟优先/✓可以/✕不行三态）；底部常驻「+ 我想提议其他时间」（平权 ADD_SLOT）；满意度最高时段卡片亮木槌图标=**Force Finalize 落槌** |
+| D 双维拒绝面板 | **默认一屏**（2026-10-25 减层拍板）：主维度分流（⏰时间冲突/🚫权责异议）→ 子细项芯片（四选一）→ 可选备注 → 一键拒绝；【详细说明】展开态承载**隐私分级开关**（公开/仅发起人可见）与建议转派 @成员 |
+| E Consensus 看板 | **时段偏好矩阵**（横轴候选纵轴好友，🌟优先/✓可以/✕不行三态）；底部常驻「+ 我想提议其他时间」（平权 ADD_SLOT）；满意度最高时段卡片亮木槌图标=**Force Finalize 落槌**（仅发起人端可见可点，§4.4） |
 | F 审计时间轴 | 无输入框的只读垂直时间树；事件气泡结构化（含「理由私密发送给发起人」骨架提示）；步骤便签抽屉（≤50 字覆盖式更新） |
 
 ### 11.3 CONFIRMED 下沉事务（与单机 SSOT 衔接）
