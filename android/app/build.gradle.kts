@@ -58,5 +58,5 @@ flutter {
 dependencies {
     // 官方 SDK：goodhub 本地 Binder 插件核心。:plugin-core 以 api 依赖 :contract，
     // 契约类（IMcpChannel/IMcpCallback + 常量）随传递引入，无需单独声明 contract。
-    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.1.1")
+    implementation("com.zzh.goodhub.mcp:goodhub-mcp-plugin-core:0.2.0")
 }
