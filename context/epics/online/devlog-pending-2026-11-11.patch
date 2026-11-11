@@ -1,0 +1,38 @@
+diff --git a/context/epics/online/devlog.md b/context/epics/online/devlog.md
+index df04db9..8394d19 100644
+--- a/context/epics/online/devlog.md
++++ b/context/epics/online/devlog.md
+@@ -225,3 +225,33 @@ Phase 4.3a 把「写」侧第一条 PROPOSE 打通后，系统仍只在发起页
+ - [2026-10-17] [验证]: 3 并发 dispatch 模拟单测 ✓（Dart 层无卡死）；analyze 0 issue（修 sim 测试多余 !）；debug APK 21:56 重编 ✓ sha256 前缀 624b2af4
+ - [2026-10-25] [变更]: 新增 test/collab_scenario_test.dart 分层多端场景测试 3 例：小规模 4 端全链路（发起→定向解密→3 票回执→全局 seq 唯一）、大规模 16 端并发风暴（实收面 seq 一致无重无缺 + 管道连续前缀 + 单消费恒 1）、离线端 /sync 追平与双路去重；全量 467/467 + analyze 零 issue
+ - [2026-10-25] [验证]: flutter analyze 0 issue; flutter test 467/467 全绿
++- [2026-10-25] [变更]: 新增 test/collab_live_relay_test.dart 直连真 relay（127.0.0.1:8080，relayd 真进程）场景测试 4 例：登录/换票/资料面/弱密码拒绝、lookup+prekey 公钥包+OPK 原子弹出、好友申请→审批→解除全链路、WSS AUTH 握手与非法 token 掐线；服务不在场自动 skip；全量 472/472 + analyze 零 issue
++- [2026-10-25] [验证]: flutter analyze 0 issue; flutter test 472/472 全绿
++- [2026-10-25] [变更]: 新增 test/collab_live_scenario_test.dart 真 relay 完整业务场景闭环 1 例：双设备（独立 ffi 库+身份+WSS）走完 注册→建联→发起 bundle(K_bundle+成员信封+拓扑)→信封入户→接受→敲定→双端 FSM 一致→换机冷启动回放一致；连带 lib 修复 HttpOutboxTransport 补 X-Client-Ts 头（真 relay Idem 中间件强制）；全量 472/472 + analyze 零 issue
++- [2026-10-25] [验证]: flutter analyze 0 issue; flutter test 472/472 全绿（含两 live 文件并行）
++- [2026-10-25] [变更]: 新增 test/collab_live_yunnan_test.dart 四人云南七日游真 relay 全功能场景 1 例：4 用户注册/登录/建联（单 IP 3/min 限流退避跨窗口）→ Directive 七步行程（昆明集合→石林→洱海→苍山→丽江→玉龙→返程；逐成员信封 + required 轮换门限）→ 全员 ACCEPT 敲定 → 发起人独占 PATCH_STEP_TIME（D3 洱海改下午）全端生效 → Consensus 选出发时段（3 候选 quorum=3，1×PREFER+2×OK → winningSlot=slot-1000 固化）→ FreeMask 忙闲探测（D5 白天 8 桶，三成员掩码两两可区分，单向加密回执由发起人解核）→ 四端事件集/FSM 终态一致 → 换机冷启动全量回放一致；回放统一走生产入口 replayBundle。连带修两处：①测试手写回放缺初态 proposalType 载荷自判 → Consensus PROPOSE 被误派发 directive 分支、VOTE 全被忽略（改用生产 replayBundle，与 collab_fsm_test/decision_matrix_page 同口径；生产 UI 无此坑）；②三 live 文件注册退避改「下一分钟窗口边界 + 抖动」+ 预算 4→8 次（relay 限流固定窗口按尝试计数且分钟边界对齐，429 也 INCR 白烧配额，20s 固定步进可三连落同窗——全量并行挤 3/min 配额即复现）
++- [2026-10-25] [验证]: flutter analyze 0 issue; flutter test 473/473 全绿（连续两轮，含三 live 文件并行注册）
++
++## 2026-11-05 · 统一调试桥接入（shiguang，镜像 goodshare 基准）
++
++按与 goodshare 同构的「统一调试桥」标准把公共包 app_debug_bridge 接入 shiguang，供真机 AI 观测（日志 / 控件树 / 确定性动作 / 状态快照）；release 编译期经 `kReleaseMode` 剔除，不进生产产物。
++
++### 落子
++- `pubspec.yaml`：+ `app_debug_bridge: path: ../app_debug_bridge`（同目录公共包）。
++- `lib/debug/`（4 文件，镜像基准但更省）：
++  - `shiguang_debug_log.dart`：`ShiguangDebugLogSink` 重定向 `debugPrint` 进内存环形缓冲（500 上限），供 `/debug/logs`（拾光无结构化日志内核，框架与 MCP 层均用 debugPrint）。
++  - `shiguang_debug_routes.dart`：白名单 `mcp → McpSettingsPage`（无参 const 构造，等价 goodshare 的 McpPage）。
++  - `shiguang_navigator_key.dart`：新建全局 `shiguangNavigatorKey`（拾光原本缺导航键，此处补齐）。
++  - `debug_wiring.dart`：`buildDebugBridge()` 注入三件（导航柄 `shiguangNavigatorKey` / 上下文 / 路由白名单）+ 状态快照取 `AppServices.mcp`（全局服务定位器，无需 goodshare 式的 `late` 提升）。
++- `lib/main.dart`：`runApp` 前 `if (!kReleaseMode)` 装日志源 + `buildDebugBridge().start()` + 打印 token；`MaterialApp` 挂 `navigatorKey: shiguangNavigatorKey`；`onGenerateRoute` 限 `/debug/mcp → McpSettingsPage`（!kReleaseMode 门控）+ `onUnknownRoute` 回落空。
++- `android/app/src/main/kotlin/app/shiguang/shiguang/MainActivity.kt`：`getInitialRoute` + `debugRoute`（shiguang://debug/&lt;page&gt;）+ `onNewIntent` 内 `pushRoute`（singleTop 冷/热启动）。
++- `android/app/src/debug|profile/AndroidManifest.xml`：各加 `shiguang://debug` VIEW intent-filter（release 不合并）。
++
++### 验收
++- `flutter pub get` 拉入 app_debug_bridge；`flutter analyze` **零 issue**。
++- 真机：装上 debug 包后 `adb shell am start -d "shiguang://debug/mcp" -n app.shiguang.shiguang/.MainActivity` 直达 MCP 服务页；token 见 logcat（`[debug-bridge]`，每次启动轮换）。
++
++### 边界
++- 架构安全：McpController 在 `AppServices.init()`（runApp 前 await）已装配，深链冷启动直达 McpSettingsPage 不崩（不同于 goodTemplate 的 `_BootPage` bootstrap 跳过问题，故 goodTemplate 未接 Deep Link）。
++- 公共包零宿主业务，路由面仅白名单可达；release 经 `kReleaseMode` 剔除。
++- 安卓侧（Kotlin + manifest merge）未经真机构建验证，Dart 侧 analyze 通过；建议按 shiguang-workflow 跑一次 debug 构建确认 manifest 合并无误。

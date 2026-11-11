@@ -11,6 +11,13 @@ import 'data/settings.dart';
 import 'theme/tokens.dart';
 import 'ui/app_gate.dart';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'ui/mcp_settings_page.dart';
+import 'debug/shiguang_navigator_key.dart';
+import 'debug/shiguang_debug_log.dart';
+import 'debug/debug_wiring.dart';
+import 'debug/shiguang_debug_screenshot.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 联调配置：从 config/relay.env 读取真 relay 地址（RELAY_BASE_URL），
@@ -25,7 +32,38 @@ Future<void> main() async {
   // isLoggedIn——不先 restore 会把已登录误判成未登录，先进好友页就被
   // 引导去「登录」，其实会话一直在。
   await AppServices.account.restore();
-  runApp(const ShiguangApp());
+  // 真机 AI 调试桥（debug-only）：结构化观测 + 语义树 + 确定性动作。
+  // release 编译期剔除，不进生产产物；token 仅 logcat 可见、每次启动轮换。
+  if (!kReleaseMode) {
+    ShiguangDebugLogSink.install();
+    final bridge = buildDebugBridge();
+    // port=0：OS 随机分配空闲端口（同机多 App 桥共存零协调），实际端口随 token
+    // 打进 logcat [debug-bridge] 行（唯一事实源），统一入口 CLI 按此发现。
+    await bridge.start(port: 0);
+    debugPrint('[debug-bridge] token=${bridge.token}');
+  }
+  runApp(RepaintBoundary(
+    key: shiguangScreenshotBoundaryKey,
+    child: const ShiguangApp(),
+  ));
+}
+
+/// Deep Link 调试路由表：shiguang://debug/&lt;page&gt; → 对应调试页。
+///
+/// 仅 debug/profile 构建经 Android `MainActivity.getInitialRoute` 翻成 /debug/&lt;page&gt;
+/// 抵达此处；release 无入口且无此路由（被 `!kReleaseMode` 滤掉）。未知调试页回落空路由，
+/// 不干扰正常 `home` 首页。
+Route<dynamic>? _onGenerateDebugRoute(RouteSettings settings) {
+  if (!kReleaseMode && settings.name?.startsWith('/debug/') == true) {
+    final page = settings.name!.substring('/debug/'.length);
+    if (page == 'mcp') {
+      return MaterialPageRoute(
+        settings: settings,
+        builder: (_) => const McpSettingsPage(),
+      );
+    }
+  }
+  return null;
 }
 
 /// 拾光 App 根（ui-design §1–§3：Material 3 + 固定品牌色板、关闭动态取色；
@@ -81,6 +119,7 @@ class _ShiguangAppState extends State<ShiguangApp> {
         return MaterialApp(
           title: '拾光',
           debugShowCheckedModeBanner: false,
+          navigatorKey: shiguangNavigatorKey,
           themeMode: _mode,
           theme: ThemeData(
             useMaterial3: true,
@@ -93,6 +132,11 @@ class _ShiguangAppState extends State<ShiguangApp> {
                 seedColor: StColors.deepFocusBg, brightness: Brightness.dark),
           ),
           home: const AppGate(),
+          // Deep Link 调试路由（shiguang://debug/&lt;page&gt;）：仅 debug/profile 构建
+          // 经 MainActivity 翻成 /debug/&lt;page&gt; 抵达；release 无该 intent-filter，
+          // 且此处以 !kReleaseMode 门控，路由面不进生产。
+          onGenerateRoute: _onGenerateDebugRoute,
+          onUnknownRoute: (_) => MaterialPageRoute(builder: (_) => const SizedBox.shrink()),
         );
       },
     );

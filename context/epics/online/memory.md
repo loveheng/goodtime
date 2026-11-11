@@ -85,7 +85,9 @@ last-merge: 2026-10-10
 
 ## 近期验证状态
 
-- [断点] 下一步：下一步：4.2 拒绝面板+审计轴（§11.2 C/D 页）——场景测试基建已落地，不阻塞主线
+- [断点] 下一步：4.2 拒绝面板+审计轴（§11.2 C/D 页）——测试基建四层齐备（mock 单元/分层场景/真 relay 完整闭环/多用户长行程场景），不阻塞主线
+
+- [2026-10-25] **四人云南七日游真 relay 全功能场景收口（test/collab_live_yunnan_test.dart）**：单例覆盖 ①4 用户注册/登录/建联（单 IP 3/min 限流退避跨窗口）②Directive 七步行程（昆明集合→石林→洱海→苍山→丽江→玉龙→返程；逐成员信封 + required 轮换门限）③全员 ACCEPT 敲定 ④发起人独占 PATCH_STEP_TIME（D3 洱海改下午）全端生效 ⑤Consensus 选出发时段（3 候选 quorum=3，1×PREFER+2×OK → winningSlot=slot-1000 固化）⑥FreeMask 忙闲探测（D5 白天 8 桶、三掩码两两可区分、单向加密回执发起人解核）⑦四端事件集/FSM 终态一致 ⑧换机冷启动全量回放一致。**两处修复**：①测试手写回放缺初态 proposalType 载荷自判 → Consensus 被误派发 directive 分支 VOTE 全忽略——改走生产入口 `replayBundle`（与 fsm_test/decision_matrix_page 同口径，生产 UI 无此坑）；②三 live 文件注册退避改「下一分钟窗口边界+抖动」+ 预算 4→8（relay 限流固定窗口按尝试计数、分钟边界对齐，429 也白烧配额，20s 固定步进可三连落同窗）。验证：473/473 连续两轮全绿 + analyze 0。**下一步 = 4.2 拒绝面板+审计轴（§11.2 C/D 页）**。
 
 - [2026-10-10] **Phase 4 编排收口完成**（六页 §11.2 前置的三件套，先于 UI 落地使系统可常驻运行）：`lib/collab/relay_config.dart`（`RelayConfig` 单一来源，`RELAY_BASE_URL` 经 dart-define 注入，默认 `http://10.0.2.2:8080`，`wssUri` 由 http→ws 追加纯路径 `/ws`）/ `lib/data/collab_repository.dart`（`CollabBundleRepository`：maxSeqId·ensureBundle·recordEvent·loadEvents，sinceSeqOf 真实落库水位 + 原始事件保真落库供 FSM 重放，UNIQUE(bundle_id,seq_id) 幂等）/ `lib/collab/connectivity.dart`（`ConnectivityWatcher` 抽象 + `PollingConnectivityWatcher` 零依赖 + `CollabDrainScheduler` 串行链把 `OutboxDrainer` 挂到断→通）/ `lib/collab/engine.dart`（`CollabEngine` 焊接 pipeline.applied→落库 + attachWss + WakePuller(sinceSeqOf) + resident drainer；`wireCollabSystem` 以 `RelayConfig` 焊接三路传输）。`pipeline.dart` 补 `serverAtMs`（法定时钟 §5.2，wake_puller 注入 sync serverAtSec）；`db.dart` 升 v6 迁移补 `collab_events.server_at_ms`（新装同构即认）。
 

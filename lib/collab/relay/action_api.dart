@@ -103,6 +103,8 @@ class HttpOutboxTransport implements OutboxTransport {
           headers: {
             'Authorization': 'Bearer ${await accessToken()}',
             'X-Client-Msg-Id': entry.id,
+            'X-Client-Ts': (DateTime.now().millisecondsSinceEpoch ~/ 1000)
+                .toString(),
           },
           // 状态码自分类不抛：DioException 只留给传输层故障
           validateStatus: (_) => true,

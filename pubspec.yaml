@@ -50,6 +50,10 @@ dependencies:
   # 前台服务保活（M2 管家日切 / MCP Doze 下应答，拾贝同版本）
   flutter_foreground_task: ^11.0.3
 
+  # 真机 AI 调试桥（debug-only：kReleaseMode 编译期剔除，不进 release 产物）
+  app_debug_bridge:
+    path: ../app_debug_bridge
+
   url_launcher: ^6.3.3
   cryptography: ^2.9.0
   flutter_secure_storage: ^11.2.0

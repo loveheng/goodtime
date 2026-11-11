@@ -176,6 +176,25 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         forwardSharedText(intent)
+        // AI 调试直达（仅 debug/profile Manifest 声明 shiguang://debug 入口）：
+        // singleTop 热启动经 NavigationChannel.pushRoute 推给 Dart（Navigator.pushNamed）。
+        debugRoute(intent)?.let { flutterEngine?.navigationChannel?.pushRoute(it) }
+    }
+
+    // AI 调试直达（仅 debug/profile Manifest 声明 shiguang://debug 入口）：
+    // 冷启动把 VIEW intent 翻成 initialRoute；singleTop 热启动走 onNewIntent
+    // 经 NavigationChannel.pushRoute 推给 Dart（Navigator.pushNamed）。
+    // release 无该 intent-filter，且 Dart 侧 onGenerateRoute 以 !kReleaseMode
+    // 装配，路由面不进生产。
+    // super 的可空返回（无 route extra 时）须显式落到默认首页路由。
+    override fun getInitialRoute(): String =
+        debugRoute(intent) ?: super.getInitialRoute() ?: "/"
+
+    private fun debugRoute(source: Intent?): String? {
+        val data = source?.data ?: return null
+        if (data.scheme != "shiguang" || data.host != "debug") return null
+        val page = data.path?.trim('/')?.takeIf { it.isNotEmpty() } ?: return null
+        return "/debug/$page"
     }
 
     private fun forwardSharedText(intent: Intent?) {

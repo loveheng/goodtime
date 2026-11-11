@@ -1,3 +1,11 @@
+---
+dev-loop: devlog
+format: v1
+epic: online
+total-merged: 1
+last-merge: 2026-11-11
+---
+
 # online epic devlog
 
 ## 2026-10-11 · recovery_vault 换机切片：金库包裹钥=登录密码派生（v3 拍板）
@@ -221,7 +229,28 @@ Phase 4.3a 把「写」侧第一条 PROPOSE 打通后，系统仍只在发起页
 `flutter analyze`（改动文件）零 issue；`collab_compose_submit_test`+`collab_compose_form_test` 回归 17 例全绿；docs-lint 过。
 
 ## main 侧增量（Binder 拆分化，2026-10-17，合并带入；增量日志按行追加，≥5 条自动归并进 memory.md）
-- [2026-10-17] [变更]: 并发停滞取证轮：真机三并发复现「占位帧回、终帧不到、goodhub 响应停滞」。静态排查排除 Dart 层并发卡死（新增 mcp_binder_parallel_sim_test 并发模拟钉子）/AIDL oneway（已确认）/goodhub 原生链路；断环需真机日志定位，原生 async 路径加 [F1] 生命周期日志（dispatch posted/done/terminal emitted）+ [DEGRADE] 已有
-- [2026-10-17] [验证]: 3 并发 dispatch 模拟单测 ✓（Dart 层无卡死）；analyze 0 issue（修 sim 测试多余 !）；debug APK 21:56 重编 ✓ sha256 前缀 624b2af4
-- [2026-10-25] [变更]: 新增 test/collab_scenario_test.dart 分层多端场景测试 3 例：小规模 4 端全链路（发起→定向解密→3 票回执→全局 seq 唯一）、大规模 16 端并发风暴（实收面 seq 一致无重无缺 + 管道连续前缀 + 单消费恒 1）、离线端 /sync 追平与双路去重；全量 467/467 + analyze 零 issue
-- [2026-10-25] [验证]: flutter analyze 0 issue; flutter test 467/467 全绿
+> 10 条增量日志（2026-10-17 并发停滞取证轮；2026-10-25 分层场景 / live relay / live 场景 / 云南长行程四套测试）已于 2026-11-11 归并进 memory.md「近期验证状态」与「断点」；原文见 git log -p -- context/epics/online/devlog.md 与 devlog-pending-2026-11-11.patch。
+
+## 2026-11-05 · 统一调试桥接入（shiguang，镜像 goodshare 基准）
+
+按与 goodshare 同构的「统一调试桥」标准把公共包 app_debug_bridge 接入 shiguang，供真机 AI 观测（日志 / 控件树 / 确定性动作 / 状态快照）；release 编译期经 `kReleaseMode` 剔除，不进生产产物。
+
+### 落子
+- `pubspec.yaml`：+ `app_debug_bridge: path: ../app_debug_bridge`（同目录公共包）。
+- `lib/debug/`（4 文件，镜像基准但更省）：
+  - `shiguang_debug_log.dart`：`ShiguangDebugLogSink` 重定向 `debugPrint` 进内存环形缓冲（500 上限），供 `/debug/logs`（拾光无结构化日志内核，框架与 MCP 层均用 debugPrint）。
+  - `shiguang_debug_routes.dart`：白名单 `mcp → McpSettingsPage`（无参 const 构造，等价 goodshare 的 McpPage）。
+  - `shiguang_navigator_key.dart`：新建全局 `shiguangNavigatorKey`（拾光原本缺导航键，此处补齐）。
+  - `debug_wiring.dart`：`buildDebugBridge()` 注入三件（导航柄 `shiguangNavigatorKey` / 上下文 / 路由白名单）+ 状态快照取 `AppServices.mcp`（全局服务定位器，无需 goodshare 式的 `late` 提升）。
+- `lib/main.dart`：`runApp` 前 `if (!kReleaseMode)` 装日志源 + `buildDebugBridge().start()` + 打印 token；`MaterialApp` 挂 `navigatorKey: shiguangNavigatorKey`；`onGenerateRoute` 限 `/debug/mcp → McpSettingsPage`（!kReleaseMode 门控）+ `onUnknownRoute` 回落空。
+- `android/app/src/main/kotlin/app/shiguang/shiguang/MainActivity.kt`：`getInitialRoute` + `debugRoute`（shiguang://debug/&lt;page&gt;）+ `onNewIntent` 内 `pushRoute`（singleTop 冷/热启动）。
+- `android/app/src/debug|profile/AndroidManifest.xml`：各加 `shiguang://debug` VIEW intent-filter（release 不合并）。
+
+### 验收
+- `flutter pub get` 拉入 app_debug_bridge；`flutter analyze` **零 issue**。
+- 真机：装上 debug 包后 `adb shell am start -d "shiguang://debug/mcp" -n app.shiguang.shiguang/.MainActivity` 直达 MCP 服务页；token 见 logcat（`[debug-bridge]`，每次启动轮换）。
+
+### 边界
+- 架构安全：McpController 在 `AppServices.init()`（runApp 前 await）已装配，深链冷启动直达 McpSettingsPage 不崩（不同于 goodTemplate 的 `_BootPage` bootstrap 跳过问题，故 goodTemplate 未接 Deep Link）。
+- 公共包零宿主业务，路由面仅白名单可达；release 经 `kReleaseMode` 剔除。
+- 安卓侧（Kotlin + manifest merge）未经真机构建验证，Dart 侧 analyze 通过；建议按 shiguang-workflow 跑一次 debug 构建确认 manifest 合并无误。
