@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-19
+updated: 2026-11-11
 ---
 
 # docs
@@ -17,6 +17,7 @@ updated: 2026-10-19
 - [background-context-draft.md](design/background-context-draft.md) —— 背景信息记录设计（软上下文 vs 硬事实分流判据/backgrounds 表模型/AI 消费双纪律；2026-10-07 定稿并已按此施工落地，拍板留痕=schedule-app §11「背景信息记录」行）
 - [collab-schedule-draft.md](design/collab-schedule-draft.md) —— 协同日程设计（多人协同层：E2EE 盲中继身份与好友/密文信令中转/盲校验与树状方案包/BYOS 三层存储容灾；2026-10-08 九轮评审全闭环：鉴权/Plan A 账号+OPK/Ticket/双层 ACL+MSK 双层密钥+E2EE 三层密钥+十表 Schema 与接口清单+双模状态机（threshold/Consensus 三值投票/ADD_SLOT 上限 8/REOPEN 强通知）+HCI 交互补齐+客户端架构（Local-First 单向流/六页/下沉衔接 v5+Outbox）+八轮五补丁（seq_id 行锁/FreeMask 量化桶/X3DH 单主设备/落槌门禁/Outbox）+2026-10-24 对账修正（Plan A 落稿/好友双通道/落槌发起人独占/服务端=盲校验器），§12 五阶段契约先行施工序待开工）
 - [collab-implementation.md](design/collab-implementation.md) —— 协同日程开发文档（设计稿的施工执行件：五阶段步骤表与验收线/Phase 0 契约冻结与十表 DDL/联调清单五项/单机 app 改造点汇总/里程碑甘特图，约 3 周单人量；2026-10-08 随九轮评审定稿）
+- [native-migration.md](design/native-migration.md) —— 转原生 Android 评估与迁移施工蓝图（代码资产实测分层/成本与机会成本/风险登记 R1–R8/启动判据 C1–C4/方案档位 B0–B3/阶段 P0–P5 与决策门 G0–G2/UI 保真四道工序与七个已知丢失点；2026-11-11 拍板走 B3 全量迁移）
 
 ## project/
 

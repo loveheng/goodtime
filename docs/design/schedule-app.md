@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-10-24
+updated: 2026-11-11
 ---
 
 # 拾光（shiguang）——MCP 日程 app 设计
@@ -400,6 +400,8 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | UI 规范迁移（ui-design/ui-pages） | UI 规范自 `docs/design/ui-spec.md` 拆迁（2026-10-19 用户拍板，goodhub 终态模式）：①**大面规范** → `docs/project/ui-design.md`（零外引：色彩/排印 tokens、布局标尺与物理约束、文案术语映射、BlockRenderer 模块形态契约；旧 §0.4 词汇表→§4 术语映射——只留封闭核心概念词翻译，页面串清单二次拆出、旧 §0.5 深色面板→§1.2、§6 渲染矩阵→§5、§6.5 物理约束→§3.4，对照表在 ui-design 头部）；②**页面级内容**（旧 §1–§5/§7–§9：IA/引导/今日页纵向/周月/清单/块浮层/交互流/空态+各页文案串清单）→ `docs/design/ui-pages.md`（页面布局稿，§9=各页文案清单，单向指入 ui-design）；旧 §10 里程碑裁剪属施工过程归 Git/蓝图、旧 §11 拍板记录剥离（本台账为拍板留痕载体，五项语义=missed 方案 A/确认卡 sticky/M3+固定品牌色板/微观标尺五项/内黑话外白话分别并入 ui-design §1/§3/§4 与 ui-pages §3/§9 不丢失）；全仓引用同轮修复并按双源路由分派（规范类→ui-design、页面类→ui-pages：AGENTS/README/skill×5/design 稿×5/lib+test 注释/context 活待办） |
 | 本地 Binder 插件接入官方 SDK（AIDL 去手抄） | 2026-10-20 迁移：shiguang 本地 Binder 插件从「手搓 AIDL + 手写 IMcpChannel.Stub」切换到官方 SDK `goodhub-mcp-plugin-core`（v0.1.0，离线 maven-repo `/home/zzh/app/goodhub-mcp-sdk/dist/maven-repo` 分发，GitHub Packages 公网坐标需 GITHUB_TOKEN）：`ShiguangMcpBinderService` 改为继承 `GoodHubPluginService(serverId="shiguang", serverTitle="拾光")`（常量与 Manifest meta-data 对齐），由 SDK 承载 AIDL 语义（契约唯一物理副本归 SDK 仓 :contract，`com.zzh.goodhub.mcp` 包名与方法签名 call/registerCallback/answerReverse/onEvent **永久冻结**）；shiguang 仅重写 `handleJsonRpc`（接管原 Stub.call 全路由：ready 5s 等待→-32000、F1 `_async`+onEvent 终帧切片、5s per-call 超时→-32000 / 异常→-32603）与 `onHostCallback`（等价原 registerCallback：存回调 + 通知 Dart `hostCallbackReady`）；`onBind` 与手写 Stub 删除（基类持私有 Stub）；AIDL 第四份手抄副本 `android/app/src/main/aidl/` 删除，`buildFeatures.aidl` 清理；`answerReverse` 沿用基类默认（当前无反向请求）。Manifest service 名/exported/permission/自声明 `<permission>`/action/meta-data、契约四常量、F1 行为（`_async` 占位 + onEvent 终帧，不退化成同步阻塞）、-32000/-32603 错误语义**全部红线不变**。goodhub 宿主侧 AIDL 副本亦已于 2026-10-20 删除，跨仓手抄 AIDL 历史清零 |
 | 协同对账修正（文档向实现对齐） | 2026-10-24 评审驱动对账，**本轮仅文档、代码零改动**，契约=`collab-schedule-draft.md` 四节改写（`collab-implementation.md` §0 同步注记）：①**账号体系落稿 Plan A**——用户名+密码（PoP 匿名模型退役，§1.1/§1.3/§1.4/§1.5 改写，错误码字典补账号域 + 「唯一维护出处=relay 仓 README」）；②**好友建联双通道**——搜索 `GET /v1/users/lookup` + 扫码 Ticket 并存（§1.6/§1.7 改写，防骚扰口径=lookup 限流 + 待审批配额 ≤50 + 被邀方手动批准）；③**FORCE_FINALIZE 落槌权收敛发起人独占**（§4.4，对齐 relay `NOT_INITIATOR` 门禁与 fact 草案 §7-Q5；端侧 fsm.dart 平权分支=死路径待清理）；④**服务端定位=盲校验器**（§0.2/§0.3/§4.1/§4.2/§4.3/§8.4：行锁定序 + ACL/配额 + 显式终态布尔门禁，不落 votes、不派生状态；FSM 单实现归端侧 `fsm.dart` 并封顶「服务端禁止新增状态推导」；已知边界=派生敲定 CONFIRMED 不落服务端 status，`BUNDLE_CONFIRMED_IMMUTABLE` 仅对显式终态动作生效） |
+
+| 技术栈迁移（Flutter → 原生 Android） | 2026-11-11 用户拍板「彻底摆脱 Flutter」→ 走全量迁移档位 `B3`（原生 Kotlin + Jetpack Compose，零 Dart 依赖）。阶段序：`P0` 契约固化与黄金向量 → `P1` MCP 内核平移（MCP 脱离 headless FlutterEngine，goodhub 跨进程拉起不再建引擎）→ `P2` 领域内核平移 → `P3` 平台层替换 → `P4` UI 重写 → `P5` 收尾切包。三道决策门：`G0` 黄金向量对拍通过 / `G1` MCP 契约与并发 / `G2` 唯一止损点（内核平移守住 70–100 人日预算与信心才继续 `P3`/`P4`，未过即止损）。成本 242–353 人日 ≈ 12–18 人月（单人），期间功能冻结窗口。方案明细=docs/design/native-migration.md；档位选型权衡=context/decisions.md 的 native-migration 节；任务拆解=context/epics/native-migration/todos.md。铁律：迁到 Kotlin 的是**实现**不是**契约**——协议 / 命令面 / 拒绝码 / E2EE 封装字节 / relay proto wire format / SQLite DDL 六类语义逐位不变，判定靠 `P0` 黄金向量对拍 |
 
 ## 12. 复用清单（自拾贝 goodshare，2026-10-05 全仓盘点校准）
 
