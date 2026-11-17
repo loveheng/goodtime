@@ -1,12 +1,12 @@
 #!/bin/sh
 # pre-commit 聚合门禁：提交前机械拦截——arch-guard 架构硬约束 + docs-lint 文档规范。
-# 复用既有单工具而非重写规则；无 lib/ 改动则跳过 arch-guard，无 docs/ 改动则跳过 docs-lint。
+# 复用既有单工具而非重写规则；无 .kt 改动则跳过 arch-guard-kotlin，无 docs/ 改动则跳过 docs-lint。
 # 拾光差异：docs-lint 在全局池（toolbox run docs-lint），arch-guard 为本池兄弟脚本。
 #
 # toolbox-script
 # format: v1
 # name: pre-commit-gate
-# summary: 提交前门禁：按改动范围分派 arch-guard（lib/ 改动）与 docs-lint（docs/ 改动），任一 FAIL 拒绝提交
+# summary: 提交前门禁：按改动范围分派 arch-guard（.dart/lib 改动）与 arch-guard-kotlin（.kt 改动）与 docs-lint（docs/ 改动），任一 FAIL 拒绝提交
 # trigger: pre-commit
 # after: arch-guard,docs-lint
 # cat: test
@@ -15,12 +15,12 @@
 # self-test: --self-test
 
 set -u
-ROOT=''; LIB_TOUCHED=0; DOC_TOUCHED=0; SELF_TEST=0; JSON_ONLY=0
+ROOT=''; KT_TOUCHED=0; DOC_TOUCHED=0; SELF_TEST=0; JSON_ONLY=0
 
 usage() {
   cat <<'EOF'
 用法: pre-commit-gate.sh [选项]      （toolbox run pre-commit-gate [选项] 等价）
-  提交前门禁：git 取暂存区改动，涉及 lib/ 跑 arch-guard，涉及 docs/ 跑 docs-lint；
+  提交前门禁：git 取暂存区改动，涉及 .kt 跑 arch-guard-kotlin，涉及 docs/ 跑 docs-lint；
   任一 FAIL → exit 1 拒绝提交（规则本身在各自工具内，本脚本只做分派与聚合）。
 选项:
   --root <目录>  指定仓库根（默认 git 顶层 / 当前目录）
@@ -42,13 +42,16 @@ json_out() { # $1=status $2=severity $3=message $4=remedy(可空)；只打印，
 
 detect_touched() {
   # 暂存区有内容按暂存区，否则按工作区相对 HEAD（覆盖 git add -A 前的 pre-commit 直跑）
+  local list
   if git -C "$ROOT" diff --cached --quiet 2>/dev/null; then
-    LIB_TOUCHED=$(git -C "$ROOT" diff --name-only HEAD -- lib | wc -l)
-    DOC_TOUCHED=$(git -C "$ROOT" diff --name-only HEAD -- docs | wc -l)
+    list=$(git -C "$ROOT" diff --name-only HEAD)
   else
-    LIB_TOUCHED=$(git -C "$ROOT" diff --cached --name-only -- lib | wc -l)
-    DOC_TOUCHED=$(git -C "$ROOT" diff --cached --name-only -- docs | wc -l)
+    list=$(git -C "$ROOT" diff --cached --name-only)
   fi
+  # 分派（P5 Gradle-only）：.kt/android Kotlin → arch-guard-kotlin；docs/ → docs-lint。
+  # （P5 前另有 .dart/lib → arch-guard 分流，随 Dart 侧退役删除。）
+  KT_TOUCHED=$(printf '%s\n' "$list" | grep -cE '\.kt$' || true)
+  DOC_TOUCHED=$(printf '%s\n' "$list" | grep -cE '^docs/' || true)
   return 0
 }
 
@@ -57,12 +60,12 @@ run() {
   [ -d "$ROOT/.git" ] || { echo "FAIL 自身故障: $ROOT 不是 git 仓库"; return 2; }
   detect_touched
   local rc=0 agg=0
-  if [ "$LIB_TOUCHED" -gt 0 ]; then
-    echo "==> pre-commit-gate: lib/ 有改动，跑 arch-guard"
-    if [ -f "$SCRIPT_DIR/arch-guard.sh" ]; then
-      bash "$SCRIPT_DIR/arch-guard.sh" --root "$ROOT" || { rc=1; agg=$((agg+1)); }
+  if [ "$KT_TOUCHED" -gt 0 ]; then
+    echo "==> pre-commit-gate: .kt 有改动，跑 arch-guard-kotlin"
+    if [ -f "$SCRIPT_DIR/arch-guard-kotlin.sh" ]; then
+      bash "$SCRIPT_DIR/arch-guard-kotlin.sh" --root "$ROOT" || { rc=1; agg=$((agg+1)); }
     else
-      echo "⚠ arch-guard.sh 缺失，跳过（fail-open）"
+      echo "⚠ arch-guard-kotlin.sh 缺失，跳过（fail-open）"
     fi
   fi
   if [ "$DOC_TOUCHED" -gt 0 ]; then
@@ -78,11 +81,11 @@ run() {
       json_out "OK" "info" "pre-commit门禁通过" ""
       return 0
     fi
-    echo "OK: pre-commit 门禁通过（lib 改动=$LIB_TOUCHED docs 改动=$DOC_TOUCHED）"
+    echo "OK: pre-commit 门禁通过（kt=$KT_TOUCHED docs=$DOC_TOUCHED）"
     return 0
   fi
   if [ "$JSON_ONLY" -eq 1 ]; then
-    json_out "FAIL" "error" "pre-commit门禁: $agg 项未过（lib=$LIB_TOUCHED docs=$DOC_TOUCHED）" "裸跑对应工具看明细；历史遗留加各工具白名单只减不增"
+    json_out "FAIL" "error" "pre-commit门禁: $agg 项未过（kt=$KT_TOUCHED docs=$DOC_TOUCHED）" "裸跑对应工具看明细；历史遗留加各工具白名单只减不增"
     return 1
   fi
   echo "FAIL: $agg 项门禁未过，禁止提交"
@@ -94,17 +97,17 @@ self_test() {
   local tmp rc=0
   tmp=$(mktemp -d) || return 2
   (
-    cd "$tmp" && git init -q . && mkdir -p lib/ui docs
-    echo 'void x() {}' > lib/ui/bad.dart
+    cd "$tmp" && git init -q . && mkdir -p android/app/src/main/kotlin/app/shiguang docs
+    echo 'fun x() {}' > android/app/src/main/kotlin/app/shiguang/Bad.kt
     git add -A
     git -c user.email=t@t -c user.name=t commit -qm init --allow-empty
-    # 坏样本：UI 层直连 repo 写（arch-guard R1 应抓到）
-    printf "void f() { repo.addBlock(x); }\n" > lib/ui/bad.dart
+    # 坏样本：按 arch-guard-kotlin 规则造已知命中
+    printf 'fun f() { Log.d("x", "secret") }\n' > android/app/src/main/kotlin/app/shiguang/Bad.kt
     git add -A
   )
   sh "$0" --root "$tmp" >/dev/null 2>&1
   local bad_rc=$?
-  ( cd "$tmp" && printf 'void ok() {}\n' > lib/ui/bad.dart && git add -A )
+  ( cd "$tmp" && printf 'fun ok() {}\n' > android/app/src/main/kotlin/app/shiguang/Bad.kt && git add -A )
   sh "$0" --root "$tmp" >/dev/null 2>&1
   local good_rc=$?
   rm -rf "$tmp"

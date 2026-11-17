@@ -1,0 +1,295 @@
+{
+  "set": "model-json-artifact",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_model_vectors.dart",
+  "reference": "lib/models/artifact.dart（Dart 参考实现，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_model_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（:core:model）"
+  ],
+  "encoding": "键序敏感（JSON 串逐字对拍——Map 字面量序=序列化契约）；时间毫秒 int（64 位语义）",
+  "rules": {
+    "payload_v_order": "encodePayload：**v 恒首位**（值取 payload[\"v\"] ?? 1，spread 覆盖不改位）——契约内嵌版本，反序列化按 v 分支；Kotlin 用 LinkedHashMap 同构实现",
+    "decode_defense": "decodePayload 读侧防御：raw null/空/畸形 JSON/非 JSON 对象 → **{\"v\":1} 不抛**（[DEGRADE] 日志为旁路可观测，不参与对拍）——库被外部改坏时读路径不挡",
+    "to_map_key_order": "Artifact.toMap 键序：id(缺省跳过)/category/source_kind/state/origin/title/badge/payload/attachments/captured_by/plan_id/created_at/updated_at/version——JSON 串逐字对拍（键序=DB 行序列化契约）",
+    "from_map_defaults": "fromMap 缺省：badge=null、capturedBy=\"me\"、version=0、planId=null（null=未归属池 D2）",
+    "refs_sync": "payloadWithRefs 双写同步单点：planId 参数三态——显式值=置键 / null=移除键 / 缺省(_keep)=保持原值"
+  },
+  "cases": [
+    {
+      "id": "payload_encode_basic",
+      "op": "payload_encode",
+      "input": {
+        "payload": {
+          "raw_text": "G102 05车12F",
+          "plan_id": "p1"
+        }
+      },
+      "expect": {
+        "json": "{\"v\":1,\"raw_text\":\"G102 05车12F\",\"plan_id\":\"p1\"}"
+      }
+    },
+    {
+      "id": "payload_encode_v_override",
+      "op": "payload_encode",
+      "input": {
+        "payload": {
+          "a": 1,
+          "v": 2
+        }
+      },
+      "expect": {
+        "json": "{\"v\":2,\"a\":1}"
+      }
+    },
+    {
+      "id": "payload_encode_empty",
+      "op": "payload_encode",
+      "input": {
+        "payload": {}
+      },
+      "expect": {
+        "json": "{\"v\":1}"
+      }
+    },
+    {
+      "id": "payload_decode_ok",
+      "op": "payload_decode",
+      "input": {
+        "raw": "{\"v\":1,\"raw_text\":\"G102\"}"
+      },
+      "expect": {
+        "payload": {
+          "v": 1,
+          "raw_text": "G102"
+        }
+      }
+    },
+    {
+      "id": "payload_decode_null",
+      "op": "payload_decode",
+      "input": {
+        "raw": null
+      },
+      "expect": {
+        "payload": {
+          "v": 1
+        }
+      }
+    },
+    {
+      "id": "payload_decode_empty",
+      "op": "payload_decode",
+      "input": {
+        "raw": ""
+      },
+      "expect": {
+        "payload": {
+          "v": 1
+        }
+      }
+    },
+    {
+      "id": "payload_decode_malformed",
+      "op": "payload_decode",
+      "input": {
+        "raw": "{bad json"
+      },
+      "expect": {
+        "payload": {
+          "v": 1
+        }
+      }
+    },
+    {
+      "id": "payload_decode_not_object",
+      "op": "payload_decode",
+      "input": {
+        "raw": "[1,2]"
+      },
+      "expect": {
+        "payload": {
+          "v": 1
+        }
+      }
+    },
+    {
+      "id": "refs_set",
+      "op": "payload_with_refs",
+      "input": {
+        "payload": {
+          "raw_text": "x"
+        },
+        "plan_id": "p1"
+      },
+      "expect": {
+        "payload": {
+          "raw_text": "x",
+          "plan_id": "p1"
+        }
+      }
+    },
+    {
+      "id": "refs_remove",
+      "op": "payload_with_refs",
+      "input": {
+        "payload": {
+          "raw_text": "x",
+          "plan_id": "p1"
+        },
+        "plan_id": null
+      },
+      "expect": {
+        "payload": {
+          "raw_text": "x"
+        }
+      }
+    },
+    {
+      "id": "refs_keep",
+      "op": "payload_with_refs",
+      "input": {
+        "payload": {
+          "raw_text": "x",
+          "plan_id": "p1"
+        }
+      },
+      "expect": {
+        "payload": {
+          "raw_text": "x",
+          "plan_id": "p1"
+        }
+      }
+    },
+    {
+      "id": "artifact_to_map_full",
+      "op": "artifact_to_map",
+      "input": {
+        "fields": {
+          "id": "baseline_art_1",
+          "category": "transit",
+          "source_kind": "booking",
+          "state": "structured",
+          "origin": "ai",
+          "title": "去程高铁 G102",
+          "badge": "05车12F",
+          "payload": {
+            "v": 1,
+            "raw_text": "【12306】您已购 D8724 次车票",
+            "plan_id": "baseline_plan_1"
+          },
+          "attachments": [],
+          "plan_id": "baseline_plan_1",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 3
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_art_1",
+          "category": "transit",
+          "source_kind": "booking",
+          "state": "structured",
+          "origin": "ai",
+          "title": "去程高铁 G102",
+          "badge": "05车12F",
+          "payload": "{\"v\":1,\"raw_text\":\"【12306】您已购 D8724 次车票\",\"plan_id\":\"baseline_plan_1\"}",
+          "attachments": "[]",
+          "captured_by": "me",
+          "plan_id": "baseline_plan_1",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 3
+        }
+      }
+    },
+    {
+      "id": "artifact_frommap_roundtrip",
+      "op": "artifact_from_map",
+      "input": {
+        "map": {
+          "id": "baseline_art_1",
+          "category": "transit",
+          "source_kind": "booking",
+          "state": "structured",
+          "origin": "ai",
+          "title": "去程高铁 G102",
+          "badge": "05车12F",
+          "payload": "{\"v\":1,\"raw_text\":\"【12306】您已购 D8724 次车票\",\"plan_id\":\"baseline_plan_1\"}",
+          "attachments": "[]",
+          "captured_by": "me",
+          "plan_id": "baseline_plan_1",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 3
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_art_1",
+          "category": "transit",
+          "source_kind": "booking",
+          "state": "structured",
+          "origin": "ai",
+          "title": "去程高铁 G102",
+          "badge": "05车12F",
+          "payload": "{\"v\":1,\"raw_text\":\"【12306】您已购 D8724 次车票\",\"plan_id\":\"baseline_plan_1\"}",
+          "attachments": "[]",
+          "captured_by": "me",
+          "plan_id": "baseline_plan_1",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 3
+        },
+        "title": "去程高铁 G102",
+        "payload": {
+          "v": 1,
+          "raw_text": "【12306】您已购 D8724 次车票",
+          "plan_id": "baseline_plan_1"
+        }
+      }
+    },
+    {
+      "id": "artifact_frommap_defaults",
+      "op": "artifact_from_map",
+      "input": {
+        "map": {
+          "id": "art_min",
+          "category": "verbal",
+          "source_kind": "verbal",
+          "state": "raw",
+          "origin": "quicknote",
+          "title": "口信",
+          "payload": "{\"v\":1,\"raw_text\":\"记得带伞\"}",
+          "attachments": "[]",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "art_min",
+          "category": "verbal",
+          "source_kind": "verbal",
+          "state": "raw",
+          "origin": "quicknote",
+          "title": "口信",
+          "badge": null,
+          "payload": "{\"v\":1,\"raw_text\":\"记得带伞\"}",
+          "attachments": "[]",
+          "captured_by": "me",
+          "plan_id": null,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 0
+        },
+        "badge": null,
+        "captured_by": "me",
+        "version": 0,
+        "plan_id": null
+      }
+    }
+  ]
+}

@@ -129,11 +129,22 @@ resolve_bridge() {
   [ -n "${pids// /}" ] || return 1
   line="$(adb -s "$DEVICE" logcat -d 2>/dev/null \
     | grep -aF 'token=' \
-    | grep -aF '[debug-bridge]' \
+    | grep -aE 'debug-bridge|127\.0\.0\.1:[0-9]+' \
+    | grep -aE '127\.0\.0\.1:[0-9]+' \
     | awk -v p="$pids" '
         BEGIN { n=split(p, a, /[ \t]+/); for (i=1;i<=n;i++) if (a[i] != "") ok[a[i]]=1 }
         ($3 in ok) || ($4 in ok) { last=$0 }
         END { print last }')"
+  if [ -z "$line" ]; then
+    # logcat 轮转兜底（0.5.2 tokenListener）：宿主把 token/port 持久化到私有目录，
+    # debug 包经 run-as 读取——不再依赖 logcat 缓冲存活。文件行格式=「<token> <port>」。
+    fileline="$(adb -s "$DEVICE" shell run-as app.shiguang.shiguang cat files/debug-bridge-token.txt 2>/dev/null \
+      | tr -d '\r' | head -1)"
+    [ -n "$fileline" ] || return 1
+    TOKEN="$(printf '%s' "$fileline" | cut -d' ' -f1 | tr -d '\r[:space:]')"
+    PORT="$(printf '%s' "$fileline" | cut -d' ' -f2 | tr -d '\r[:space:]')"
+    [ -n "$TOKEN" ] && [ -n "$PORT" ] && return 0 || return 1
+  fi
   [ -n "$line" ] || return 1
   TOKEN="$(printf '%s' "$line" | grep -oE 'token=[^ ]+' | tail -1 \
     | cut -d= -f2 | tr -d '\r[:space:]')"
@@ -281,9 +292,10 @@ case "$CMD" in
     if [ -n "$W" ] && [ -n "$H" ]; then
       X="$(awk "BEGIN{print $X + $W/2}")"; Y="$(awk "BEGIN{print $Y + $H/2}")"
     fi
-    PX="$(awk "BEGIN{printf \"%d\", $X * $DPR}")"
-    PY="$(awk "BEGIN{printf \"%d\", $Y * $DPR}")"
-    echo "[tap_bounds] logical($X,$Y) ×dpr($DPR) → device($PX,$PY)"
+    # 口径修正（2026-11-16 采图轮实证）：ui-tree/uiautomator bounds 均已是设备
+    # 物理像素（wm size 同系），×dpr 换算必出屏（本机 1272×2800 ×3.5=4452 越界）。
+    PX="$X"; PY="$Y"
+    echo "[tap_bounds] device($PX,$PY)"
     adb -s "$DEVICE" shell input tap "$PX" "$PY"
     exit $?
     ;;

@@ -1,6 +1,6 @@
 # shiguang · AI 开发约定
 
-拾光（shiguang）：本地持有的日程台账 + MCP 服务端 + 确认 UI 的 Flutter Android app。设计 SSOT：`docs/design/schedule-app.md`。
+拾光（shiguang）：本地持有的日程台账 + MCP 服务端 + 确认 UI 的纯原生 Android app（Kotlin + Compose + Gradle-only；P5 迁移完成后 Flutter/Dart 已退役）。设计 SSOT：`docs/design/schedule-app.md`。
 
 ## 会话初始化（新窗口开场执行一次）
 
@@ -9,7 +9,7 @@
 
 ## 项目硬约束（详情见事实源 skill）
 
-- flutter 不在默认 PATH：先 `export PATH="$HOME/flutter/bin:$PATH"`
+- 构建一律走 `toolbox run build-apk`（Gradle-only；flutter CLI 链已随 P5 退役，仓库无 pubspec）
 - 设计变更回 `docs/design/schedule-app.md` §11 拍板台账留痕；界面文案先入 ui-design §4 术语映射 / ui-pages §9 文案清单再上屏
 - docs/ 改动跑 `toolbox run docs-lint`
 

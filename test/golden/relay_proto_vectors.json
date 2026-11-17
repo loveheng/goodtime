@@ -1,0 +1,239 @@
+{
+  "set": "relay-proto-bytes",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_proto_vectors.dart",
+  "reference": "lib/collab/proto/relay_protocol.pb.dart（生成码；源 shiguang-relay/relay_protocol.proto，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_proto_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（P2，protobuf-javalite）"
+  ],
+  "encoding": "bytes 字段小写 hex；proto3 线格式确定性（字段按 field number 序）",
+  "rules": {
+    "wire_determinism": "同字段集 → 同字节：protobuf 序列化按 field number 升序输出；负 int64 恒 varint 10 字节（跨 Dart/Java 一致）；unknown fields 解析后按原 tag 保留回写（拍板③向前兼容）",
+    "default_scalars_semantics": "拍板②钉当前 Dart 生成物实然行为：生成物为 has-语义（PbFieldType.O，字段带 has 位），显式 set 默认值（seq_id=0/key_ver=0/sender_hint=\"\"/action=PROPOSE）→ 逐字段编码 tag+0x00（bytes_hex=1000180022004800）。⚠ 语义异常记录：proto3 隐式 presence 语义上默认值不编码——Dart 生成物行为与 proto3 语义不一致（疑生成链 protoc/插件版本所致）；protobuf-javalite 按 proto3 语义重生成后默认值不编码，届时本向量须随重生成同步更新（Kotlin 对拍红 ≠ Kotlin 错，先查本向量时点）",
+    "empty_message": "拍板①：全默认 Envelope() 序列化 = 空 buffer（0 字节），解析回空消息——空载荷合法（服务端/端侧不得因空消息拒绝）",
+    "construction": "Kotlin 对拍按 input.fields 用 protobuf-javalite 构造同字段消息 → toByteArray → hex 逐位比对 expect.bytes_hex；parse 断言 presence/oneof 分支（which_body）与字段值；member_key_envelopes 为 repeated 嵌套消息，顺序即追加序",
+    "frame_oneof": "ServerFrame/ClientFrame 的 body 为 oneof：schedule(Envelope)/relay/auth/error 等——向量钉 schedule 与 error 两分支的 which_body 与字节",
+    "fixups": "input.fields 里 null = 字段缺省（不设置）；cipher/wrapped_key 为 bytes（hex）"
+  },
+  "cases": [
+    {
+      "id": "proto_empty_envelope",
+      "op": "serialize_envelope",
+      "input": {
+        "fields": {
+          "bundle_id": null,
+          "action": null,
+          "seq_id": null,
+          "sender_hint": null,
+          "cipher": null,
+          "client_msg_id": null,
+          "client_ts": null,
+          "topology_ref": null,
+          "key_ver": null,
+          "member_key_envelopes": []
+        }
+      },
+      "expect": {
+        "bytes_hex": "",
+        "parsed": {
+          "has_bundle_id": false,
+          "has_seq_id": false,
+          "has_key_ver": false,
+          "seq_id": 0,
+          "action": "PROPOSE",
+          "bundle_id": null
+        }
+      },
+      "source": "2026-11-11 拍板①：空消息"
+    },
+    {
+      "id": "proto_default_scalars",
+      "op": "serialize_envelope",
+      "input": {
+        "fields": {
+          "bundle_id": null,
+          "action": "PROPOSE",
+          "seq_id": 0,
+          "sender_hint": "",
+          "cipher": null,
+          "client_msg_id": null,
+          "client_ts": null,
+          "topology_ref": null,
+          "key_ver": 0,
+          "member_key_envelopes": []
+        }
+      },
+      "expect": {
+        "bytes_hex": "1000180022004800",
+        "parsed": {
+          "has_bundle_id": false,
+          "has_seq_id": true,
+          "has_key_ver": true,
+          "seq_id": 0,
+          "action": "PROPOSE",
+          "bundle_id": null
+        }
+      },
+      "source": "2026-11-11 拍板②：默认值标量"
+    },
+    {
+      "id": "proto_unknown_field_roundtrip",
+      "op": "serialize_frame",
+      "input": {
+        "kind": "envelope_from_bytes",
+        "bytes_hex": "0a06625f3130303110011805980601"
+      },
+      "expect": {
+        "parsed": {
+          "bundle_id": "b_1001",
+          "action": "ACCEPT",
+          "seq_id": 5,
+          "has_unknown_fields": true
+        },
+        "re_bytes_hex": "0a06625f3130303110011805980601"
+      },
+      "source": "2026-11-11 拍板③：未知字段向前兼容往返"
+    },
+    {
+      "id": "proto_envelope_full",
+      "op": "serialize_envelope",
+      "input": {
+        "fields": {
+          "bundle_id": "b_1001",
+          "action": "PATCH_STEP_TIME",
+          "seq_id": -1,
+          "sender_hint": "u_alice",
+          "cipher": "deadbeef0010",
+          "client_msg_id": "msg-full-1",
+          "client_ts": 1760000000000,
+          "topology_ref": "skel_9",
+          "key_ver": 3,
+          "member_key_envelopes": [
+            {
+              "recipient_user_id": "u_alice",
+              "wrapped_key": "010203",
+              "key_ver": 3
+            },
+            {
+              "recipient_user_id": "u_bob",
+              "wrapped_key": "ff00",
+              "key_ver": 3
+            }
+          ]
+        }
+      },
+      "expect": {
+        "bytes_hex": "0a06625f31303031101c18ffffffffffffffffff012207755f616c6963652a06deadbeef0010320a6d73672d66756c6c2d31388080b3c19c334206736b656c5f39480352100a07755f616c69636512030102031803520d0a05755f626f621202ff001803",
+        "parsed": {
+          "has_bundle_id": true,
+          "has_seq_id": true,
+          "has_key_ver": true,
+          "seq_id": -1,
+          "action": "PATCH_STEP_TIME",
+          "bundle_id": "b_1001"
+        }
+      },
+      "source": "collab_proto_test›Envelope 契约往返（扩全字段）"
+    },
+    {
+      "id": "proto_action_enum_leave",
+      "op": "serialize_envelope",
+      "input": {
+        "fields": {
+          "bundle_id": "b_1001",
+          "action": "LEAVE",
+          "seq_id": 29,
+          "sender_hint": null,
+          "cipher": null,
+          "client_msg_id": null,
+          "client_ts": null,
+          "topology_ref": null,
+          "key_ver": null,
+          "member_key_envelopes": []
+        }
+      },
+      "expect": {
+        "bytes_hex": "0a06625f31303031101d181d",
+        "parsed": {
+          "has_bundle_id": true,
+          "has_seq_id": true,
+          "has_key_ver": false,
+          "seq_id": 29,
+          "action": "LEAVE",
+          "bundle_id": "b_1001"
+        }
+      },
+      "source": "collab_proto_test 镜像（枚举值位钉样）"
+    },
+    {
+      "id": "proto_server_frame_schedule",
+      "op": "serialize_frame",
+      "input": {
+        "kind": "server_frame",
+        "seq_id": 7,
+        "client_msg_id": "msg-1",
+        "body": {
+          "kind": "schedule",
+          "envelope": {
+            "bundle_id": "b_1001",
+            "action": "ACCEPT",
+            "seq_id": 7
+          }
+        }
+      },
+      "expect": {
+        "bytes_hex": "080712056d73672d311a0c0a06625f3130303110011807",
+        "parsed": {
+          "which_body": "schedule"
+        }
+      },
+      "source": "collab_proto_test›ServerFrame oneof 携带 Envelope"
+    },
+    {
+      "id": "proto_server_frame_error",
+      "op": "serialize_frame",
+      "input": {
+        "kind": "server_frame",
+        "seq_id": 8,
+        "client_msg_id": "msg-2",
+        "body": {
+          "kind": "error",
+          "error": "boom"
+        }
+      },
+      "expect": {
+        "bytes_hex": "080812056d73672d323a04626f6f6d",
+        "parsed": {
+          "which_body": "error"
+        }
+      },
+      "source": "collab_proto_test›ServerFrame oneof（error 分支）"
+    },
+    {
+      "id": "proto_client_frame_ack",
+      "op": "serialize_frame",
+      "input": {
+        "kind": "client_frame",
+        "client_msg_id": "ack-1",
+        "client_ts": 1760000000,
+        "body": {
+          "kind": "schedule",
+          "envelope": {
+            "bundle_id": "b_1001",
+            "action": "CLIENT_ACK",
+            "seq_id": 5
+          }
+        }
+      },
+      "expect": {
+        "bytes_hex": "0a0561636b2d311080f09dc7061a0c0a06625f3130303110191805",
+        "parsed": {
+          "which_body": "schedule"
+        }
+      },
+      "source": "collab_proto_test›ClientFrame 可承载 CLIENT_ACK"
+    }
+  ]
+}

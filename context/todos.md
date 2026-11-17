@@ -6,6 +6,7 @@ format: v3
 # 待办列表
 
 ## misc
+- [x] [2026-11-14] (修复) (层:L1) (重:轻) (misc) 日程页头部布局溢出：RIGHT OVERFLOWED BY 73/82/177/66/78 PIXELS 多处（真机调试桥基线截图发现） (src: ai, 真机 AI 调试桥首截图即发现)（2026-11-14 修复：头部两段式拆分+仪表盘紧凑化+卡按钮行 ellipsis，arch-guard 6/6+UI 测试 14/14+golden 155/155 绿，schedule 三组基线重采目检无溢出）
 - [ ] [2026-10-11] (功能) recovery_vault 换机恢复切片：账号已登录但本机身份/MSK 丢失（卸载重装/换机/清空间）后凭服务端 recovery_vault 还原协同身份，含金库包裹钥独立于登录密码的红线；此前真机已实损一账号（身份不可找回，联调期以换名重注兜底） (功能) (层:L3) (重:重) (src: 用户, 会话) (src: ai)
 - [ ] [2026-10-11] (排障) (层:L2) (重:中) 真机复验发起回执：重装后复点「发出邀请」，把新文案「没发出去：<原因>」带回定位真伤（prekey 404/401/网络/token），再修传输或会话层 (src: ai, compose 回执诚实化 2026-10-11)
 - [ ] [2026-10-10] (风险) (层:L2) (重:轻) 查 adjust_blocks/propose_schedule 两个疑似 bug：move 仅 start_min 坍缩 5 分钟；melted 块仍挡 propose 占用碰撞 (src: ai, MCP 排程实战取证 2026-10-10)
@@ -20,3 +21,4 @@ format: v3
 - [x] (服务端) Phase 1 服务端最小闭环（Go 盲网关 + PG/WSS 广播）→ epic `online`：**1.1–1.8 全部完成**（独立仓 commit `0e320ec`→`adab287`，smoke-phase1.sh 全通；Wake Push 仍为 Noop，接 FCM/APNs 时补） (层:L3) (重:高) (src: collab-implementation §2) (2026-10-09 完成)
 - [x] (客户端) Phase 2.1–2.4 客户端安全底座：依赖接入 + 契约同步 + 密钥域 + 注册流 + 加密封装单点（sealPayload/openPayload + SealedPayload）→ epic `online`，落 `lib/collab/` (层:L3) (重:高) (src: collab-implementation §3) (2026-10-09 完成)
 - [ ] (客户端) Phase 2.5–2.7：WSS 客户端（首帧 AUTH + 退避重连）/ 单消费管道（StreamQueue）/ 双机对测（落 `lib/collab/`，不动单机表） (层:L3) (重:高) (src: collab-implementation §3)
+- [ ] (修复) app_debug_bridge 跨库断裂：上游仓已删 pubspec（f56ff8f 原生化），本仓 pubspec.yaml path 依赖指向失效 → lib/debug 三文件编译炸，阻断全量 flutter test（golden 子集不受影响）；修复方向=本仓 pubspec 移除该依赖 + android 侧 debugImplementation 引 :library（01690df 提交信息已录） (层:L2) (重:中) (src: ai, 2026-11-14 native-migration 轮发现，移交 online/基建侧)

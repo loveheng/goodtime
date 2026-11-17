@@ -10,6 +10,8 @@ allprojects {
         maven {
             url = uri("/home/zzh/app/goodhub-mcp-sdk/dist/maven-repo")
         }
+        // 真机 AI 调试桥（app-debug-bridge 0.5.0）：SDK 仓 publishToMavenLocal 分发。
+        mavenLocal()
     }
 }
 
@@ -26,7 +28,6 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(":app")
 }
-
 // 陈旧插件（如 bonsoir_android 5.1.6 硬编码 compileSdk 33）低于其 androidx 依赖要求的
 // minCompileSdk 时 AGP 编译期校验直接失败；compileSdk 可独立于 targetSdk/minSdk 上调
 // （AGP 官方口径），统一钳到 ≥36（= flutter.compileSdkVersion 默认值）。

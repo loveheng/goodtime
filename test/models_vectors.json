@@ -1,0 +1,446 @@
+{
+  "set": "model-json-core",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_models_vectors.dart",
+  "reference": "lib/models/{plan,schedule_block,background}.dart（Dart 参考实现，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_models_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（:core:model）"
+  ],
+  "encoding": "键序敏感（JSON 串逐字对拍）；时间毫秒 int（64 位语义）",
+  "rules": {
+    "plan_shape": "17 键：id(条件)/title/spec/notes/open_items(TEXT JSON 数组——{question,answer?} 序)/min_viable_action/energy_level(缺省 light)/tool_required(缺省 anywhere)/reward_spec/importance(int 0/1)/deadline/estimate/parent_id/archived(int)/created_at(条件)/updated_at(条件)/version",
+    "block_shape": "16 键：id(条件)/date/start_min/end_min/plan_id/label/source/pinned(int)/status(缺省 proposed)/postpone_count(缺省 0)/execution_quality(缺省 full)/is_day_spark(int)/is_celebration(int)/created_at(条件)/updated_at(条件)/version；跨午夜 end<start 原样落列不折算",
+    "bg_shape": "11 键：id(条件)/scope/plan_id/content/raw_source_text/tags(TEXT JSON 数组)/applicable_dates(TEXT JSON 数组，null → **键缺省**)/source/captured_by(缺省 me)/created_at(条件)/updated_at(条件)/version",
+    "bool_int": "布尔列一律 int 0/1 落库（Dart `b ? 1 : 0`；fromMap `(int ?? 0) != 0`）"
+  },
+  "cases": [
+    {
+      "id": "plan_to_map_full",
+      "op": "plan_to_map",
+      "input": {
+        "fields": {
+          "id": "baseline_plan_1",
+          "title": "周末去大理",
+          "spec": "周六高铁往返，周日洱海边骑行",
+          "notes": "高铁票已出，住古城客栈",
+          "open_items": "[{\"question\":\"订客栈了吗？\",\"answer\":\"已订古城客栈\"},{\"question\":\"要租车吗？\"}]",
+          "min_viable_action": "花 5 分钟收藏两个攻略视频",
+          "energy_level": "deep",
+          "tool_required": "desk",
+          "reward_spec": "洱海边喝一杯",
+          "importance": 1,
+          "deadline": "2026-11-30",
+          "estimate": 240,
+          "parent_id": null,
+          "archived": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 5
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_plan_1",
+          "title": "周末去大理",
+          "spec": "周六高铁往返，周日洱海边骑行",
+          "notes": "高铁票已出，住古城客栈",
+          "open_items": "[{\"question\":\"订客栈了吗？\",\"answer\":\"已订古城客栈\"},{\"question\":\"要租车吗？\"}]",
+          "min_viable_action": "花 5 分钟收藏两个攻略视频",
+          "energy_level": "deep",
+          "tool_required": "desk",
+          "reward_spec": "洱海边喝一杯",
+          "importance": 1,
+          "deadline": "2026-11-30",
+          "estimate": 240,
+          "parent_id": null,
+          "archived": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 5
+        }
+      }
+    },
+    {
+      "id": "plan_frommap_roundtrip",
+      "op": "plan_from_map",
+      "input": {
+        "map": {
+          "id": "baseline_plan_1",
+          "title": "周末去大理",
+          "spec": "周六高铁往返，周日洱海边骑行",
+          "notes": "高铁票已出，住古城客栈",
+          "open_items": "[{\"question\":\"订客栈了吗？\",\"answer\":\"已订古城客栈\"},{\"question\":\"要租车吗？\"}]",
+          "min_viable_action": "花 5 分钟收藏两个攻略视频",
+          "energy_level": "deep",
+          "tool_required": "desk",
+          "reward_spec": "洱海边喝一杯",
+          "importance": 1,
+          "deadline": "2026-11-30",
+          "estimate": 240,
+          "parent_id": null,
+          "archived": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 5
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_plan_1",
+          "title": "周末去大理",
+          "spec": "周六高铁往返，周日洱海边骑行",
+          "notes": "高铁票已出，住古城客栈",
+          "open_items": "[{\"question\":\"订客栈了吗？\",\"answer\":\"已订古城客栈\"},{\"question\":\"要租车吗？\"}]",
+          "min_viable_action": "花 5 分钟收藏两个攻略视频",
+          "energy_level": "deep",
+          "tool_required": "desk",
+          "reward_spec": "洱海边喝一杯",
+          "importance": 1,
+          "deadline": "2026-11-30",
+          "estimate": 240,
+          "parent_id": null,
+          "archived": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 5
+        },
+        "open_items": [
+          "订客栈了吗？",
+          "要租车吗？"
+        ],
+        "importance": true,
+        "version": 5
+      }
+    },
+    {
+      "id": "plan_frommap_defaults",
+      "op": "plan_from_map",
+      "input": {
+        "map": {
+          "id": "plan_min",
+          "title": "最小计划",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "plan_min",
+          "title": "最小计划",
+          "spec": null,
+          "notes": null,
+          "open_items": "[]",
+          "min_viable_action": null,
+          "energy_level": "light",
+          "tool_required": "anywhere",
+          "reward_spec": null,
+          "importance": 0,
+          "deadline": null,
+          "estimate": null,
+          "parent_id": null,
+          "archived": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 0
+        },
+        "energy_level": "light",
+        "tool_required": "anywhere",
+        "importance": false,
+        "archived": false,
+        "version": 0,
+        "open_items_count": 0
+      }
+    },
+    {
+      "id": "block_to_map_full",
+      "op": "block_to_map",
+      "input": {
+        "fields": {
+          "id": "baseline_conf",
+          "date": "2026-11-14",
+          "start_min": 540,
+          "end_min": 620,
+          "plan_id": "baseline_plan_1",
+          "label": "晨间复盘",
+          "source": "human",
+          "pinned": 0,
+          "status": "confirmed",
+          "postpone_count": 2,
+          "execution_quality": "spark",
+          "is_day_spark": 1,
+          "is_celebration": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 4
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_conf",
+          "date": "2026-11-14",
+          "start_min": 540,
+          "end_min": 620,
+          "plan_id": "baseline_plan_1",
+          "label": "晨间复盘",
+          "source": "human",
+          "pinned": 0,
+          "status": "confirmed",
+          "postpone_count": 2,
+          "execution_quality": "spark",
+          "is_day_spark": 1,
+          "is_celebration": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 4
+        }
+      }
+    },
+    {
+      "id": "block_frommap_roundtrip",
+      "op": "block_from_map",
+      "input": {
+        "map": {
+          "id": "baseline_conf",
+          "date": "2026-11-14",
+          "start_min": 540,
+          "end_min": 620,
+          "plan_id": "baseline_plan_1",
+          "label": "晨间复盘",
+          "source": "human",
+          "pinned": 0,
+          "status": "confirmed",
+          "postpone_count": 2,
+          "execution_quality": "spark",
+          "is_day_spark": 1,
+          "is_celebration": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 4
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_conf",
+          "date": "2026-11-14",
+          "start_min": 540,
+          "end_min": 620,
+          "plan_id": "baseline_plan_1",
+          "label": "晨间复盘",
+          "source": "human",
+          "pinned": 0,
+          "status": "confirmed",
+          "postpone_count": 2,
+          "execution_quality": "spark",
+          "is_day_spark": 1,
+          "is_celebration": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 4
+        },
+        "status": "confirmed",
+        "execution_quality": "spark",
+        "version": 4
+      }
+    },
+    {
+      "id": "block_frommap_defaults",
+      "op": "block_from_map",
+      "input": {
+        "map": {
+          "id": "blk_min",
+          "date": "2026-11-14",
+          "start_min": 480,
+          "end_min": 540,
+          "source": "human",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "blk_min",
+          "date": "2026-11-14",
+          "start_min": 480,
+          "end_min": 540,
+          "plan_id": null,
+          "label": null,
+          "source": "human",
+          "pinned": 0,
+          "status": "proposed",
+          "postpone_count": 0,
+          "execution_quality": "full",
+          "is_day_spark": 0,
+          "is_celebration": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 0
+        },
+        "pinned": false,
+        "status": "proposed",
+        "postpone_count": 0,
+        "execution_quality": "full",
+        "is_day_spark": false
+      }
+    },
+    {
+      "id": "block_cross_midnight",
+      "op": "block_to_map",
+      "input": {
+        "fields": {
+          "id": "baseline_cross",
+          "date": "2026-11-14",
+          "start_min": 1410,
+          "end_min": 90,
+          "plan_id": null,
+          "label": "跨午夜：夜班值守",
+          "source": "human",
+          "pinned": 0,
+          "status": "confirmed",
+          "postpone_count": 0,
+          "execution_quality": "full",
+          "is_day_spark": 0,
+          "is_celebration": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 0
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_cross",
+          "date": "2026-11-14",
+          "start_min": 1410,
+          "end_min": 90,
+          "plan_id": null,
+          "label": "跨午夜：夜班值守",
+          "source": "human",
+          "pinned": 0,
+          "status": "confirmed",
+          "postpone_count": 0,
+          "execution_quality": "full",
+          "is_day_spark": 0,
+          "is_celebration": 0,
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 0
+        },
+        "start_min": 1410,
+        "end_min": 90
+      }
+    },
+    {
+      "id": "bg_to_map_full",
+      "op": "background_to_map",
+      "input": {
+        "fields": {
+          "id": "baseline_bg_1",
+          "scope": "plan",
+          "plan_id": "baseline_plan_1",
+          "content": "同行三人，妈妈膝盖不好少走路",
+          "raw_source_text": "妈妈膝盖不太好，别安排太多走路",
+          "tags": "[\"#出行\"]",
+          "applicable_dates": "[\"2026-11-28\",\"2026-11-29\"]",
+          "source": "user",
+          "captured_by": "me",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 2
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_bg_1",
+          "scope": "plan",
+          "plan_id": "baseline_plan_1",
+          "content": "同行三人，妈妈膝盖不好少走路",
+          "raw_source_text": "妈妈膝盖不太好，别安排太多走路",
+          "tags": "[\"#出行\"]",
+          "applicable_dates": "[\"2026-11-28\",\"2026-11-29\"]",
+          "source": "user",
+          "captured_by": "me",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 2
+        }
+      }
+    },
+    {
+      "id": "bg_frommap_roundtrip",
+      "op": "background_from_map",
+      "input": {
+        "map": {
+          "id": "baseline_bg_1",
+          "scope": "plan",
+          "plan_id": "baseline_plan_1",
+          "content": "同行三人，妈妈膝盖不好少走路",
+          "raw_source_text": "妈妈膝盖不太好，别安排太多走路",
+          "tags": "[\"#出行\"]",
+          "applicable_dates": "[\"2026-11-28\",\"2026-11-29\"]",
+          "source": "user",
+          "captured_by": "me",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 2
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "baseline_bg_1",
+          "scope": "plan",
+          "plan_id": "baseline_plan_1",
+          "content": "同行三人，妈妈膝盖不好少走路",
+          "raw_source_text": "妈妈膝盖不太好，别安排太多走路",
+          "tags": "[\"#出行\"]",
+          "applicable_dates": "[\"2026-11-28\",\"2026-11-29\"]",
+          "source": "user",
+          "captured_by": "me",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 2
+        },
+        "tags": [
+          "#出行"
+        ],
+        "applicable_dates": [
+          "2026-11-28",
+          "2026-11-29"
+        ],
+        "version": 2
+      }
+    },
+    {
+      "id": "bg_frommap_defaults",
+      "op": "background_from_map",
+      "input": {
+        "map": {
+          "id": "bg_min",
+          "scope": "global",
+          "content": "常住深圳",
+          "source": "user",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000
+        }
+      },
+      "expect": {
+        "map": {
+          "id": "bg_min",
+          "scope": "global",
+          "plan_id": null,
+          "content": "常住深圳",
+          "raw_source_text": null,
+          "tags": "[]",
+          "source": "user",
+          "captured_by": "me",
+          "created_at": 1760000000000,
+          "updated_at": 1760000000000,
+          "version": 0
+        },
+        "captured_by": "me",
+        "applicable_dates_present": false,
+        "tags_count": 0
+      }
+    }
+  ]
+}

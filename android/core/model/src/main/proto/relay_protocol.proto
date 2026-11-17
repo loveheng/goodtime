@@ -1,0 +1,301 @@
+syntax = "proto3";
+
+// ============================================================================
+// shiguang-relay · 协同中继协议（冻结契约 v0.1.6-contract）
+//
+// 2026-10-09 服务端架构审查修正已内建：
+//   - v0.1.2 (2026-10-09 补丁)：Artifact 契约加性字段 `target_step_ref`（可选，指向 bundle step_uid，
+//     CONFIRMED 下沉时精准回填生成的 block）；本地 artifacts 加 `bundle_id` 弱引用列（协商期 plan_id=NULL），
+//     块-凭证关联反转（blocks.artifact_id 替代 artifacts.block_id）；临场时相公式去 2×2 特判（统一
+//     T_target=T_action−(advance??0)、T_dismiss=T_action+20min）；移动在途允许端侧最小确定性模板抽取器（受控例外）。
+//     服务端 envelope 零结构变更（事实仍在 cipher 内）。
+//   - v0.1.3 (2026-10-09 补丁)：补齐 4 处接口契约断层（加性、向后兼容）——①瞬时信令 Pull/ACK：
+//     `GET /v1/relay/pending` + `POST /v1/relay/ack {message_ids}`（阅后即焚，relay_messages.status='acked' 即物理删）；
+//     ②加好友 `encrypted_intro` 落盘：`friendships.encrypted_intro BYTEA` + `FriendshipView` 回包携带，解锁 B 端侧解密自报家门；
+//     ③密钥增量金库 `user_key_envelopes` 表 + `POST/GET /v1/vault/envelopes` 路由（换机 100% 还原历史 K_bundle）；
+//     ④`ATTACH_FACT`/`UPDATE_FACT`/`DETACH_FACT` 显式绕过 `base_revision` 乐观锁，仅原子自增 max_seq_id（防假性冲突惊群）。
+//   - v0.1.4 (2026-10-09 补丁)：①X3DH 生命周期两端点定盘 `GET /v1/users/{id}/prekey`（拉对方 KeyBundle +
+//     服务端原子弹出 1 个 OPK）+ `POST /v1/users/me/prekeys`（OPK 低位补仓）；②`GET /v1/bundles/participating`
+//     归位 fact §5.2 清单（换机冷启动第一步）；③DDL 补 `bundle_member_cursors` 游标表（服务端全量 9 表定盘）；
+//     ④密码学错配修正：FriendshipTicket 改携 B 的 X25519 加密公钥（enc_key_pub，复用 signed_prekey_pub），
+//     ECIES 不再误用 Ed25519 身份签名钥。
+//     ⑤DDL 收口：bundles 列集与协同 §10.1 合流（FSM status+lifecycle 双列、participant_uids GIN），
+//     bundle_skeletons.topology JSONB 定盘步骤级仲裁字段；schema.sql 自此为服务端 DDL 唯一出处。
+//   - v0.1.5 (2026-10-09 补丁，加性向后兼容)：团队 E2EE 总纲定盘（collab §5.3.1）——①Envelope 补明文外层
+//     `key_ver` + `member_key_envelopes` 字段与 `MemberKeyEnvelope` 消息（收口「解密前无从选钥」的鸡生蛋缺口）；
+//     ②新增 `ADD_MEMBER` 动作（中途加人：现役 key_ver 不变、仅追加新人信封、零 REKEY、可看全量历史）；
+//     ③新增 `bundle_members` 信封落表（第 10 表）+ `GET /v1/bundles/{id}/key-envelopes` 补拉端点；
+//     ④密钥保留口径修正：K_bundle 保留至 bundle 生命周期终（金库信封长期留存），废「敲定即销毁」表述。
+//   - v0.1.6 (2026-10-09 补丁，零字段/零 DDL 行为契约)：①time_anchors 可选 `tz`/`end_tz` 时区锚（cipher 内，
+//     缺省本地墙钟零迁移）；②OPK 空池降级 3-DH + 静默补仓通知（Signal 标准口径）；③Wake Push 零知识载荷规范
+//     （APNs/FCM 静默参数 + 零明文红线 + 本地发声）；④防爆仓硬配额（成员≤16/活跃包≤20/流水≤2000/邀请≤50）；
+//     ⑤Bundle 终态（CANCELLED/EXPIRED）凭证脱钩转正未归属池；⑥全局错误码字典（collab §10.4）。
+//   - v0.1.8 (2026-10-14 补丁，加性向后兼容)：MCP over relay（轴 C 最小闭环）——
+//     ①RelayMessage 加 `header`（map<string,string>，明文路由头，服务端盲转发不解析）：
+//     kind="mcp" 通道约定 role/corr_id/token，cipher=JSON-RPC 文本（MVP 应用层明文，
+//     依赖 TLS + 好友 ACL，E2EE 后续切片）；②瞬时信令补在线直推缺口：handleRelaySend
+//     落库成功后经 Hub 定向直推 ServerFrame.relay（所有 kind 通用；在线端零轮询延迟）。
+//   - v0.1.9 (2026-10-25 补丁，加性向后兼容)：敲定后生命周期切片——ActionType 增 PATCH_STEP_TIME(28)/LEAVE(29)
+//     （终态门禁白名单仅有的两个非终态动作；详见 README 契约账 v0.1.9-contract）。
+//   - v0.1.10 (2026-10-25 补丁，REST 请求体加性扩展，零枚举/零 DDL)：模拟缺陷修复切片——
+//     action 请求体增 transfer_to（TRANSFER_INITIATOR 明文新发起人，服务端改写 initiator_id）与
+//     remove_member_uids（MEMBER_REMOVED 明文移出清单，即时生效于 participant_uids；全语义 REKEY 挂账）；
+//     ADD_MEMBER 收敛发起人独占 + 双向 accepted 准入（对齐 PROPOSE §1.7）；REOPEN 入终态门禁白名单
+//     （仅 CONFIRMED 态放行，DIRECTIVE 发起人独占 / CONSENSUS 平权，通过后显式置 STALLED；
+//     非 CONFIRMED 态 409 REOPEN_INVALID_STATE）；base_revision 定型 bundle 级结构版本
+//     （每非事实动作自增、expected_revision opt-in 校验，§5.4 案A 2026-10-25 拍板）。
+//     详见 README 契约账 v0.1.10-contract。
+//   - v0.1.1 (2026-10-09 补丁)：加好友自报家门（identity_key_pub + encrypted_intro）解审批死锁；
+//     ATTACH_FACT 语义定调（FSM 零影响 + 全员平权）；OPK 注册首批仅 10~20 个（瘦身）
+//   - v0.1.0 首版：废除独立 Mailbox API；事实同步并入 bundle 事件流
+//     (ATTACH_FACT / UPDATE_FACT / DETACH_FACT)，共用全局 seq_id 与 WSS 广播
+//   - 注册/好友接口剔除 display_name（昵称仅存 encrypted_profile，服务端零明文）
+//   - 零 entity_key 暴露：服务端不接收/不存储任何业务代号（如车次 D8724、预约码）
+//     事实级去重由客户端 resolver（纯本地）在解密后完成；传输级去重由 client_msg_id 幂等保证
+//   - 好友邀请基于 Ticket（二维码/防篡改签名，含短期 nonce+过期），非 to_user（防撞库）
+//   - 双 Token 鉴权（access/refresh）+ client_msg_id 幂等重放防护（详见 collab §1.4）
+//   - 网关硬约束：单包 Payload ≤256KB；P2P 瞬时信令 TTL 即焚（relay_messages.expires_at）
+//
+// 注意：本文件为契约规范，不含任何 Go 业务代码（Phase 0 停火协议）。
+// ============================================================================
+
+package shiguang.relay.v1;
+
+// 生成选项（Phase 0.3）：Go 侧 module=shiguang-relay，产物见 gen/go/relay_protocol.pb.go（package relayv1）
+option go_package = "shiguang-relay/gen/go;relayv1";
+
+// ---------------------------------------------------------------------------
+// 顶层信封（bundle 事件流）
+// ---------------------------------------------------------------------------
+message Envelope {
+  string bundle_id = 1;        // 路由用，服务端只见 UUID
+  ActionType action = 2;       // 服务端仅据此做 FSM 拓扑仲裁，不可读内容
+  int64 seq_id = 3;            // 服务端全局递增定序（UNIQUE(bundle_id, seq_id)）
+  string sender_hint = 4;      // 端侧展示用，服务端不依赖
+  bytes cipher = 5;            // AEAD(K_bundle, payload)，512B 填充后等长
+  string client_msg_id = 6;    // 幂等去重（Redis SETEX 300）
+  int64 client_ts = 7;         // 重放防护时间戳
+  string topology_ref = 8;     // bundle_skeletons 引用（Quorum 仲裁用）
+  int32 key_ver = 9;           // 加密版本（明文外层，解密前选钥；REKEY +1，v0.1.5）
+  repeated MemberKeyEnvelope member_key_envelopes = 10;  // 成员专属信封（明文外层，随 PROPOSE/ADD_MEMBER/REKEY 投递，v0.1.5）
+}
+
+// 成员专属 K_bundle 信封（X3DH 包裹，服务端纯盲；服务端同事务落 bundle_members 表）
+message MemberKeyEnvelope {
+  string recipient_user_id = 1;  // 信封专属成员（服务端仅见 UUID）
+  bytes wrapped_key = 2;         // X3DH 包裹的 K_bundle
+  int32 key_ver = 3;             // 对应 K_bundle 版本
+}
+
+enum ActionType {
+  // —— 排程协商（FSM）——
+  PROPOSE = 0;
+  ACCEPT = 1;
+  REJECT = 2;
+  PATCH_TIME = 3;
+  REASSIGN = 4;
+  MAKE_OPTIONAL = 5;
+  PRUNE = 6;
+  CANCEL = 7;
+  REOPEN = 8;
+  VOTE = 9;
+  ADD_SLOT = 10;
+  FORCE_FINALIZE = 11;         // 发起人落槌
+  NUDGE = 12;
+  BYPASS = 13;
+  REKEY = 14;
+  MEMBER_REMOVED = 15;
+  TRANSFER_INITIATOR = 16;
+  BRIEFING_UPDATE = 17;
+  STEP_NOTE = 18;
+  // —— 事实同步（2026-10-09 收敛进 bundle 事件流）——
+  // ATTACH_FACT 语义（v0.1.1 定调，v0.1.2 补 target_step_ref）：FSM 零影响（仅递增 seq_id + 广播，不改 Quorum、不触发 STALLED/CONFIRMED）
+  //   + 全员平权提交（内容共享非日程调度，不受 Directive 发起人独占限制）；端侧收到即物化进本地 artifacts。
+  //   解密后的 artifact payload 可携带可选 `target_step_ref`（bundle step_uid），供 CONFIRMED 下沉时精准绑定 block（详见契约文档）。
+  ATTACH_FACT = 19;
+  UPDATE_FACT = 20;
+  DETACH_FACT = 21;
+  // —— 拓扑可用性 ——
+  FREEMASK_QUERY = 22;
+  FREEMASK_RESPONSE = 23;
+  // —— 信令 / 生命周期 ——
+  DELIVERY_ACK = 24;           // 瞬时信令投递确认（触发阅后即焚）
+  CLIENT_ACK = 25;             // 事件游标确认
+  PING = 26;
+  ADD_MEMBER = 27;             // 中途加人（v0.1.5）：现役 key_ver 不变、仅追加新成员信封（可看全量历史，零 REKEY）
+  // —— 敲定后生命周期（2026-10-25 拍板 §4.3/§4.5；终态门禁白名单仅有的两个非终态动作）——
+  PATCH_STEP_TIME = 28;        // 敲定后单步骤改期轻通道：CONFIRMED 后发起人改单步时间，仅责任人重确认，包状态不变
+  LEAVE = 29;                  // 成员自主退出：平权、不触发 REKEY、解挂自己必需步骤；发起人退出走 TRANSFER_INITIATOR
+}
+
+// ---------------------------------------------------------------------------
+// 鉴权（双 Token）— 详见 collab-schedule-draft.md §1.4
+// ---------------------------------------------------------------------------
+message AuthChallenge {
+  string nonce = 1;            // 预会话 nonce
+  string pow_challenge = 2;    // Hashcash：求 SHA-256 前导 N 个 0 的随机数
+  int32 pow_difficulty = 3;
+  int64 expires_at = 4;
+}
+
+message RegisterRequest {
+  string user_id = 1 [deprecated = true]; // 旧匿名模型字段，现由服务端生成；保留以向后兼容
+  bytes identity_key_pub = 2;     // Ed25519 身份公钥（E2EE 引擎，对用户透明）
+  bytes signed_prekey_pub = 3;    // X25519 签名预密钥
+  bytes signed_prekey_sig = 4;    // 身份密钥对预密钥的签名
+  string push_token = 5;          // FCM/APNs；服务端不解析内容
+  bytes encrypted_profile = 6;     // 端侧全密文：昵称/备注/头像，服务端零明文
+  bytes signed_pop = 7 [deprecated = true]; // 旧 PoP 登录凭证，Plan A 已废弃
+  string pow_solution = 8;         // Hashcash 解（注册防女巫；与用户名唯一 + 单 IP 限流并用）
+  // —— Plan A：用户名+密码（账号体系，与 E2EE 密钥解耦；服务端仅存派生哈希，零明文密码）——
+  string username = 9;            // 人类可读唯一标识（小写字母/数字/下划线 3~32）
+  string password = 10;           // 明文仅走 TLS；服务端 Argon2id/PBKDF2 哈希
+  // 注意：无 display_name 字段
+}
+
+message LoginRequest {
+  string user_id = 1 [deprecated = true];
+  bytes identity_key_pub = 2 [deprecated = true];
+  bytes signed_pop = 3 [deprecated = true]; // 旧 PoP 签名
+  string pow_solution = 4 [deprecated = true];
+  // —— Plan A：用户名+密码登录（服务端校验哈希签发双 Token）——
+  string username = 5;
+  string password = 6;
+}
+
+message ChangePasswordRequest {
+  string old_password = 1;        // 校验旧密码（Plan A：仅换哈希，不动 E2EE 密钥）
+  string new_password = 2;        // 新密码（≥8 位）
+}
+
+message LookupUserResponse {      // GET /v1/users/lookup?username= 的响应（加好友「搜索」路径）
+  string user_id = 1;             // 服务端生成的 UUID
+  string username = 2;
+  bytes identity_key_pub = 3;     // 公钥身份（X3DH 用 OPK 由调用方走 prekey 端点单独拉）
+  bytes signed_prekey_pub = 4;
+  bytes signed_prekey_sig = 5;
+}
+
+message AuthResponse {
+  string access_token = 1;        // 短效 JWT（网关无状态校验）
+  string refresh_token = 2;       // 长效，服务端双 Token 刷新
+  int64 access_expires_at = 3;
+}
+
+message RefreshRequest { string refresh_token = 1; }
+
+// ---------------------------------------------------------------------------
+// 好友（Ticket 制，防撞库）— 替代旧 {to_user} 直接邀请
+// ---------------------------------------------------------------------------
+message FriendshipTicket {
+  string issuer_user_id = 1;      // 邀请方 B（被加者）UUID
+  string subject_user_id = 2;     // 扫码方 A（发起人）UUID，可空=任意扫码者
+  string nonce = 3;               // 短期随机
+  int64 expires_at = 4;           // 过期时间
+  bytes signature = 5;            // B 用 identity_key 对上式字段的签名（防篡改）
+  bytes enc_key_pub = 6;          // B 的 X25519 加密公钥（复用当前 signed_prekey_pub），供 A 做 ECIES 加密自报家门——Ed25519 身份钥仅能签名、不能直接做 ECDH/ECIES（v0.1.4 修正）
+}
+
+message FriendshipRequest {
+  FriendshipTicket ticket = 1;    // 服务端解析：验签 + 过期 + nonce 校验
+  bytes encrypted_intro = 2;      // A 用 ticket.enc_key_pub（X25519）做 ECIES（X25519+HKDF+AES-256-GCM）加密的自报家门短语（定长 128B 对齐，防长度侧信道）
+  // 验签通过才写 friendships(status=pending)；杜绝 to_user 全库遍历撞库。
+  // B 用私钥解开 encrypted_intro 显示「来自 张三 的好友申请」，破解纯 UUID 审批死锁；服务端仍纯盲。
+}
+
+// 用户名搜索路径（Plan A）：A 以 Bearer 身份凭 user_id 直发，无 Ticket。
+// 防滥用靠限流 + 接收方待审批配额 ≤50 + 关系去重 409 + 接收方可拉黑；与扫码路径殊途同归落 pending。
+message FriendRequest {
+  string to_user_id = 1;          // 由 GET /v1/users/lookup 取得
+  bytes encrypted_intro = 2;      // A 用 lookup/prekey 取得的 B 公钥 ECIES 加密自报家门；服务端纯盲，可缺省
+}
+
+message FriendshipResponse {
+  string invite_id = 1;
+  bool accept = 2;                // 客户端手动批准，不自动
+}
+
+message FriendshipView {
+  string user_id = 1;
+  string status = 2;              // pending / accepted / blocked
+  int64 created_at = 3;
+  bytes encrypted_intro = 4;      // 仅 pending 期携带：A 用 B 公钥 ECIES 加密的自报家门（B 端侧私钥解密显示「来自 张三 的好友申请」）；accepted/blocked 后清空
+  string username = 5;            // 对方用户名（明文标识符；解密 encrypted_profile 前的展示锚点，v0.1.7 Plan A）
+  // 无 nickname：展示名由本端 encrypted_profile 解密得到
+}
+
+// ---------------------------------------------------------------------------
+// 密钥分发（X3DH 预密钥包）
+// ---------------------------------------------------------------------------
+// X3DH 预密钥生命周期（v0.1.4 定盘 REST 契约）：
+//   GET  /v1/users/{user_id}/prekey —— 拉取对方 KeyBundle（identity + signed prekey + 签名），服务端原子弹出 1 个 OPK（消耗即删）
+//   POST /v1/users/me/prekeys       —— OPK 存量低于阈值时后台静默批量补仓 20~50 个
+message KeyBundleQuery { string user_id = 1; }
+
+message KeyBundleResponse {
+  bytes identity_key_pub = 1;
+  bytes signed_prekey_pub = 2;
+  bytes signed_prekey_sig = 3;
+  repeated PreKey one_time_prekeys = 4;   // OPK 池；注册首批仅允许上传 10~20 个（瘦身策略，单账号 DB <1KB），用尽时心跳触发静默补仓
+                                          // 空池语义（v0.1.6）：存量耗尽时仍返回 200 且本列表为空——端侧自动降级 3-DH
+                                          // （仅 IK+SPK 参与 DH，Signal 标准口径）；服务端同时向存量方发静默补仓通知
+}
+
+message PreKey { string key_id = 1; bytes pub = 2; }
+
+// ---------------------------------------------------------------------------
+// P2P 瞬时信令（relay_messages，阅后即焚）— 非 bundle 事件
+// ---------------------------------------------------------------------------
+message RelayMessage {
+  string msg_id = 1;
+  string recipient_user_id = 2;   // 投递目标
+  string sender_user_id = 3;
+  string kind = 4;                // ticket_delivery / key_exchange / freemask / mcp ...
+  bytes cipher = 5;               // AEAD，≤256KB 网关硬限
+  int64 expires_at = 6;           // TTL 即焚
+  // v0.1.8 加性扩展：明文路由头（服务端盲转发不解析值，仅透传）。
+  // `kind="mcp"` 通道约定（MCP over relay，轴 C 最小闭环）：
+  //   header["role"]    = "req" | "resp"              —— 请求/响应方向
+  //   header["corr_id"] = 请求方生成的 UUID            —— 请求-响应匹配（双端各自生成，服务端不校验）
+  //   header["token"]   = MCP x-api-key（仅 req 携带）  —— MCP 层双保险门禁（好友 ACL 之外的第二道）
+  // cipher = JSON-RPC 2.0 单条消息 UTF-8 文本。
+  // MVP 口径：应用层暂为明文（依赖 TLS + 好友 ACL；E2EE 后续切片，勿在此基础上传输
+  // 超出 MCP 会话的敏感数据）。服务端对该通道零解析、只路由。
+  map<string, string> header = 7;
+}
+
+// 瞬时信令拉取确认（v0.1.3）：对应 REST `POST /v1/relay/ack {message_ids}`。
+// 服务端收到即将 relay_messages.status 置 'acked' 并物理 DELETE（阅后即焚）。
+// 在线路径由 WSS ServerFrame.relay 直推；离线/冷启动由 `GET /v1/relay/pending` 拉取后回 ack。
+message RelayAckRequest {
+  repeated string message_ids = 1;  // 已解密消费的 msg_id 列表
+}
+
+// ---------------------------------------------------------------------------
+// WSS 帧
+// ---------------------------------------------------------------------------
+message ClientFrame {
+  string client_msg_id = 1;
+  int64 client_ts = 2;
+  oneof body {
+    Envelope schedule = 3;
+    RelayMessage relay = 4;
+    AuthChallenge auth = 5;
+    RegisterRequest register = 6;
+    LoginRequest login = 7;
+    FriendshipRequest friend_req = 8;
+    FriendshipResponse friend_resp = 9;
+  }
+}
+
+message ServerFrame {
+  int64 seq_id = 1;
+  string client_msg_id = 2;       // 回显，供客户端匹配
+  oneof body {
+    Envelope schedule = 3;
+    RelayMessage relay = 4;
+    AuthResponse auth = 5;
+    FriendshipView friend = 6;
+    string error = 7;
+  }
+}

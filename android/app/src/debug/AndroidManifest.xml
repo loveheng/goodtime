@@ -1,21 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The INTERNET permission is required for development. Specifically,
-         the Flutter tool needs it to communicate with the running application
-         to allow setting breakpoints, to provide hot reload, etc.
-    -->
-    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- P5 切包后 debug 变体仅余 cleartext（走查 relay 回环）；INTERNET 由 main 清单提供。 -->
 
-    <!-- AI 调试直达入口（仅 debug 构建，release 不合并 → 不进生产）：
-         shiguang://debug/&lt;page&gt; 由 MainActivity.getInitialRoute 翻成 /debug/&lt;page&gt;，
-         经 Flutter onGenerateRoute 推到对应调试页（当前 mcp → McpSettingsPage）。 -->
-    <application>
-        <activity android:name=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="shiguang" android:host="debug" />
-            </intent-filter>
-        </activity>
+    <!-- AI 调试直达入口注释退役：shiguang://debug 深链随 Flutter 调试页删除（P5）。 -->
+    <application android:usesCleartextTraffic="true">
+        <!-- 基线采集/走查 relay 回环（仅 debug 变体）：stage5 relay_login 走
+             http://<relay>——模拟器 10.0.2.2 / 真机局域网地址均为 cleartext，
+             release 不合并本清单零暴露。 -->
+        <!-- P5 切流调试宿主（D14 裁决 debug-only 口径延续，仅 debug 变体合并）：
+             调试桥（语义树/截图/nav）经 DebugNativeMainActivity 覆写挂载；
+             exported=true（真机走查 am start 必需——Xposed 类模块（Thanox）拦截
+             shell 的 START_ANY_ACTIVITY，非导出拉起被拒，2026-11-15 实测）；
+             release 不合并本清单零暴露。 -->
+        <activity
+            android:name=".DebugNativeMainActivity"
+            android:theme="@style/NormalTheme"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"/>
     </application>
 </manifest>

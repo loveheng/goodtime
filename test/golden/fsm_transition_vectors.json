@@ -1,0 +1,5545 @@
+{
+  "set": "fsm-transition",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_fsm_vectors.dart",
+  "reference": "lib/collab/fsm.dart（Dart 参考实现，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_fsm_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（P2）"
+  ],
+  "encoding": "枚举/状态一律语义大写名；时间为毫秒时间戳；对象键与 participants 字典序，列表保构造序",
+  "rules": {
+    "enum_names": "BUNDLE 状态: DRAFT/PROPOSED/STALLED/CONFIRMED/CANCELLED/EXPIRED/ARCHIVED/ABANDONED_LOCALLY；STEP 状态: PENDING/READY/TIME_CLASH/ROLE_CLASH/OPTIONAL/PRUNED/RECHECK；表决: PENDING/ACCEPTED/PENDING_RECHECK/REJECTED；REJECT 理由: TIME_CONFLICT/ROLE_UNWILLING；偏好: PREFER/OK/NO；类型: DIRECTIVE/CONSENSUS；action = proto 枚举名（PROPOSE/ACCEPT/REJECT/PATCH_TIME/PATCH_STEP_TIME/REASSIGN/MAKE_OPTIONAL/BYPASS/PRUNE/REOPEN/CANCEL/REKEY/ADD_MEMBER/LEAVE/VOTE/ADD_SLOT/FORCE_FINALIZE/NUDGE/…，骨架中性事件族语义=仅推水位）",
+    "canonical_order": "steps/ballots/votes 对象键与 participants（集合语义）一律字典序输出；required_uids/candidate_slots/uids 数组保构造序（REASSIGN=存留者在前新成员在后；BYPASS/LEAVE=过滤保序）",
+    "nullable": "initiator_id/winning_slot/quorum/expires_at_ms/stalled_since_ms 显式 null；ballots[].reason 仅 REJECTED 时在位",
+    "event_script": "input.events 按序应用，元素二形：{signal:{action,sender,seq,server_at_ms?,step_id?,slot_id?,reject_reason?,preference?,uids?,skeleton?,initial_slots?,quorum?,expires_at_ms?}} 网络事件；{local:{fn: maybe_expire|maybe_abandon, now_ms}} 本地伪事件（纯函数时钟注入）。初始态恒为空态 bundle_id + proposal_type：DRAFT / max_seq_id=0 / base_revision=1 / key_version=1 / participants、steps 皆空",
+    "seq_watermark": "守卫丢弃的事件同样推进 max_seq_id（水位推进在 reducer 之后无条件执行）；seqId ≤ max_seq_id 且状态非 DRAFT 的事件整体忽略（重复/倒退防御）",
+    "step_derive": "步骤派生：optional/pruned 显式终态短路保留；任一 required 成员 REJECTED 即时 clash（TIME_CONFLICT→TIME_CLASH / ROLE_UNWILLING→ROLE_CLASH）；recheck 态 acceptCount≥need→READY 否则保持 RECHECK；其余 acceptCount≥need→READY 否则 PENDING；need = threshold≤0 ? 名单长度 : threshold；赞成票仅计 required 成员的 ACCEPTED（pendingRecheck 不计）",
+    "bundle_derive": "包派生：终态（CANCELLED/EXPIRED/ARCHIVED/ABANDONED_LOCALLY）/DRAFT/无步骤时短路；任一强一致步骤（非 optional 非 pruned）clash→STALLED；强一致全 READY/RECHECK→CONFIRMED；否则 PROPOSED。stalled_since_ms 进入 STALLED 时刻=触发事件 server_at_ms（已 STALLED 保持原值，离开 STALLED 置 null；ABANDONED_LOCALLY 保留原值）",
+    "mutations": "PROPOSE：threshold≤0 回落名单长度、全表决 PENDING；PATCH_TIME/REASSIGN/MAKE_OPTIONAL/BYPASS/PRUNE/REOPEN 使 base_revision+1，PATCH_STEP_TIME/LEAVE/REKEY/ADD_MEMBER 不动；REASSIGN 新名单=存留（非 rejected）+新 uids、全员 PENDING；BYPASS/LEAVE 门限收缩 min(原门限, 剩余名单长度)，LEAVE 空名单步骤转 optional（revision 不 +1）；REOPEN 显式落 STALLED（步骤回 PENDING 无 clash，纯派生会得 PROPOSED）；Directive PATCH_STEP_TIME 仅 CONFIRMED 态生效（步骤转 recheck，包经派生保持 CONFIRMED）；Consensus PATCH_STEP_TIME=发起人退回重议（CONFIRMED→PROPOSED、旧票清空、候选保留，slotId 在场时须=winning_slot）",
+    "constants": "kMaxCandidateSlots=8（ADD_SLOT 满额静默丢弃）；kStalledDeadlockTtl=48h（maybeAbandon：STALLED 且 now−stalled_since≥48h → ABANDONED_LOCALLY，发起人新信令到达即再激活回 STALLED）；提案流局 maybeExpire：仅 CONSENSUS+PROPOSED 且 now≥expires_at_ms→EXPIRED（expires_at_ms 来自 PROPOSE 载荷）"
+  },
+  "cases": [
+    {
+      "id": "d_mainline_open",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c",
+                "d",
+                "e"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s3",
+                  "required_uids": [
+                    "a",
+                    "b",
+                    "c",
+                    "d",
+                    "e"
+                  ],
+                  "threshold": 3,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 5,
+              "step_id": "s3"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c",
+          "d",
+          "e"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s3": {
+            "step_id": "s3",
+            "required_uids": [
+              "a",
+              "b",
+              "c",
+              "d",
+              "e"
+            ],
+            "threshold": 3,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "PENDING"
+              },
+              "c": {
+                "state": "PENDING"
+              },
+              "d": {
+                "state": "PENDING"
+              },
+              "e": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_mainline_confirmed",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "STEP_NOTE",
+              "sender": "b",
+              "seq": 5,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_reject_dual",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s3",
+                  "required_uids": [
+                    "a",
+                    "b",
+                    "c",
+                    "d",
+                    "e"
+                  ],
+                  "threshold": 3,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "b",
+              "seq": 2,
+              "server_at_ms": 7200000,
+              "step_id": "s1",
+              "reject_reason": "TIME_CONFLICT"
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "c",
+              "seq": 3,
+              "server_at_ms": 10800000,
+              "step_id": "s2",
+              "reject_reason": "ROLE_UNWILLING"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "STALLED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "TIME_CLASH",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              },
+              "b": {
+                "state": "REJECTED",
+                "reason": "TIME_CONFLICT"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "ROLE_CLASH",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "REJECTED",
+                "reason": "ROLE_UNWILLING"
+              }
+            }
+          },
+          "s3": {
+            "step_id": "s3",
+            "required_uids": [
+              "a",
+              "b",
+              "c",
+              "d",
+              "e"
+            ],
+            "threshold": 3,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              },
+              "b": {
+                "state": "PENDING"
+              },
+              "c": {
+                "state": "PENDING"
+              },
+              "d": {
+                "state": "PENDING"
+              },
+              "e": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": 7200000
+      }
+    },
+    {
+      "id": "d_patch_time_echo",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "b",
+              "seq": 3,
+              "server_at_ms": 10800000,
+              "step_id": "s1",
+              "reject_reason": "TIME_CONFLICT"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_TIME",
+              "sender": "A",
+              "seq": 4,
+              "server_at_ms": 14400000,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 5,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 2,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_make_optional",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "c",
+              "seq": 4,
+              "server_at_ms": 14400000,
+              "step_id": "s2",
+              "reject_reason": "ROLE_UNWILLING"
+            }
+          },
+          {
+            "signal": {
+              "action": "MAKE_OPTIONAL",
+              "sender": "A",
+              "seq": 5,
+              "step_id": "s2"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 2,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": true,
+            "status": "OPTIONAL",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "REJECTED",
+                "reason": "ROLE_UNWILLING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_reopen_targeted",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "REOPEN",
+              "sender": "A",
+              "seq": 5,
+              "server_at_ms": 18000000,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "STALLED",
+        "base_revision": 2,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              },
+              "b": {
+                "state": "PENDING"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": 18000000
+      }
+    },
+    {
+      "id": "d_cancel_hijack",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "CANCEL",
+              "sender": "a",
+              "seq": 2
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_cancel_initiator",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "CANCEL",
+              "sender": "A",
+              "seq": 2
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CANCELLED",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_mofn_two",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c",
+                "d",
+                "e"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s3",
+                  "required_uids": [
+                    "a",
+                    "b",
+                    "c",
+                    "d",
+                    "e"
+                  ],
+                  "threshold": 3,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s3"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s3"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c",
+          "d",
+          "e"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s3": {
+            "step_id": "s3",
+            "required_uids": [
+              "a",
+              "b",
+              "c",
+              "d",
+              "e"
+            ],
+            "threshold": 3,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              },
+              "c": {
+                "state": "PENDING"
+              },
+              "d": {
+                "state": "PENDING"
+              },
+              "e": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_mofn_three",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c",
+                "d",
+                "e"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s3",
+                  "required_uids": [
+                    "a",
+                    "b",
+                    "c",
+                    "d",
+                    "e"
+                  ],
+                  "threshold": 3,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s3"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s3"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s3"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 4,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c",
+          "d",
+          "e"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s3": {
+            "step_id": "s3",
+            "required_uids": [
+              "a",
+              "b",
+              "c",
+              "d",
+              "e"
+            ],
+            "threshold": 3,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              },
+              "c": {
+                "state": "ACCEPTED"
+              },
+              "d": {
+                "state": "PENDING"
+              },
+              "e": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_bypass",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "c",
+                "d"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c",
+                    "d"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 2,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "BYPASS",
+              "sender": "A",
+              "seq": 3,
+              "step_id": "s2",
+              "uids": [
+                "d"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 2,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 2,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_abandon_47h",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "a",
+              "seq": 2,
+              "server_at_ms": 3600000000,
+              "step_id": "s1",
+              "reject_reason": "TIME_CONFLICT"
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_abandon",
+              "now_ms": 3769200000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "STALLED",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "TIME_CLASH",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "REJECTED",
+                "reason": "TIME_CONFLICT"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": 3600000000
+      }
+    },
+    {
+      "id": "d_abandon_fuse",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "a",
+              "seq": 2,
+              "server_at_ms": 3600000000,
+              "step_id": "s1",
+              "reject_reason": "TIME_CONFLICT"
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_abandon",
+              "now_ms": 3772800000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "ABANDONED_LOCALLY",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "TIME_CLASH",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "REJECTED",
+                "reason": "TIME_CONFLICT"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": 3600000000
+      }
+    },
+    {
+      "id": "d_abandon_reactivate",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "a",
+              "seq": 2,
+              "server_at_ms": 3600000000,
+              "step_id": "s1",
+              "reject_reason": "TIME_CONFLICT"
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_abandon",
+              "now_ms": 3772800000
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_TIME",
+              "sender": "A",
+              "seq": 3,
+              "server_at_ms": 3776400000,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 2,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_seq_dup",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_seq_rekey",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "REKEY",
+              "sender": "A",
+              "seq": 3
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 2,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_seq_stranger",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "z",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_quorum_two",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK"
+          }
+        },
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_quorum_three",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 4,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "OK"
+          }
+        },
+        "winning_slot": "fri18",
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_vote_no_weight",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "NO"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 4,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "NO"
+          }
+        },
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_ff_hijack",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "NO"
+            }
+          },
+          {
+            "signal": {
+              "action": "FORCE_FINALIZE",
+              "sender": "b",
+              "seq": 5,
+              "slot_id": "sat12"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "NO"
+          }
+        },
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_ff_outsider",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "NO"
+            }
+          },
+          {
+            "signal": {
+              "action": "FORCE_FINALIZE",
+              "sender": "z",
+              "seq": 5,
+              "slot_id": "sat12"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "NO"
+          }
+        },
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_ff_initiator",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "NO"
+            }
+          },
+          {
+            "signal": {
+              "action": "FORCE_FINALIZE",
+              "sender": "A",
+              "seq": 5,
+              "slot_id": "sat12"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "NO"
+          }
+        },
+        "winning_slot": "sat12",
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_reopen_addslot_cap",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "REOPEN",
+              "sender": "d",
+              "seq": 5
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 6,
+              "slot_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 7,
+              "slot_id": "s3"
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 8,
+              "slot_id": "s4"
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 9,
+              "slot_id": "s5"
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 10,
+              "slot_id": "s6"
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 11,
+              "slot_id": "s7"
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 12,
+              "slot_id": "overflow"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 12,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12",
+          "s2",
+          "s3",
+          "s4",
+          "s5",
+          "s6",
+          "s7"
+        ],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_expire_before",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_expire",
+              "now_ms": 82800000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 1,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_expire_at",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_expire",
+              "now_ms": 86400000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "EXPIRED",
+        "base_revision": 1,
+        "max_seq_id": 1,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_expire_confirmed_immune",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_expire",
+              "now_ms": 172800000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 4,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "OK"
+          }
+        },
+        "winning_slot": "fri18",
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_patch_step_time",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "A",
+              "seq": 5,
+              "server_at_ms": 18000000,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "RECHECK",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "PENDING_RECHECK"
+              },
+              "b": {
+                "state": "PENDING_RECHECK"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_pst_hijack",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "b",
+              "seq": 5,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_pst_stray",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "b",
+              "seq": 2,
+              "server_at_ms": 7200000,
+              "step_id": "s1",
+              "reject_reason": "TIME_CONFLICT"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "A",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "STALLED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "TIME_CLASH",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              },
+              "b": {
+                "state": "REJECTED",
+                "reason": "TIME_CONFLICT"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": 7200000
+      }
+    },
+    {
+      "id": "p_pst_revive",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "A",
+              "seq": 5,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 6,
+              "step_id": "s1"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 6,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "RECHECK",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "PENDING_RECHECK"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_pst_out",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "A",
+              "seq": 5,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "REJECT",
+              "sender": "b",
+              "seq": 6,
+              "server_at_ms": 21600000,
+              "step_id": "s1",
+              "reject_reason": "TIME_CONFLICT"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "STALLED",
+        "base_revision": 1,
+        "max_seq_id": 6,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "TIME_CLASH",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "PENDING_RECHECK"
+              },
+              "b": {
+                "state": "REJECTED",
+                "reason": "TIME_CONFLICT"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": 21600000
+      }
+    },
+    {
+      "id": "p_leave_empty",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "LEAVE",
+              "sender": "c",
+              "seq": 5
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [],
+            "threshold": 1,
+            "is_optional": true,
+            "status": "OPTIONAL",
+            "revision": 1,
+            "ballots": {}
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_leave_threshold",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s3",
+                  "required_uids": [
+                    "a",
+                    "b",
+                    "c",
+                    "d",
+                    "e"
+                  ],
+                  "threshold": 3,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s3"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s3"
+            }
+          },
+          {
+            "signal": {
+              "action": "LEAVE",
+              "sender": "d",
+              "seq": 4
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 5,
+              "step_id": "s3"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "e"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s3": {
+            "step_id": "s3",
+            "required_uids": [
+              "a",
+              "b",
+              "c",
+              "e"
+            ],
+            "threshold": 3,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              },
+              "c": {
+                "state": "ACCEPTED"
+              },
+              "e": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_leave_initiator",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "LEAVE",
+              "sender": "A",
+              "seq": 5
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_leave_stranger",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "LEAVE",
+              "sender": "z",
+              "seq": 5
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "p_leave_after_cancel",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "CANCEL",
+              "sender": "A",
+              "seq": 5
+            }
+          },
+          {
+            "signal": {
+              "action": "LEAVE",
+              "sender": "c",
+              "seq": 6
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CANCELLED",
+        "base_revision": 1,
+        "max_seq_id": 6,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              },
+              "b": {
+                "state": "ACCEPTED"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_pst_hijack",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "a",
+              "seq": 5,
+              "slot_id": "fri18"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "OK"
+          }
+        },
+        "winning_slot": "fri18",
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_pst_amend",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "A",
+              "seq": 5,
+              "slot_id": "fri18"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_leave_revote",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18"
+              ],
+              "quorum": 3
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "NO"
+            }
+          },
+          {
+            "signal": {
+              "action": "LEAVE",
+              "sender": "c",
+              "seq": 5
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 6,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "d",
+              "seq": 7,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 7,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "d": "OK"
+          }
+        },
+        "winning_slot": "fri18",
+        "quorum": 3,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_reopen_default",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "b",
+                "c"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a",
+                    "b"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                },
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "b",
+              "seq": 3,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 4,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "REOPEN",
+              "sender": "A",
+              "seq": 5,
+              "server_at_ms": 18000000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "STALLED",
+        "base_revision": 2,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "b",
+          "c"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a",
+              "b"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 2,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              },
+              "b": {
+                "state": "PENDING"
+              }
+            }
+          },
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 2,
+            "ballots": {
+              "c": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": 18000000
+      }
+    },
+    {
+      "id": "d_propose_empty_draft",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "DRAFT",
+        "base_revision": 1,
+        "max_seq_id": 1,
+        "initiator_id": null,
+        "participants": [],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_propose_repeat",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 2,
+              "uids": [
+                "x"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c",
+                    "d"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_propose_repeat",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 2,
+              "uids": [
+                "x"
+              ],
+              "initial_slots": [
+                "new1"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_step_missing_guards",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_TIME",
+              "sender": "A",
+              "seq": 2,
+              "step_id": "nope"
+            }
+          },
+          {
+            "signal": {
+              "action": "REASSIGN",
+              "sender": "A",
+              "seq": 3,
+              "step_id": "nope",
+              "uids": [
+                "x"
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "MAKE_OPTIONAL",
+              "sender": "A",
+              "seq": 4,
+              "step_id": "nope"
+            }
+          },
+          {
+            "signal": {
+              "action": "BYPASS",
+              "sender": "A",
+              "seq": 5,
+              "step_id": "nope",
+              "uids": [
+                "x"
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "PRUNE",
+              "sender": "A",
+              "seq": 6,
+              "step_id": "nope"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 6,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_bypass_noop",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "c",
+                "d"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s2",
+                  "required_uids": [
+                    "c",
+                    "d"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "c",
+              "seq": 2,
+              "step_id": "s2"
+            }
+          },
+          {
+            "signal": {
+              "action": "BYPASS",
+              "sender": "A",
+              "seq": 3,
+              "step_id": "s2",
+              "uids": [
+                "z"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s2": {
+            "step_id": "s2",
+            "required_uids": [
+              "c",
+              "d"
+            ],
+            "threshold": 2,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "c": {
+                "state": "ACCEPTED"
+              },
+              "d": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_vote_revote",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "NO"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 5,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "OK",
+            "b": "OK",
+            "c": "OK"
+          }
+        },
+        "winning_slot": "fri18",
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_addslot_duplicate",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "ADD_SLOT",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 3,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "b": "OK"
+          }
+        },
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_pst_slot_mismatch",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "A",
+              "seq": 5,
+              "slot_id": "sat12"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "b": "OK",
+            "c": "OK"
+          }
+        },
+        "winning_slot": "fri18",
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_pst_slot_null",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18",
+                "sat12"
+              ],
+              "quorum": 3,
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "PATCH_STEP_TIME",
+              "sender": "A",
+              "seq": 5
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18",
+          "sat12"
+        ],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": 3,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_expire_directive_immune",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ],
+              "expires_at_ms": 86400000
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_expire",
+              "now_ms": 172800000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "PROPOSED",
+        "base_revision": 1,
+        "max_seq_id": 1,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "PENDING",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "PENDING"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": 86400000,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_abandon_only_stalled",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "local": {
+              "fn": "maybe_abandon",
+              "now_ms": 7196400000
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 2,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "c_leave_confirmed",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ],
+              "initial_slots": [
+                "fri18"
+              ],
+              "quorum": 3
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "a",
+              "seq": 2,
+              "slot_id": "fri18",
+              "preference": "PREFER"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "b",
+              "seq": 3,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "VOTE",
+              "sender": "c",
+              "seq": 4,
+              "slot_id": "fri18",
+              "preference": "OK"
+            }
+          },
+          {
+            "signal": {
+              "action": "LEAVE",
+              "sender": "b",
+              "seq": 5
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "CONSENSUS",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 5,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a",
+          "c",
+          "d"
+        ],
+        "key_version": 1,
+        "steps": {},
+        "candidate_slots": [
+          "fri18"
+        ],
+        "votes": {
+          "fri18": {
+            "a": "PREFER",
+            "c": "OK"
+          }
+        },
+        "winning_slot": "fri18",
+        "quorum": 3,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    },
+    {
+      "id": "d_neutral_family",
+      "op": "replay",
+      "input": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "events": [
+          {
+            "signal": {
+              "action": "PROPOSE",
+              "sender": "A",
+              "seq": 1,
+              "uids": [
+                "a"
+              ],
+              "skeleton": [
+                {
+                  "step_id": "s1",
+                  "required_uids": [
+                    "a"
+                  ],
+                  "threshold": 0,
+                  "is_optional": false
+                }
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "ACCEPT",
+              "sender": "a",
+              "seq": 2,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "NUDGE",
+              "sender": "A",
+              "seq": 3
+            }
+          },
+          {
+            "signal": {
+              "action": "BRIEFING_UPDATE",
+              "sender": "A",
+              "seq": 4
+            }
+          },
+          {
+            "signal": {
+              "action": "STEP_NOTE",
+              "sender": "a",
+              "seq": 5,
+              "step_id": "s1"
+            }
+          },
+          {
+            "signal": {
+              "action": "ATTACH_FACT",
+              "sender": "a",
+              "seq": 6
+            }
+          },
+          {
+            "signal": {
+              "action": "UPDATE_FACT",
+              "sender": "a",
+              "seq": 7
+            }
+          },
+          {
+            "signal": {
+              "action": "DETACH_FACT",
+              "sender": "a",
+              "seq": 8
+            }
+          },
+          {
+            "signal": {
+              "action": "FREEMASK_QUERY",
+              "sender": "a",
+              "seq": 9
+            }
+          },
+          {
+            "signal": {
+              "action": "FREEMASK_RESPONSE",
+              "sender": "a",
+              "seq": 10
+            }
+          },
+          {
+            "signal": {
+              "action": "TRANSFER_INITIATOR",
+              "sender": "A",
+              "seq": 11,
+              "uids": [
+                "a"
+              ]
+            }
+          },
+          {
+            "signal": {
+              "action": "MEMBER_REMOVED",
+              "sender": "A",
+              "seq": 12,
+              "uids": [
+                "a"
+              ]
+            }
+          }
+        ]
+      },
+      "expect": {
+        "bundle_id": "b1",
+        "proposal_type": "DIRECTIVE",
+        "status": "CONFIRMED",
+        "base_revision": 1,
+        "max_seq_id": 12,
+        "initiator_id": "A",
+        "participants": [
+          "A",
+          "a"
+        ],
+        "key_version": 1,
+        "steps": {
+          "s1": {
+            "step_id": "s1",
+            "required_uids": [
+              "a"
+            ],
+            "threshold": 1,
+            "is_optional": false,
+            "status": "READY",
+            "revision": 1,
+            "ballots": {
+              "a": {
+                "state": "ACCEPTED"
+              }
+            }
+          }
+        },
+        "candidate_slots": [],
+        "votes": {},
+        "winning_slot": null,
+        "quorum": null,
+        "expires_at_ms": null,
+        "stalled_since_ms": null
+      }
+    }
+  ]
+}

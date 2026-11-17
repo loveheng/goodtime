@@ -1,0 +1,450 @@
+{
+  "set": "time-basis",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_time_vectors.dart",
+  "reference": "lib/util/schedule_day.dart（Dart 参考实现，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_time_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（P2）"
+  ],
+  "encoding": "日期一律 ISO yyyy-MM-dd（当地时区语义）；分钟制 0..1439",
+  "rules": {
+    "schedule_day": "作息日以 wake_time 切割而非物理 00:00：minutesOfDay(now) < wake → 前一日历日；**分钟粒度**（秒不参与判定——wake 00:01 前后的秒级输入按分钟折叠）",
+    "parse_iso": "yyyy-MM-dd 严格补零；溢出日（02-30）/月越界（13）/未补零（2026-2-5）/非日期串 → null 不回绕；闰年 02-29 接受、非闰年拒绝",
+    "cross_midnight": "end < start 即跨午夜（不拆段，按开始日归属）；spanMinutes 经 24:00 折返；端点相接不算重叠（overlapsMinutes 半开区间）",
+    "epoch64": "毫秒时间戳 64 位语义：2038-01-19（32 位秒溢出日）毫秒 > 2^31 仍往返无损——**对应 64 位列强制 Long 契约**（禁 Int 列），Kotlin 侧 Long 必选",
+    "dst_timezone_defer": "五点中 DST 跳变与时区骤变两点**挂账 Kotlin 时钟基建**：Dart DateTime 本地时区无 tz 库不可注入；Kotlin 侧以 java.time.ZonedDateTime 人工构造期望并过目（TimeProvider + ACTION_TIME_CHANGED 语义，§10 决定 6）"
+  },
+  "cases": [
+    {
+      "id": "sd_wake_before",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 5,
+        "h": 6,
+        "mi": 59,
+        "wake": 420
+      },
+      "expect": {
+        "iso": "2026-10-04",
+        "expected_iso": "2026-10-04"
+      },
+      "source": "schedule_day_test›wake 前属前一日"
+    },
+    {
+      "id": "sd_wake_at",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 5,
+        "h": 7,
+        "mi": 30,
+        "wake": 420
+      },
+      "expect": {
+        "iso": "2026-10-05",
+        "expected_iso": "2026-10-05"
+      },
+      "source": "schedule_day_test›wake 起属当日"
+    },
+    {
+      "id": "sd_wake_noon",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 5,
+        "h": 12,
+        "mi": 0,
+        "wake": 420
+      },
+      "expect": {
+        "iso": "2026-10-05",
+        "expected_iso": "2026-10-05"
+      },
+      "source": "schedule_day_test›wake 起属当日"
+    },
+    {
+      "id": "sd_overnight_tail",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 5,
+        "h": 2,
+        "mi": 15,
+        "wake": 420
+      },
+      "expect": {
+        "iso": "2026-10-04",
+        "expected_iso": "2026-10-04"
+      },
+      "source": "schedule_day_test›凌晨收尾仍算昨天（日切防夜猫子）"
+    },
+    {
+      "id": "sd_cross_year",
+      "op": "schedule_day",
+      "input": {
+        "y": 2027,
+        "mo": 1,
+        "d": 1,
+        "h": 3,
+        "mi": 0,
+        "wake": 420
+      },
+      "expect": {
+        "iso": "2026-12-31",
+        "expected_iso": "2026-12-31"
+      },
+      "source": "schedule_day_test›跨年边界"
+    },
+    {
+      "id": "sd_wake0_midnight",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 5,
+        "h": 0,
+        "mi": 0,
+        "wake": 0
+      },
+      "expect": {
+        "iso": "2026-10-05",
+        "expected_iso": "2026-10-05"
+      },
+      "source": "schedule_day_test›wake=0 以物理 00:00 切割"
+    },
+    {
+      "id": "sd_wake0_prev",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 4,
+        "h": 23,
+        "mi": 59,
+        "wake": 0
+      },
+      "expect": {
+        "iso": "2026-10-04",
+        "expected_iso": "2026-10-04"
+      },
+      "source": "schedule_day_test›wake=0 以物理 00:00 切割"
+    },
+    {
+      "id": "sd_wake1_before_5s",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 5,
+        "h": 0,
+        "mi": 0,
+        "wake": 1
+      },
+      "expect": {
+        "iso": "2026-10-04",
+        "expected_iso": "2026-10-04"
+      },
+      "source": "时间基准五点›wake 00:01 前后（分钟粒度，00:00:59 归前日）"
+    },
+    {
+      "id": "sd_wake1_at",
+      "op": "schedule_day",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 5,
+        "h": 0,
+        "mi": 1,
+        "wake": 1
+      },
+      "expect": {
+        "iso": "2026-10-05",
+        "expected_iso": "2026-10-05"
+      },
+      "source": "时间基准五点›wake 00:01 前后"
+    },
+    {
+      "id": "iso_pad_march",
+      "op": "iso_date",
+      "input": {
+        "y": 2026,
+        "mo": 3,
+        "d": 5
+      },
+      "expect": {
+        "iso": "2026-03-05",
+        "expected_iso": "2026-03-05"
+      },
+      "source": "schedule_day_test›补零"
+    },
+    {
+      "id": "iso_pad_october",
+      "op": "iso_date",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 25
+      },
+      "expect": {
+        "iso": "2026-10-25",
+        "expected_iso": "2026-10-25"
+      },
+      "source": "schedule_day_test›补零"
+    },
+    {
+      "id": "parse_roundtrip",
+      "op": "parse_iso",
+      "input": {
+        "s": "2026-10-05"
+      },
+      "expect": {
+        "iso": "2026-10-05",
+        "hour": 0,
+        "minute": 0,
+        "expected_iso": "2026-10-05"
+      },
+      "source": "schedule_day_test›round trip 当地零点"
+    },
+    {
+      "id": "parse_reject_feb30",
+      "op": "parse_iso",
+      "input": {
+        "s": "2026-02-30"
+      },
+      "expect": {
+        "reject": true
+      },
+      "source": "schedule_day_test›溢出日不回绕"
+    },
+    {
+      "id": "parse_reject_month13",
+      "op": "parse_iso",
+      "input": {
+        "s": "2026-13-01"
+      },
+      "expect": {
+        "reject": true
+      },
+      "source": "schedule_day_test›月越界"
+    },
+    {
+      "id": "parse_reject_nopad",
+      "op": "parse_iso",
+      "input": {
+        "s": "2026-2-5"
+      },
+      "expect": {
+        "reject": true
+      },
+      "source": "schedule_day_test›必须补零"
+    },
+    {
+      "id": "parse_reject_text",
+      "op": "parse_iso",
+      "input": {
+        "s": "abc"
+      },
+      "expect": {
+        "reject": true
+      },
+      "source": "schedule_day_test›非法格式"
+    },
+    {
+      "id": "leap_add_from_28",
+      "op": "add_days",
+      "input": {
+        "y": 2024,
+        "mo": 2,
+        "d": 28,
+        "n": 1
+      },
+      "expect": {
+        "iso": "2024-02-29",
+        "expected_iso": "2024-02-29"
+      },
+      "source": "时间基准五点›闰日（28→29）"
+    },
+    {
+      "id": "leap_add_from_29",
+      "op": "add_days",
+      "input": {
+        "y": 2024,
+        "mo": 2,
+        "d": 29,
+        "n": 1
+      },
+      "expect": {
+        "iso": "2024-03-01",
+        "expected_iso": "2024-03-01"
+      },
+      "source": "时间基准五点›闰日（29→3 月）"
+    },
+    {
+      "id": "leap_parse_2024",
+      "op": "parse_iso",
+      "input": {
+        "s": "2024-02-29"
+      },
+      "expect": {
+        "iso": "2024-02-29",
+        "hour": 0,
+        "minute": 0,
+        "expected_iso": "2024-02-29"
+      },
+      "source": "时间基准五点›闰日解析"
+    },
+    {
+      "id": "leap_reject_2023",
+      "op": "parse_iso",
+      "input": {
+        "s": "2023-02-29"
+      },
+      "expect": {
+        "reject": true
+      },
+      "source": "时间基准五点›非闰年 02-29 拒绝"
+    },
+    {
+      "id": "leap_year_cross_feb",
+      "op": "add_days",
+      "input": {
+        "y": 2024,
+        "mo": 2,
+        "d": 29,
+        "n": 365
+      },
+      "expect": {
+        "iso": "2025-02-28",
+        "expected_iso": "2025-02-28"
+      },
+      "source": "时间基准五点›闰年 365 天落在 02-28（年算术含闰日）"
+    },
+    {
+      "id": "cm_sleep_480",
+      "op": "cross_midnight",
+      "input": {
+        "start": 1410,
+        "end": 450
+      },
+      "expect": {
+        "crosses": true,
+        "span": 480,
+        "expected_crosses": true,
+        "expected_span": 480
+      },
+      "source": "schedule_day_test›睡眠 23:30–07:30 时长 480"
+    },
+    {
+      "id": "cm_regular_20",
+      "op": "cross_midnight",
+      "input": {
+        "start": 540,
+        "end": 560
+      },
+      "expect": {
+        "crosses": false,
+        "span": 20,
+        "expected_crosses": false,
+        "expected_span": 20
+      },
+      "source": "schedule_day_test›常规块"
+    },
+    {
+      "id": "cm_full_day",
+      "op": "cross_midnight",
+      "input": {
+        "start": 0,
+        "end": 1440
+      },
+      "expect": {
+        "crosses": false,
+        "span": 1440,
+        "expected_crosses": false,
+        "expected_span": 1440
+      },
+      "source": "schedule_day_test›24:00 收尾"
+    },
+    {
+      "id": "add_month_boundary",
+      "op": "add_days",
+      "input": {
+        "y": 2026,
+        "mo": 10,
+        "d": 31,
+        "n": 1
+      },
+      "expect": {
+        "iso": "2026-11-01",
+        "expected_iso": "2026-11-01"
+      },
+      "source": "schedule_day_test›addDays 月边界"
+    },
+    {
+      "id": "add_year_boundary",
+      "op": "add_days",
+      "input": {
+        "y": 2026,
+        "mo": 12,
+        "d": 31,
+        "n": 1
+      },
+      "expect": {
+        "iso": "2027-01-01",
+        "expected_iso": "2027-01-01"
+      },
+      "source": "schedule_day_test›addDays 年边界"
+    },
+    {
+      "id": "add_year_back",
+      "op": "add_days",
+      "input": {
+        "y": 2027,
+        "mo": 1,
+        "d": 1,
+        "n": -1
+      },
+      "expect": {
+        "iso": "2026-12-31",
+        "expected_iso": "2026-12-31"
+      },
+      "source": "schedule_day_test›addDays 负向"
+    },
+    {
+      "id": "epoch_2038_overflow",
+      "op": "epoch64",
+      "input": {
+        "y": 2038,
+        "mo": 1,
+        "d": 19
+      },
+      "expect": {
+        "ms": 2147443200000,
+        "back_iso": "2038-01-19",
+        "expected_iso": "2038-01-19"
+      },
+      "source": "时间基准五点›32 位秒溢出日毫秒往返"
+    },
+    {
+      "id": "epoch_scale_2026",
+      "op": "epoch64",
+      "input": {
+        "y": 2026,
+        "mo": 11,
+        "d": 14
+      },
+      "expect": {
+        "ms": 1794585600000,
+        "back_iso": "2026-11-14",
+        "expected_iso": "2026-11-14"
+      },
+      "source": "时间基准五点›当前量级往返对照"
+    }
+  ]
+}

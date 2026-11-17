@@ -1,7 +1,7 @@
 #!/bin/bash
 # release-r2 — 拾光一键发布到 Cloudflare R2（应用内自更新源）
 #
-# 流程: 读 pubspec 版本 → flutter build apk --release（仅 arm64-v8a，注入 UPDATE_SOURCE_URL）
+# 流程: 读 gradle 版本 → gradlew :app:assembleRelease（Gradle-only 整包，注入 UPDATE_SOURCE_URL）
 #       → 算 sha256 → 生成 updates/shiguang-update.json → 上传 apk+json 到 R2 公开域
 #
 # 前置:
@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
 done
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
-export PATH="$HOME/flutter/bin:$ANDROID_HOME/platform-tools:$PATH"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
 # ---- 校验 ----
 missing=()
@@ -62,12 +62,10 @@ if [ ${#missing[@]} -gt 0 ]; then
   exit 1
 fi
 command -v node >/dev/null 2>&1 || { echo "FAIL: 需要 node（本机应已具备）"; exit 1; }
-command -v flutter >/dev/null 2>&1 || command -v "$HOME/flutter/bin/flutter" >/dev/null 2>&1 || { echo "FAIL: flutter 不可用"; exit 1; }
 
-# ---- 版本 ----
-VERSION_LINE="$(grep -m1 '^version:' pubspec.yaml)"
-VERSION_NAME="$(echo "$VERSION_LINE" | sed -E 's/.*:\s*([0-9.]+)\+.*/\1/')"
-VERSION_CODE="$(echo "$VERSION_LINE" | sed -E 's/.*\+([0-9]+).*/\1/')"
+# ---- 版本（P5 Gradle-only：版本源=android/app/build.gradle.kts）----
+VERSION_NAME="$(grep -m1 -E '^[[:space:]]*versionName[[:space:]]*=' android/app/build.gradle.kts | sed -E 's/^[^"]*"([0-9.]+)".*/\1/')"
+VERSION_CODE="$(grep -m1 -E '^[[:space:]]*versionCode[[:space:]]*=' android/app/build.gradle.kts | sed -E 's/^[^0-9]*([0-9]+).*/\1/')"
 # 应用包名：从 gradle 取，作为串包防御写入清单（缺失时留空，客户端宽容跳过）
 APP_ID="$(grep -m1 'applicationId' android/app/build.gradle.kts | sed -E 's/.*applicationId[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')"
 [ -z "$CHANGELOG" ] && CHANGELOG="$(git log -1 --pretty=%s 2>/dev/null || echo '')"
@@ -75,7 +73,7 @@ APP_ID="$(grep -m1 'applicationId' android/app/build.gradle.kts | sed -E 's/.*ap
 CHANGELOG_ESC="${CHANGELOG//\\/\\\\}"
 CHANGELOG_ESC="${CHANGELOG_ESC//\"/\\\"}"
 
-APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+APK="build/app/outputs/apk/prod/release/app-prod-release.apk"
 PUBLIC_BASE="https://${R2_PUBLIC_DOMAIN}"
 # APK 用版本化 key（不可变对象）：固定 key 会被公开域 CDN 启发式缓存串版
 # （2026-10-15 实测：28021 上传后公开域仍返回 28020 旧字节，客户端 sha256 校验失败）
@@ -88,9 +86,7 @@ echo "更新源 URL（填 App 更新页）: ${SRC_URL}"
 
 if [ "$DRY_RUN" = 1 ]; then
   echo "[dry-run] 将执行:"
-  echo "  flutter pub get"
-  echo "  flutter analyze"
-  echo "  flutter build apk --release --split-per-abi --target-platform android-arm64 -P force-version-code-ignoring-abi=true --dart-define=UPDATE_SOURCE_URL=\"$SRC_URL\""
+  echo "  cd android && ./gradlew :app:assembleProdRelease -PUPDATE_SOURCE_URL=\"$SRC_URL\""
   echo "  sha256sum $APK"
   echo "  生成 updates/shiguang-update.json (apkUrl=$APK_URL)"
   echo "  node scripts/upload-r2.mjs $APK $APK_KEY application/vnd.android.package-archive"
@@ -98,10 +94,9 @@ if [ "$DRY_RUN" = 1 ]; then
   exit 0
 fi
 
-# ---- 构建 ----
-flutter pub get
-flutter analyze
-flutter build apk --release --split-per-abi --target-platform android-arm64 -P force-version-code-ignoring-abi=true --dart-define=UPDATE_SOURCE_URL="$SRC_URL"
+# ---- 构建（P5 Gradle-only：UPDATE_SOURCE_URL 经 gradle buildConfigField 注入）----
+cd android && ./gradlew :app:assembleProdRelease -PUPDATE_SOURCE_URL="$SRC_URL"
+cd "$REPO_ROOT"
 
 [ -f "$APK" ] || { echo "FAIL: 构建产物不存在: $APK"; exit 1; }
 SHA="$(sha256sum "$APK" | cut -d' ' -f1)"

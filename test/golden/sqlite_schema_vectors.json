@@ -1,0 +1,2543 @@
+{
+  "set": "sqlite-schema",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_schema_vectors.dart",
+  "reference": "lib/data/db.dart（Dart 参考实现，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_schema_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（P2）"
+  ],
+  "encoding": "结构经 PRAGMA 标准抽取（不钉 CREATE 语句原文）；dflt 原样；表名字典序、列按 cid、索引按 name、索引列按 seqno、外键按 id",
+  "rules": {
+    "extraction_rule": "表清单 = sqlite_master type=table 且非 sqlite_%（名字典序）；每表列 = PRAGMA table_info → {name,type,notnull,dflt,pk}（**列按名字典序输出**——物理 cid 序随迁移路径变化：ALTER TABLE 只能追加列，列序非契约，访问恒按列名；pk=复合主键序号 1-based）；索引 = PRAGMA index_list → {name,unique,origin,columns}（含 sqlite_autoindex_*，columns=PRAGMA index_info 按 seqno）；外键 = PRAGMA foreign_key_list → {table,from,to,on_update,on_delete}；库版本 = PRAGMA user_version",
+    "ddl_text_note": "不钉 CREATE 语句原文（跨实现写法差异属实现细节），只钉 PRAGMA 可抽的结构语义；表级约束（UNIQUE/复合 PK/REFERENCES）经 autoindex + pk 序号 + foreign_key_list 三方见证",
+    "migration_history": "7 段幂等迁移（squircle 单库）：v1→v2 补 app_settings；v2→v3 补 backgrounds；v3→v4 补 artifacts；v4→v5 migrateV5 六步（blocks 加 artifact_id / artifacts 加 bundle_id / 绑定搬家 block_id→blocks.artifact_id 悬空静默丢弃 / payload 投影清洗 block_id 键出列 / DROP artifacts.block_id——SQLite≥3.35 原生，老内核 12 步重建兜底 / collab 六表补齐）；v5→v6 collab_events 加 server_at_ms；v6→v7 collab_steps 加 starts_at_ms+ends_at_ms。幂等性=每段 IF NOT EXISTS 或 addColumnIfMissing，重跑零副作用（collab_db_migration_test 钉样）。向量对拍段=v4→v7（公开链 migrateV5/V6/V7）；v1→v4 三段为幂等补表文档级说明",
+    "isomorphic_invariant": "新装（createAll）与逐段升级终态列集逐一相同（同构不变量，collab_db_migration_test 钉样）——Kotlin 迁移链须满足同一不变量：upgrade_isomorphic 的 expect.tables ≡ schema_snapshot 的 expect.tables",
+    "onopen_pragmas": "连接级复刻清单（不进结构快照）：onOpen 执行 PRAGMA foreign_keys=ON（plans 自引用树与 blocks.plan_id 外键保护依赖此开关）；busy_timeout=5000（rawQuery 形态——带返回值 PRAGMA 经 execSQL 会被拒）；WAL 多写者缓解（单写队列在应用层）",
+    "constraint_reject": "probe 行插入必须被约束拒绝（UNIQUE/PRIMARY KEY）；异常类非契约，只钉「必拒」外部可观察行为"
+  },
+  "cases": [
+    {
+      "id": "schema_fresh_v7",
+      "op": "schema_snapshot",
+      "input": {
+        "kind": "fresh_create_all"
+      },
+      "expect": {
+        "version": 7,
+        "tables": {
+          "app_settings": {
+            "columns": [
+              {
+                "name": "key",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "value",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_app_settings_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "key"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "artifacts": {
+            "columns": [
+              {
+                "name": "attachments",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "badge",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "captured_by",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'me'",
+                "pk": 0
+              },
+              {
+                "name": "category",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "origin",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "payload",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "plan_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "source_kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "state",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "title",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_artifacts_bundle",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "bundle_id"
+                ]
+              },
+              {
+                "name": "idx_artifacts_plan",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "plan_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_artifacts_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "plan_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "backgrounds": {
+            "columns": [
+              {
+                "name": "applicable_dates",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "captured_by",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'me'",
+                "pk": 0
+              },
+              {
+                "name": "content",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "plan_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "raw_source_text",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "scope",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "source",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "tags",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_backgrounds_plan",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "plan_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_backgrounds_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "plan_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "collab_block_refs": {
+            "columns": [
+              {
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "step_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_collab_refs_step",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "bundle_id",
+                  "step_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_collab_block_refs_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "block_id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "collab_bundles": {
+            "columns": [
+              {
+                "name": "base_revision",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "expires_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "initiator_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "key_version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "last_acked_seq",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "lifecycle",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'active'",
+                "pk": 0
+              },
+              {
+                "name": "max_seq_id",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "participants",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "proposal_type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'PROPOSED'",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_collab_bundles_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "collab_events": {
+            "columns": [
+              {
+                "name": "action_type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "cipher",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "client_msg_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "key_ver",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "sender_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "seq_id",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "server_at_ms",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "topology_ref",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_collab_events_msg",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "bundle_id",
+                  "client_msg_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_collab_events_1",
+                "unique": 1,
+                "origin": "u",
+                "columns": [
+                  "bundle_id",
+                  "seq_id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "collab_bundles",
+                "from": "bundle_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "collab_key_ring": {
+            "columns": [
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "envelope",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "key_ver",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 2
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_collab_key_ring_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "bundle_id",
+                  "key_ver"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "collab_bundles",
+                "from": "bundle_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "collab_steps": {
+            "columns": [
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "ends_at_ms",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 2
+              },
+              {
+                "name": "is_optional",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "required_uids",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "sort",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "starts_at_ms",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'PENDING'",
+                "pk": 0
+              },
+              {
+                "name": "threshold",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "votes",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_collab_steps_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "bundle_id",
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "collab_bundles",
+                "from": "bundle_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "fixed_slots": {
+            "columns": [
+              {
+                "name": "end_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "name",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "start_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "weekdays",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_fixed_slots_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "local_outbox_events": {
+            "columns": [
+              {
+                "name": "action_type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "attempts",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "key_ver",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "payload",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "sent_at",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'PENDING_SEND'",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_local_outbox_events_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "plans": {
+            "columns": [
+              {
+                "name": "archived",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "deadline",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "energy_level",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'light'",
+                "pk": 0
+              },
+              {
+                "name": "estimate",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "importance",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "min_viable_action",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "notes",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "open_items",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "parent_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "reward_spec",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "spec",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "title",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "tool_required",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'anywhere'",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_plans_parent",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "parent_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_plans_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "parent_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "schedule_blocks": {
+            "columns": [
+              {
+                "name": "artifact_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "date",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "end_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "execution_quality",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'full'",
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "is_celebration",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "is_day_spark",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "label",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "pinned",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "plan_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "postpone_count",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "source",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "start_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'proposed'",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_blocks_artifact",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "artifact_id"
+                ]
+              },
+              {
+                "name": "idx_blocks_date",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "date"
+                ]
+              },
+              {
+                "name": "idx_blocks_plan",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "plan_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_schedule_blocks_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "plan_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "upgrade_isomorphic_v4_to_v7",
+      "op": "upgrade_isomorphic",
+      "input": {
+        "legacy_ddl": [
+          "  CREATE TABLE plans (\n    id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, spec TEXT, notes TEXT,\n    open_items TEXT, min_viable_action TEXT,\n    energy_level TEXT NOT NULL DEFAULT 'light',\n    tool_required TEXT NOT NULL DEFAULT 'anywhere', reward_spec TEXT,\n    importance INTEGER NOT NULL DEFAULT 0, deadline TEXT, estimate INTEGER,\n    parent_id TEXT REFERENCES plans(id), archived INTEGER NOT NULL DEFAULT 0,\n    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n    version INTEGER NOT NULL DEFAULT 0\n  )",
+          "  CREATE TABLE fixed_slots (\n    id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, weekdays TEXT NOT NULL,\n    start_min INTEGER NOT NULL, end_min INTEGER NOT NULL\n  )",
+          "  CREATE TABLE schedule_blocks (\n    id TEXT NOT NULL PRIMARY KEY, date TEXT NOT NULL, start_min INTEGER NOT NULL,\n    end_min INTEGER NOT NULL, plan_id TEXT REFERENCES plans(id), label TEXT,\n    source TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0,\n    status TEXT NOT NULL DEFAULT 'proposed',\n    postpone_count INTEGER NOT NULL DEFAULT 0,\n    execution_quality TEXT NOT NULL DEFAULT 'full',\n    is_day_spark INTEGER NOT NULL DEFAULT 0,\n    is_celebration INTEGER NOT NULL DEFAULT 0,\n    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n    version INTEGER NOT NULL DEFAULT 0\n  )",
+          "  CREATE TABLE backgrounds (\n    id TEXT NOT NULL PRIMARY KEY, scope TEXT NOT NULL,\n    plan_id TEXT REFERENCES plans(id), content TEXT NOT NULL,\n    raw_source_text TEXT, tags TEXT, applicable_dates TEXT, source TEXT NOT NULL,\n    captured_by TEXT NOT NULL DEFAULT 'me',\n    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n    version INTEGER NOT NULL DEFAULT 0\n  )",
+          "  CREATE TABLE artifacts (\n    id TEXT NOT NULL PRIMARY KEY, category TEXT NOT NULL,\n    source_kind TEXT NOT NULL, state TEXT NOT NULL, origin TEXT NOT NULL,\n    title TEXT NOT NULL, badge TEXT, payload TEXT NOT NULL,\n    attachments TEXT NOT NULL, captured_by TEXT NOT NULL DEFAULT 'me',\n    plan_id TEXT REFERENCES plans(id), block_id TEXT,\n    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,\n    version INTEGER NOT NULL DEFAULT 0\n  )",
+          "  CREATE TABLE app_settings (\n    key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL\n  )"
+        ]
+      },
+      "expect": {
+        "version": 7,
+        "tables": {
+          "app_settings": {
+            "columns": [
+              {
+                "name": "key",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "value",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_app_settings_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "key"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "artifacts": {
+            "columns": [
+              {
+                "name": "attachments",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "badge",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "captured_by",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'me'",
+                "pk": 0
+              },
+              {
+                "name": "category",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "origin",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "payload",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "plan_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "source_kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "state",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "title",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_artifacts_bundle",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "bundle_id"
+                ]
+              },
+              {
+                "name": "idx_artifacts_plan",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "plan_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_artifacts_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "plan_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "backgrounds": {
+            "columns": [
+              {
+                "name": "applicable_dates",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "captured_by",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'me'",
+                "pk": 0
+              },
+              {
+                "name": "content",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "plan_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "raw_source_text",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "scope",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "source",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "tags",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_backgrounds_plan",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "plan_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_backgrounds_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "plan_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "collab_block_refs": {
+            "columns": [
+              {
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "step_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_collab_refs_step",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "bundle_id",
+                  "step_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_collab_block_refs_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "block_id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "collab_bundles": {
+            "columns": [
+              {
+                "name": "base_revision",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "expires_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "initiator_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "key_version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "last_acked_seq",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "lifecycle",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'active'",
+                "pk": 0
+              },
+              {
+                "name": "max_seq_id",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "participants",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "proposal_type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'PROPOSED'",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_collab_bundles_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "collab_events": {
+            "columns": [
+              {
+                "name": "action_type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "cipher",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "client_msg_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "key_ver",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "sender_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "seq_id",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "server_at_ms",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "topology_ref",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_collab_events_msg",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "bundle_id",
+                  "client_msg_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_collab_events_1",
+                "unique": 1,
+                "origin": "u",
+                "columns": [
+                  "bundle_id",
+                  "seq_id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "collab_bundles",
+                "from": "bundle_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "collab_key_ring": {
+            "columns": [
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "envelope",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "key_ver",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 2
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_collab_key_ring_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "bundle_id",
+                  "key_ver"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "collab_bundles",
+                "from": "bundle_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "collab_steps": {
+            "columns": [
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "ends_at_ms",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 2
+              },
+              {
+                "name": "is_optional",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "required_uids",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "sort",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "starts_at_ms",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'PENDING'",
+                "pk": 0
+              },
+              {
+                "name": "threshold",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "votes",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_collab_steps_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "bundle_id",
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "collab_bundles",
+                "from": "bundle_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "fixed_slots": {
+            "columns": [
+              {
+                "name": "end_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "name",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "start_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "weekdays",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_fixed_slots_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "local_outbox_events": {
+            "columns": [
+              {
+                "name": "action_type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "attempts",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "bundle_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "key_ver",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "1",
+                "pk": 0
+              },
+              {
+                "name": "payload",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "sent_at",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'PENDING_SEND'",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "sqlite_autoindex_local_outbox_events_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": []
+          },
+          "plans": {
+            "columns": [
+              {
+                "name": "archived",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "deadline",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "energy_level",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'light'",
+                "pk": 0
+              },
+              {
+                "name": "estimate",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "importance",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "min_viable_action",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "notes",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "open_items",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "parent_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "reward_spec",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "spec",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "title",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "tool_required",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'anywhere'",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_plans_parent",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "parent_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_plans_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "parent_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          },
+          "schedule_blocks": {
+            "columns": [
+              {
+                "name": "artifact_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "created_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "date",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "end_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "execution_quality",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'full'",
+                "pk": 0
+              },
+              {
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 1
+              },
+              {
+                "name": "is_celebration",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "is_day_spark",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "label",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "pinned",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "plan_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "postpone_count",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              },
+              {
+                "name": "source",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "start_min",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "status",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt": "'proposed'",
+                "pk": 0
+              },
+              {
+                "name": "updated_at",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": null,
+                "pk": 0
+              },
+              {
+                "name": "version",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt": "0",
+                "pk": 0
+              }
+            ],
+            "indexes": [
+              {
+                "name": "idx_blocks_artifact",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "artifact_id"
+                ]
+              },
+              {
+                "name": "idx_blocks_date",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "date"
+                ]
+              },
+              {
+                "name": "idx_blocks_plan",
+                "unique": 0,
+                "origin": "c",
+                "columns": [
+                  "plan_id"
+                ]
+              },
+              {
+                "name": "sqlite_autoindex_schedule_blocks_1",
+                "unique": 1,
+                "origin": "pk",
+                "columns": [
+                  "id"
+                ]
+              }
+            ],
+            "foreign_keys": [
+              {
+                "table": "plans",
+                "from": "plan_id",
+                "to": "id",
+                "on_update": "NO ACTION",
+                "on_delete": "NO ACTION"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "reject_events_unique_seq",
+      "op": "constraint_reject",
+      "input": {
+        "seed": [
+          {
+            "table": "collab_bundles",
+            "row": {
+              "id": "bu1",
+              "proposal_type": "CONSENSUS",
+              "initiator_id": "u1",
+              "participants": "[\"u1\",\"u2\"]",
+              "expires_at": 1760000000000,
+              "created_at": 1760000000000,
+              "updated_at": 1760000000000
+            }
+          },
+          {
+            "table": "collab_events",
+            "row": {
+              "bundle_id": "bu1",
+              "seq_id": 1,
+              "action_type": "PROPOSE",
+              "sender_id": "u1",
+              "cipher": "Y2lwaGVy",
+              "client_msg_id": "m1u1",
+              "server_at_ms": 0,
+              "created_at": 1760000000000
+            }
+          }
+        ],
+        "probe": {
+          "table": "collab_events",
+          "row": {
+            "bundle_id": "bu1",
+            "seq_id": 1,
+            "action_type": "PROPOSE",
+            "sender_id": "u2",
+            "cipher": "Y2lwaGVy",
+            "client_msg_id": "m1u2",
+            "server_at_ms": 0,
+            "created_at": 1760000000000
+          }
+        }
+      },
+      "expect": {
+        "status": "reject"
+      }
+    },
+    {
+      "id": "reject_keyring_same_ver",
+      "op": "constraint_reject",
+      "input": {
+        "seed": [
+          {
+            "table": "collab_bundles",
+            "row": {
+              "id": "bu1",
+              "proposal_type": "CONSENSUS",
+              "initiator_id": "u1",
+              "participants": "[\"u1\",\"u2\"]",
+              "expires_at": 1760000000000,
+              "created_at": 1760000000000,
+              "updated_at": 1760000000000
+            }
+          },
+          {
+            "table": "collab_key_ring",
+            "row": {
+              "bundle_id": "bu1",
+              "key_ver": 1,
+              "envelope": "a2VuYw==",
+              "created_at": 1760000000000
+            }
+          }
+        ],
+        "probe": {
+          "table": "collab_key_ring",
+          "row": {
+            "bundle_id": "bu1",
+            "key_ver": 1,
+            "envelope": "bmV3",
+            "created_at": 1760000000000
+          }
+        }
+      },
+      "expect": {
+        "status": "reject"
+      }
+    },
+    {
+      "id": "reject_fk_dangling",
+      "op": "constraint_reject",
+      "input": {
+        "seed": [],
+        "probe": {
+          "table": "schedule_blocks",
+          "row": {
+            "id": "blk_ghost",
+            "date": "2026-11-14",
+            "start_min": 540,
+            "end_min": 600,
+            "source": "ai",
+            "plan_id": "plan_not_exists",
+            "created_at": 1760000000000,
+            "updated_at": 1760000000000
+          }
+        },
+        "fk_on": true
+      },
+      "expect": {
+        "status": "reject"
+      },
+      "source": "D7 拍板①：外键悬空拒绝（foreign_keys=ON 生产口径）"
+    },
+    {
+      "id": "reject_block_refs_pk",
+      "op": "constraint_reject",
+      "input": {
+        "seed": [
+          {
+            "table": "collab_bundles",
+            "row": {
+              "id": "bu1",
+              "proposal_type": "CONSENSUS",
+              "initiator_id": "u1",
+              "participants": "[\"u1\",\"u2\"]",
+              "expires_at": 1760000000000,
+              "created_at": 1760000000000,
+              "updated_at": 1760000000000
+            }
+          },
+          {
+            "table": "collab_block_refs",
+            "row": {
+              "block_id": "b1",
+              "bundle_id": "bu1",
+              "step_id": "s1",
+              "created_at": 1760000000000
+            }
+          }
+        ],
+        "probe": {
+          "table": "collab_block_refs",
+          "row": {
+            "block_id": "b1",
+            "bundle_id": "bu1",
+            "step_id": "s2",
+            "created_at": 1760000000000
+          }
+        }
+      },
+      "expect": {
+        "status": "reject"
+      }
+    }
+  ]
+}

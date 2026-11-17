@@ -1,43 +1,39 @@
 #!/bin/bash
-# build-apk — 拾光 Android 编译脚本（默认 debug 包，--release release 分包，--abi 指定平台）
+# build-apk — 拾光 Android 编译脚本（P5 Gradle-only：默认 debug 包，--release release 整包）
 #
 # toolbox-script
 # format: v1
 # name: build-apk
-# summary: 拾光 Android 编译：analyze+构建+产物校验，默认 debug 包，--release/--fat 切 release，--abi 指定平台
+# summary: 拾光 Android 编译（Gradle-only）：arch-guard-kotlin+全测门槛+构建+产物校验，默认 debug 包，--release 切 release
 # trigger: manual
 # platform: unix
 # alias: apk
 
 set -euo pipefail
 
-BUILD_DEBUG=0
 BUILD_RELEASE=0
-BUILD_FAT=0
 INSTALL_AFTER=0
-RUN_ANALYZE=1
+RUN_GUARD=1
 FRESH_DAEMON=0
 DRY_RUN=0
-ABI_SPEC="arm64"
+BUILD_DOGFOOD=0
 
 usage() {
   cat <<'EOF'
 用法: build-apk.sh [选项]        （toolbox run build-apk [选项] 等价）
-  默认: flutter analyze + debug 包构建（产物 app-debug.apk）
+  默认: arch-guard-kotlin + debug 包构建（产物 app-debug.apk）
 选项:
-  --abi <平台>  指定目标平台，逗号分隔可组合（对 --release 分包生效；--debug 不生效）：
-                arm64（默认，= arm64-v8a）/ arm|armv7（= armeabi-v7a）/ x64（= x86_64）
-                例: --abi arm  --abi arm64,x64
   --debug       构建 debug 包（现为默认，保留兼容显式调用）
-  --release     构建 arm64 release 分包（--abi 可换平台/组合，原默认行为）
-  --fat         构建 release 整包（三架构全含，自更新兜底用）
+  --release     构建 release 整包（P5 Gradle-only：无 ABI 分包，整包即唯一产物）
+  --dogfood     切 dogfood flavor（内部试用隔离：applicationId .dogfood + 独立 SQLite 文件）
   --install     构建成功后 adb 安装到已连接手机（多产物时装第一个匹配的）
-  --skip-test   跳过 flutter analyze 门槛（0 issue 交付线）
+  --skip-test   跳过 arch-guard-kotlin 门槛（P5 前为 flutter analyze 0 issue 线）
   --fresh       先停掉 gradle 守护进程（构建锁被占/产物串台时用）
   -n, --dry-run 只打印将执行的步骤，不真正构建
   --json        环境快速预检（一行 JSON 结论，不执行构建）
   -h, --help    本帮助
 说明: --json 只做环境预检；真正构建用裸跑（无参数或带选项）。
+      P5 变更：Flutter CLI 链退役——pub get/analyze/split-per-abi/--abi/--fat 随删。
 EOF
 }
 
@@ -46,70 +42,28 @@ fail_remedy() {
     *"Timeout waiting to lock"*|*"waiting for a lock"*)
       echo "[remedy] gradle 项目锁被占：加 --fresh 重跑本脚本（或 pkill -f '[G]radleDaemon' 后重试）" ;;
     *"Connection timed out"*|*"Failed to establish a new connection"*|*"Connection reset"*)
-      echo "[remedy] pub/maven 网络偶发停滞：直接重跑本脚本；pub 卡死清理 ~/.pub-cache/_temp 后再试" ;;
+      echo "[remedy] maven 网络偶发停滞：直接重跑本脚本" ;;
   esac
-}
-
-# 平台别名 → flutter target-platform + 分包产物名 + abi 标签
-resolve_abi() {
-  case "$1" in
-    arm64|arm64-v8a)      echo "android-arm64 app-arm64-v8a-release.apk arm64-v8a" ;;
-    arm|armv7|armeabi-v7a) echo "android-arm app-armeabi-v7a-release.apk armeabi-v7a" ;;
-    x64|x86_64)            echo "android-x64 app-x86_64-release.apk x86_64" ;;
-    *) return 1 ;;
-  esac
-}
-
-# 解析 ABI_SPEC（逗号分隔）→ TP 串 / 产物列表 / abi 标签列表；非法平台 exit 2
-parse_abis() {
-  local old_ifs="$IFS"
-  IFS=','
-  TP_JOINED=""
-  ARTIFACTS=""
-  ABI_LABELS=""
-  for a in $ABI_SPEC; do
-    a="$(echo "$a" | tr -d ' ')"
-    [ -z "$a" ] && continue
-    r="$(resolve_abi "$a")" || {
-      IFS="$old_ifs"
-      echo "FAIL: 未知平台 '$a'（支持: arm64 / arm|armv7 / x64）"
-      exit 2
-    }
-    tp="${r%% *}"; rest="${r#* }"
-    art="${rest%% *}"; label="${rest#* }"
-    TP_JOINED="${TP_JOINED:+$TP_JOINED,}$tp"
-    ARTIFACTS="$ARTIFACTS build/app/outputs/flutter-apk/$art"
-    ABI_LABELS="${ABI_LABELS:+$ABI_LABELS,}$label"
-  done
-  # 必须还原 IFS：下游 $BUILD_CMD / $ARTIFACTS 无引号展开依赖默认空格分词，
-  # 残留 IFS=',' 会让整串命令被当作单个命令名（command not found）
-  IFS="$old_ifs"
 }
 
 precheck_json() {
-  if ! command -v flutter >/dev/null 2>&1 && [ ! -x "$HOME/flutter/bin/flutter" ]; then
-    printf '{"status":"FAIL","severity":"error","message":"flutter 不可用","remedy":"确认 ~/flutter 存在并 export PATH=$HOME/flutter/bin:$PATH"}\n'
-    exit 1
-  fi
   if [ ! -d "${ANDROID_HOME:-$HOME/android-sdk}" ]; then
     printf '{"status":"FAIL","severity":"error","message":"android-sdk 不存在","remedy":"设置 ANDROID_HOME 或安装 Android SDK"}\n'
     exit 1
   fi
-  printf '{"status":"OK","severity":"info","message":"环境预检通过：flutter 与 android-sdk 就绪，可裸跑构建"}\n'
+  printf '{"status":"OK","severity":"info","message":"环境预检通过：android-sdk 就绪（Gradle-only），可裸跑构建"}\n'
   exit 0
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --abi)
-      [ $# -ge 2 ] || { echo "FAIL: --abi 需要平台参数"; usage; exit 2; }
-      ABI_SPEC="$2"; shift
-      ;;
-    --debug) BUILD_DEBUG=1 ;;
+    --abi) echo "FAIL: --abi 已退役（P5 Gradle-only 无 ABI 分包，release 整包三架构全含）"; exit 2 ;;
+    --fat) BUILD_RELEASE=1 ;;
+    --debug) ;;
     --release) BUILD_RELEASE=1 ;;
-    --fat) BUILD_FAT=1 ;;
+    --dogfood) BUILD_DOGFOOD=1 ;;
     --install) INSTALL_AFTER=1 ;;
-    --skip-test) RUN_ANALYZE=0 ;;
+    --skip-test) RUN_GUARD=0 ;;
     --fresh) FRESH_DAEMON=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     --json) precheck_json ;;
@@ -120,36 +74,35 @@ while [ $# -gt 0 ]; do
 done
 
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
-export PATH="$HOME/flutter/bin:$ANDROID_HOME/platform-tools:$PATH"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 LOG="build/apk-build.log"
-AAPT="$(ls -1 "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | sort | tail -1)"
 
-if [ "$BUILD_FAT" = 1 ]; then
-  BUILD_CMD="flutter build apk --release"
-  ARTIFACTS="build/app/outputs/flutter-apk/app-release.apk"
-  STEP_NAME="release 整包（三架构）"
-elif [ "$BUILD_RELEASE" = 1 ]; then
-  parse_abis
-  BUILD_CMD="flutter build apk --release --split-per-abi --target-platform=$TP_JOINED"
-  STEP_NAME="release 分包（$ABI_LABELS）"
+# P5 dogfood 隔离：--dogfood 切 dogfood flavor（独立 applicationId .dogfood + 独立 SQLite 文件）
+if [ "${BUILD_DOGFOOD:-0}" = 1 ]; then
+  FLAVOR="dogfood"
 else
-  # 默认（含显式 --debug）：debug 包
-  BUILD_CMD="flutter build apk --debug"
-  ARTIFACTS="build/app/outputs/flutter-apk/app-debug.apk"
-  STEP_NAME="debug 包（全架构，默认）"
+  FLAVOR="prod"
+fi
+if [ "$BUILD_RELEASE" = 1 ]; then
+  BUILD_CMD="./gradlew :app:assemble${FLAVOR^}Release"
+  ARTIFACTS="build/app/outputs/apk/${FLAVOR}/release/app-${FLAVOR}-release.apk"
+  STEP_NAME="release 整包（$FLAVOR）"
+else
+  BUILD_CMD="./gradlew :app:assemble${FLAVOR^}Debug"
+  ARTIFACTS="build/app/outputs/apk/${FLAVOR}/debug/app-${FLAVOR}-debug.apk"
+  STEP_NAME="debug 包（全架构，默认，$FLAVOR）"
 fi
 
 STEPS=(
   "版本防降级守卫（bump-version --guard，设备已装版本更高时自动抬 build 号）"
-  "flutter pub get"
-  "flutter analyze（0 issue 门槛）"
   "$BUILD_CMD"
-  "产物校验（aapt 版本/ABI + sha256）"
+  "产物校验（aapt 版本 + sha256）"
 )
 [ "$FRESH_DAEMON" = 1 ] && STEPS=("停掉 gradle 守护进程（--fresh）" "${STEPS[@]}")
+[ "$RUN_GUARD" = 1 ] && STEPS=("arch-guard-kotlin（架构硬约束门槛）" "${STEPS[@]}")
 [ "$INSTALL_AFTER" = 1 ] && STEPS+=("adb install -r 到已连接手机")
 
 if [ "$DRY_RUN" = 1 ]; then
@@ -162,6 +115,17 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 i=1; total=${#STEPS[@]}
+
+if [ "$RUN_GUARD" = 1 ]; then
+  echo "[$i/$total] arch-guard-kotlin"
+  TOOLBOX_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if [ -x "$TOOLBOX_DIR/arch-guard-kotlin.sh" ]; then
+    "$TOOLBOX_DIR/arch-guard-kotlin.sh" --root "$REPO_ROOT" || { echo "FAIL: arch-guard-kotlin 未过（门槛），先修复再编译"; exit 1; }
+  else
+    echo "  ⚠ arch-guard-kotlin.sh 缺失，跳过（fail-open）"
+  fi
+  i=$((i+1))
+fi
 
 echo "[$i/$total] 版本防降级守卫"
 TOOLBOX_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -176,21 +140,6 @@ i=$((i+1))
   (cd android && ./gradlew --stop >/dev/null 2>&1 || true)
   i=$((i+1))
 }
-
-echo "[$i/$total] flutter pub get"
-flutter pub get || { echo "FAIL: pub get 失败"; fail_remedy "$(tail -5 "$LOG" 2>/dev/null || true)"; exit 1; }
-i=$((i+1))
-
-if [ "$RUN_ANALYZE" = 1 ]; then
-  echo "[$i/$total] flutter analyze（0 issue 门槛）"
-  ANALYZE_OUT="$(flutter analyze 2>&1)" || {
-    echo "$ANALYZE_OUT" | tail -15
-    echo "FAIL: analyze 存在 issue（0 issue 为交付线），先修复再编译"
-    exit 1
-  }
-  echo "$ANALYZE_OUT" | tail -1
-  i=$((i+1))
-fi
 
 echo "[$i/$total] $BUILD_CMD（日志: $LOG）"
 mkdir -p build
@@ -212,7 +161,7 @@ for ART in $ARTIFACTS; do
     continue
   fi
   SHA="$(sha256sum "$ART" | cut -d' ' -f1)"
-  BADGE="$("$AAPT" dump badging "$ART" 2>/dev/null | grep -E '^package:|native-code' | tr '\n' ' ')"
+  BADGE="$("$AAPT" dump badging "$ART" 2>/dev/null | grep -E '^package:' | tr '\n' ' ')"
   ls -lh "$ART" | awk -v a="$ART" '{print "  " a "  大小: "$5}'
   echo "  sha256: $SHA"
   echo "  $BADGE"

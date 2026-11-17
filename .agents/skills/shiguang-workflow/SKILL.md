@@ -16,18 +16,18 @@ description: 拾光 shiguang（Flutter Android 日程台账 + 内嵌 MCP 服务�
 | **UI 规范与组件纪律**：视觉 tokens 取用 / 界面文案词汇表 / UI 架构红线 | `docs/project/ui-design.md`（大面规范，零外引）+ `docs/design/ui-pages.md`（页面布局稿）+ shiguang-ui skill（落地纪律） |
 | **命令与环境**：本 skill | 构建/测试/运行/发布命令、环境硬约束（工具链踩坑数据查 `context/lessons.md`） |
 
-lib/ 的模块清单**不在本表登记**——见 `docs/project/index.md`（代码落点表）。现行 epic 与过程态查 `context/CURRENT` / `context/epics/`，本 skill 不登记。
+模块清单**不在本表登记**——见 `docs/project/index.md`（代码落点表）。现行 epic 与过程态查 `context/CURRENT` / `context/epics/`，本 skill 不登记。
 
 ## 技术栈
 
-- Flutter 3.47.5 stable / Dart 3.13.4；目标平台：**仅 Android**（包名 `app.shiguang.shiguang`）
-- 核心依赖：sqflite（三表台账）、内嵌 MCP server（自拾贝 `lib/mcp/` 搬运）、flutter_foreground_task（管家前台服务）（bonsoir mDNS 依赖 2026-10-15 随暴露面收口摘除）
+- **纯原生 Android（P5 迁移完成后终态，2026-11-17）**：Kotlin + Jetpack Compose + Gradle-only（Flutter/Dart 已物理退役，仓库无 pubspec/lib）；目标平台：**仅 Android**（applicationId `app.shiguang.shiguang`；dogfood 隔离包 `.dogfood` 独立 SQLite 文件）
+- 核心依赖：AndroidSqlStore（SQLite WAL 三表台账）、内嵌 MCP server（:core:mcp 原生内核）、goodhub-mcp-plugin-core（Binder 契约）、Compose 三层设计系统（:core:tokens → ShiguangTheme → Shiguang* 原语）
 
 ## 环境硬约束
 
-- **flutter 不在默认 PATH**：先 `export PATH="$HOME/flutter/bin:$PATH"`（flutter 装在 `~/flutter`）
+- **构建一律 Gradle**：`cd android && ./gradlew <task>`；flutter CLI 链已退役（无 pub get/analyze）
 - 本地优先：全功能离线可用；MCP 不对外暴露（HTTP 仅 127.0.0.1 回环 + adb reverse 调试，2026-10-15 拍板）；无任何遥测
-- **Android 交付约束（2026-10-06 拍板）**：minSdk=34（仅支持 Android 14+，勿回退 flutter.minSdkVersion）；根 `android/build.gradle.kts` 对全部 library 子项目钳制 compileSdk≥36——陈旧插件对策（bonsoir_android 5.1.6 硬编码 33 为原始诱因，依赖 2026-10-15 已摘，钳制保留兜底）
+- **Android 交付约束（2026-10-06 拍板）**：minSdk=34（仅支持 Android 14+）；compileSdk=37 / targetSdk=36（P5 固化于 android/app/build.gradle.kts，版本源=versionName/versionCode 行）
 - 文档纪律：docs/ 改动走 docs-spec（lint 用 `toolbox run docs-lint`）
 - 工具链实测踩坑的**数据**查 `context/lessons.md`，本 skill 不复制（防双源；维护协议见下节）
 
@@ -70,11 +70,7 @@ lib/ 的模块清单**不在本表登记**——见 `docs/project/index.md`（�
 - 归并后刷新文件 frontmatter 的 `total-merged` 与 `last-merge` 字段
 - lessons.md 是**全局账**（frontmatter `epic: global`）：跨 epic 复用，只归并不清空
 
-## 研发闭环命令（唯一出处，2026-10-05 实测跑通）
-
-```bash
-export PATH="$HOME/flutter/bin:$PATH"
-```
+## 研发闭环命令（唯一出处，2026-11-17 P5 Gradle-only 改版实测跑通）
 
 > 命令双入口：项目工具池 `toolbox run <工具>`（canonical，别名见注释）与裸脚本等价；无 toolbox 环境用裸脚本。
 
@@ -83,34 +79,31 @@ export PATH="$HOME/flutter/bin:$PATH"
 任一步失败**禁止提交**；禁止 `--no-verify` 绕过门禁：
 
 ```bash
-toolbox run arch-guard            # ag   # ① 架构硬约束护栏（6 条 R1–R6：规则正文与违例处置 = docs/project/coding-standards.md §3）
-flutter analyze                   #      # ② 静态检查 → 0 issue 为交付线
-flutter test                      #      # ③ 单元/组件/流程测试 → 全绿为交付线（⚠️ FakeAsync 铁律等 UI 测试坑查 lessons.md [UI测试]）
-node mcp-bridge/e2e-check.mjs     #      # ④ 桥接端到端自检（mock 上游）
+toolbox run arch-guard            # ag   # ① 架构硬约束护栏（P5 起为 arch-guard-kotlin 薄壳，8 条 Kotlin 规则：正文与违例处置 = docs/project/coding-standards.md §3）
+cd android && ./gradlew test && cd ..   # ② 四模块+:app 全量测试 → 全绿为交付线（golden 向量对拍在 :core:mcp JVM 测试内）
 ```
 
-- lib/ 与 docs/ 混改时用聚合门禁按改动范围分派：`toolbox run pre-commit-gate`（pcg；lib/ 改动→arch-guard，docs/ 改动→docs-lint）；git 钩子已装自动拦截
+- Kotlin 与 docs/ 混改时用聚合门禁按改动范围分派：`toolbox run pre-commit-gate`（pcg；.kt 改动→arch-guard-kotlin，docs/ 改动→docs-lint）；git 钩子已装自动拦截
 - ① 命中红灯 = 按 coding-standards §3 违例处置修结构，**不得申请加白名单**（只减不增）
 
 ### 2. 本地运行与真机联调
 
 ```bash
-flutter devices                          # 查看在线真机 ID
-flutter run -d <DEVICE_ID> --debug       # 挂载真机联调（未实测，无设备连接时跳过）
-toolbox run build-apk                    # apk  # APK 编译（analyze 门槛+产物校验+--install 真机装包；内置设备已装版本防降级守卫）
+adb devices                               # 查看在线真机 ID
+toolbox run build-apk                     # apk  # APK 编译（Gradle-only：arch-guard-kotlin 门槛+产物校验+--install 真机装包；内置设备防降级守卫；--dogfood 切隔离试用包）
 ```
 
-- 构建（APK）：一律走 `toolbox run build-apk`，勿裸跑 flutter build apk。默认 debug 包；release 分包加 `--release`（`--abi` 换平台），自更新兜底用 `--fat` 整包（release 分包真机实测 2026-10-06）
+- 构建（APK）：一律走 `toolbox run build-apk`，勿裸跑 gradlew assemble*。默认 debug 包（prod flavor）；release 整包加 `--release`（P5 Gradle-only 无 ABI 分包）；内部试用隔离加 `--dogfood`
 
 ### 3. 版本与发布
 
 ```bash
-toolbox run bump-version                 # bump # pubspec 版本更新+设备防降级守卫（包名 app.shiguang.shiguang）
+toolbox run bump-version                 # bump # gradle 版本更新（versionName/versionCode）+设备防降级守卫（包名 app.shiguang.shiguang）
+bash scripts/release-r2.sh               #      # 一键发布 R2 自更新源（assembleProdRelease+清单上传；-n 干跑）
 ```
 
 ### 4. 构建异常自救（缓存重置急救包）
 
 ```bash
-flutter clean && flutter pub get          # 基础缓存重置
-cd android && ./gradlew clean && cd ..    # 深度原生构建缓存清理
+cd android && ./gradlew --stop && ./gradlew clean && cd ..   # 深度构建缓存清理（--fresh 亦可用 build-apk 内建）
 ```

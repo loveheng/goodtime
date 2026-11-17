@@ -1,0 +1,1173 @@
+{
+  "set": "mcp-toolface",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_toolface_vectors.dart",
+  "reference": "lib/mcp/tools.dart + lib/action/command_handler.dart（Dart 参考实现，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_toolface_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（P2）"
+  ],
+  "encoding": "tool_call 成功返回=值泛化结构对拍（uuid/date/iso_datetime/timestamp_ms 泛化为类型标记，其余原样）；tool_reject 领域码 data.code 值级钉样（message 参考文案不比）",
+  "rules": {
+    "generalize_rule": "String 匹配 uuid（8-4-4-4-12 hex）→\"uuid\"；YYYY-MM-DDTHH:mm 前缀→\"iso_datetime\"；YYYY-MM-DD→\"date\"；int > 1e12→\"timestamp_ms\"；其余值原样。Kotlin 对拍：同输入→同泛化→结构一致（两侧动态值天然不同，值级对拍仅对枚举/计数/领域码）",
+    "ref_rule": "args 叶子 {\"$ref\": \"<seed索引>.<点路径>\"} 解引用到 seed 步骤返回 JSON（已解码）的路径，解决种子内 uuid 引用",
+    "error_shape": "领域拒绝统一 ActionException → McpRpcError(-32602, message, {code, hint?, ...data})：HTTP 层仍 200；version_conflict 附 latest 快照；schedule_rejected 附逐条明细与 available_free_windows；budget_exceeded 附全量现场（data_keys 钉键集）",
+    "isError": "成功返回 result={content:[{type:text,text:<json 串>}], isError:false}——包装形态已在 mcp-rejection 集钉样，本集只钉 text 内 JSON 载荷",
+    "fixups": "update_fixed_slots/suggest_user_setting 的拒绝 data.code 值为实现常量（测试仅钉 throwsA McpRpcError）——拒绝语义已钉样，码值随实现快照入集"
+  },
+  "cases": [
+    {
+      "id": "tf_list_plans_empty",
+      "op": "tool_call",
+      "input": {
+        "seed": [],
+        "tool": "list_plans",
+        "args": {}
+      },
+      "expect": {
+        "payload": {
+          "count": 0,
+          "raw_facts": {
+            "count": 0,
+            "items": []
+          },
+          "plans": []
+        }
+      },
+      "source": "mcp_tools_test›add_plan→list_plans"
+    },
+    {
+      "id": "tf_add_plan_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [],
+        "tool": "add_plan",
+        "args": {
+          "title": "想去云南玩",
+          "min_viable_action": "花 5 分钟收藏两个攻略视频"
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "upsert_plan",
+          "id": "uuid",
+          "note": "计划已创建",
+          "snapshot": {
+            "id": "uuid",
+            "title": "想去云南玩",
+            "spec": null,
+            "notes": null,
+            "open_items": [],
+            "min_viable_action": "花 5 分钟收藏两个攻略视频",
+            "energy_level": "light",
+            "tool_required": "anywhere",
+            "reward_spec": null,
+            "importance": false,
+            "deadline": null,
+            "estimate": null,
+            "parent_id": null,
+            "archived": false,
+            "version": 0
+          }
+        }
+      },
+      "source": "mcp_tools_test›add_plan→list_plans"
+    },
+    {
+      "id": "tf_list_plans_one",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "add_plan",
+            "args": {
+              "title": "想去云南玩",
+              "min_viable_action": "花 5 分钟过一遍攻略"
+            }
+          }
+        ],
+        "tool": "list_plans",
+        "args": {}
+      },
+      "expect": {
+        "payload": {
+          "count": 1,
+          "raw_facts": {
+            "count": 0,
+            "items": []
+          },
+          "plans": [
+            {
+              "id": "uuid",
+              "title": "想去云南玩",
+              "spec": null,
+              "notes": null,
+              "open_items": [],
+              "min_viable_action": "花 5 分钟过一遍攻略",
+              "energy_level": "light",
+              "tool_required": "anywhere",
+              "reward_spec": null,
+              "importance": false,
+              "deadline": null,
+              "estimate": null,
+              "parent_id": null,
+              "archived": false,
+              "version": 0,
+              "backgrounds": []
+            }
+          ]
+        },
+        "note": "mcp_tools_test›add_plan→list_plans"
+      },
+      "source": "mcp_tools_test›add_plan→list_plans"
+    },
+    {
+      "id": "tf_update_plan_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "add_plan",
+            "args": {
+              "title": "想去云南玩",
+              "min_viable_action": "x"
+            }
+          }
+        ],
+        "tool": "update_plan",
+        "args": {
+          "id": {
+            "$ref": "0.snapshot.id"
+          },
+          "spec": "2026 云南行",
+          "expected_version": 0
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "update_plan",
+          "id": "uuid",
+          "note": "已更新",
+          "snapshot": {
+            "id": "uuid",
+            "title": "想去云南玩",
+            "spec": "2026 云南行",
+            "notes": null,
+            "open_items": [],
+            "min_viable_action": "x",
+            "energy_level": "light",
+            "tool_required": "anywhere",
+            "reward_spec": null,
+            "importance": false,
+            "deadline": null,
+            "estimate": null,
+            "parent_id": null,
+            "archived": false,
+            "version": 1
+          }
+        },
+        "note": "mcp_tools_test›add_plan→list_plans"
+      },
+      "source": "mcp_tools_test›add_plan→list_plans"
+    },
+    {
+      "id": "tf_get_settings_seeded",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          },
+          {
+            "tool": "update_fixed_slots",
+            "args": {
+              "slots": [
+                {
+                  "name": "睡眠",
+                  "weekdays": [
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7
+                  ],
+                  "start_min": 1410,
+                  "end_min": 450
+                }
+              ]
+            }
+          }
+        ],
+        "tool": "get_settings",
+        "args": {}
+      },
+      "expect": {
+        "payload": {
+          "initialized": true,
+          "wake_time": 420,
+          "sleep_time": 1380,
+          "min_block_minutes": null,
+          "daily_new_blocks_limit": null,
+          "fill_rate_limit": 60,
+          "today_energy": "normal",
+          "user_rules": null,
+          "weather_location": null,
+          "identity_prompt": null,
+          "exceptions": [],
+          "theme_mode": "system",
+          "today": "date",
+          "fixed_slots": [
+            {
+              "id": "uuid",
+              "name": "睡眠",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7
+              ],
+              "start_min": 1410,
+              "end_min": 450
+            }
+          ],
+          "global_backgrounds": {
+            "entries": [],
+            "budget": {
+              "entries": 0,
+              "chars": 0,
+              "limit_entries": 8,
+              "limit_chars": 400
+            }
+          }
+        },
+        "note": "mcp_tools_test›get_settings"
+      },
+      "source": "mcp_tools_test›get_settings"
+    },
+    {
+      "id": "tf_update_fixed_slots_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [],
+        "tool": "update_fixed_slots",
+        "args": {
+          "slots": [
+            {
+              "name": "睡眠",
+              "weekdays": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7
+              ],
+              "start_min": 1410,
+              "end_min": 450
+            }
+          ]
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "update_fixed_slots",
+          "note": "一周节奏已整单替换（1 项）",
+          "data": {
+            "slots": [
+              {
+                "id": "uuid",
+                "name": "睡眠",
+                "weekdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ],
+                "start_min": 1410,
+                "end_min": 450
+              }
+            ]
+          }
+        }
+      },
+      "source": "mcp_tools_test›update_settings/fixed_slots 错误透传领域码（成功面为实现快照）"
+    },
+    {
+      "id": "tf_propose_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          }
+        ],
+        "tool": "propose_schedule",
+        "args": {
+          "date": "2026-10-06",
+          "items": [
+            {
+              "label": "高数：第三章习题",
+              "start_min": 540,
+              "end_min": 600,
+              "is_day_spark": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "propose_schedule",
+          "note": "提案已写入 2026-10-06：1 块待确认（proposed）",
+          "data": {
+            "date": "date",
+            "blocks": [
+              {
+                "id": "uuid",
+                "date": "date",
+                "start": "09:00",
+                "end": "10:00",
+                "start_min": 540,
+                "end_min": 600,
+                "plan_id": null,
+                "label": "高数：第三章习题",
+                "source": "ai",
+                "pinned": false,
+                "status": "proposed",
+                "postpone_count": 0,
+                "execution_quality": "full",
+                "is_day_spark": true,
+                "is_celebration": false,
+                "version": 0
+              }
+            ],
+            "replaced": 0,
+            "protection_manifesto": {
+              "shielded_free_minutes": 900,
+              "slack_ratio": 0.9375,
+              "suppressed_tasks_count": 0,
+              "narrative": "本次拦截 0 件未排入今天；守住了 900 分钟自由流动（留白比 94%）；当日核心 1 件。排程不是为了占满时间，而是为了捞起一颗珍珠。"
+            }
+          }
+        },
+        "note": "mcp_tools_test›propose_schedule"
+      },
+      "source": "mcp_tools_test›propose_schedule"
+    },
+    {
+      "id": "tf_adjust_add_pinned",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          }
+        ],
+        "tool": "adjust_blocks",
+        "args": {
+          "action": "add",
+          "date": "2026-10-06",
+          "start_min": 540,
+          "end_min": 600,
+          "label": "赶车"
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "adjust_blocks",
+          "id": "uuid",
+          "note": "已加入单块提案（pinned=true）；硬行程不参与填充率聚合",
+          "snapshot": {
+            "id": "uuid",
+            "date": "date",
+            "start": "09:00",
+            "end": "10:00",
+            "start_min": 540,
+            "end_min": 600,
+            "plan_id": null,
+            "label": "赶车",
+            "source": "ai",
+            "pinned": true,
+            "status": "proposed",
+            "postpone_count": 0,
+            "execution_quality": "full",
+            "is_day_spark": false,
+            "is_celebration": false,
+            "version": 0
+          }
+        },
+        "note": "mcp_tools_test›adjust_blocks"
+      },
+      "source": "mcp_tools_test›adjust_blocks"
+    },
+    {
+      "id": "tf_adjust_move_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          },
+          {
+            "tool": "adjust_blocks",
+            "args": {
+              "action": "add",
+              "date": "2026-10-06",
+              "start_min": 620,
+              "end_min": 680,
+              "label": "候补安排",
+              "pinned": false
+            }
+          }
+        ],
+        "tool": "adjust_blocks",
+        "args": {
+          "action": "move",
+          "block_id": {
+            "$ref": "1.snapshot.id"
+          },
+          "start_min": 700,
+          "end_min": 760,
+          "expected_version": 0
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "adjust_blocks",
+          "id": "uuid",
+          "note": "已调整",
+          "snapshot": {
+            "id": "uuid",
+            "date": "date",
+            "start": "11:40",
+            "end": "12:40",
+            "start_min": 700,
+            "end_min": 760,
+            "plan_id": null,
+            "label": "候补安排",
+            "source": "ai",
+            "pinned": false,
+            "status": "proposed",
+            "postpone_count": 0,
+            "execution_quality": "full",
+            "is_day_spark": false,
+            "is_celebration": false,
+            "version": 1
+          }
+        },
+        "note": "mcp_tools_test›adjust_blocks"
+      },
+      "source": "mcp_tools_test›adjust_blocks"
+    },
+    {
+      "id": "tf_get_schedule_clamp",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          }
+        ],
+        "tool": "get_schedule",
+        "args": {
+          "days": 99
+        }
+      },
+      "expect": {
+        "payload": {
+          "today": "date",
+          "days": [
+            {
+              "date": "date",
+              "exception": null,
+              "free_minutes": 960,
+              "blocks": [],
+              "fixed_slots": {
+                "on_date": [],
+                "spillover": [],
+                "suspended": false
+              },
+              "backgrounds": {
+                "global": [],
+                "plans": {}
+              },
+              "facts": {
+                "plans": {},
+                "unattributed": []
+              }
+            },
+            {
+              "date": "date",
+              "exception": null,
+              "free_minutes": 960,
+              "blocks": [],
+              "fixed_slots": {
+                "on_date": [],
+                "spillover": [],
+                "suspended": false
+              },
+              "backgrounds": {
+                "global": [],
+                "plans": {}
+              },
+              "facts": {
+                "plans": {},
+                "unattributed": []
+              }
+            },
+            {
+              "date": "date",
+              "exception": null,
+              "free_minutes": 960,
+              "blocks": [],
+              "fixed_slots": {
+                "on_date": [],
+                "spillover": [],
+                "suspended": false
+              },
+              "backgrounds": {
+                "global": [],
+                "plans": {}
+              },
+              "facts": {
+                "plans": {},
+                "unattributed": []
+              }
+            }
+          ],
+          "upcoming_facts": []
+        },
+        "note": "mcp_tools_test›get_schedule/get_history"
+      },
+      "source": "mcp_tools_test›get_schedule/get_history"
+    },
+    {
+      "id": "tf_get_history_window",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          }
+        ],
+        "tool": "get_history",
+        "args": {}
+      },
+      "expect": {
+        "payload": {
+          "days": [
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            },
+            {
+              "date": "date",
+              "done_count": 0,
+              "missed_count": 0,
+              "done_minutes": 0,
+              "day_spark_done": 0
+            }
+          ],
+          "totals": {
+            "done_count": 0,
+            "done_minutes": 0,
+            "day_spark_done": 0
+          },
+          "calibration": {
+            "deep_net_minutes": 0,
+            "expansion_factor": null,
+            "segment_done_rates": {
+              "morning": null,
+              "afternoon": null,
+              "evening": null
+            },
+            "quadrant_done_rates": {
+              "Q1": null,
+              "Q2": null,
+              "Q3": null,
+              "Q4": null
+            },
+            "tolerance": {
+              "minutes": 240,
+              "source": "default"
+            },
+            "energy_recovery": {
+              "celebration_done_count": 0,
+              "celebration_minutes": 0,
+              "fulfillment_rate": null
+            }
+          }
+        },
+        "note": "mcp_tools_test›get_schedule/get_history"
+      },
+      "source": "mcp_tools_test›get_schedule/get_history"
+    },
+    {
+      "id": "tf_suggest_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [],
+        "tool": "suggest_user_setting",
+        "args": {
+          "key": "user_rules",
+          "reason": "周五实际常加班"
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "key": "user_rules"
+        }
+      },
+      "source": "mcp_tools_test›suggest_user_setting"
+    },
+    {
+      "id": "tf_upsert_background_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [],
+        "tool": "upsert_background",
+        "args": {
+          "scope": "global",
+          "content": "海鲜严重过敏",
+          "raw_source_text": "我对海鲜过敏，别排海鲜",
+          "tags": [
+            "#健康"
+          ]
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "upsert_background",
+          "id": "uuid",
+          "note": "已记录背景",
+          "snapshot": {
+            "id": "uuid",
+            "scope": "global",
+            "plan_id": null,
+            "content": "海鲜严重过敏",
+            "raw_source_text": "我对海鲜过敏，别排海鲜",
+            "tags": [
+              "#健康"
+            ],
+            "applicable_dates": null,
+            "source": "ai_derived",
+            "captured_by": "me",
+            "version": 0
+          }
+        }
+      },
+      "source": "mcp_tools_test›背景双工具›upsert_background"
+    },
+    {
+      "id": "tf_merge_backgrounds",
+      "op": "tool_call",
+      "input": {
+        "seed": [
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "A 计划背景"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "B 计划背景"
+            }
+          }
+        ],
+        "tool": "merge_backgrounds",
+        "args": {
+          "ops": [
+            {
+              "kind": "delete",
+              "id": {
+                "$ref": "0.id"
+              }
+            },
+            {
+              "kind": "delete",
+              "id": {
+                "$ref": "1.id"
+              }
+            },
+            {
+              "kind": "upsert",
+              "scope": "global",
+              "content": "AB 合并"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "merge_backgrounds",
+          "note": "已原子归并：删 2 / 改 0 / 增 1",
+          "data": {
+            "deleted_count": 2,
+            "updated": [],
+            "created": [
+              "uuid"
+            ]
+          }
+        },
+        "note": "mcp_tools_test›背景双工具›merge_backgrounds"
+      },
+      "source": "mcp_tools_test›背景双工具›merge_backgrounds"
+    },
+    {
+      "id": "tf_upsert_facts_ok",
+      "op": "tool_call",
+      "input": {
+        "seed": [],
+        "tool": "upsert_facts",
+        "args": {
+          "category": "verbal",
+          "source_kind": "verbal",
+          "title": "【12306】您已购 D8724 次车票",
+          "origin": "shared",
+          "raw_text": "【12306】您已购10月20日D8724次"
+        }
+      },
+      "expect": {
+        "payload": {
+          "ok": true,
+          "op": "upsert_facts",
+          "id": "uuid",
+          "note": "已记下原文（待 AI 提炼）",
+          "snapshot": {
+            "id": "uuid",
+            "category": "verbal",
+            "source_kind": "verbal",
+            "state": "raw",
+            "origin": "shared",
+            "title": "【12306】您已购 D8724 次车票",
+            "badge": null,
+            "payload": {
+              "v": 1,
+              "raw_text": "【12306】您已购10月20日D8724次"
+            },
+            "captured_by": "me",
+            "plan_id": null,
+            "version": 0
+          }
+        }
+      },
+      "source": "mcp_facts_tools_test›upsert_facts 与 list_plans 摘要"
+    },
+    {
+      "id": "tj_version_conflict",
+      "op": "tool_reject",
+      "input": {
+        "seed": [
+          {
+            "tool": "add_plan",
+            "args": {
+              "title": "想去云南玩",
+              "min_viable_action": "x"
+            }
+          },
+          {
+            "tool": "update_plan",
+            "args": {
+              "id": {
+                "$ref": "0.snapshot.id"
+              },
+              "spec": "2026 云南行",
+              "expected_version": 0
+            }
+          }
+        ],
+        "tool": "update_plan",
+        "args": {
+          "id": {
+            "$ref": "0.snapshot.id"
+          },
+          "title": "踩踏",
+          "expected_version": 0
+        }
+      },
+      "expect": {
+        "code": -32602,
+        "data_code": "version_conflict",
+        "data_keys": [
+          "code",
+          "hint",
+          "latest"
+        ]
+      },
+      "source": "mcp_tools_test›add_plan→list_plans（version_conflict + latest 快照）"
+    },
+    {
+      "id": "tj_invalid_request",
+      "op": "tool_reject",
+      "input": {
+        "seed": [],
+        "tool": "update_settings",
+        "args": {
+          "today_energy": "low-but-not"
+        }
+      },
+      "expect": {
+        "code": -32602,
+        "data_code": "invalid_request",
+        "data_keys": [
+          "code"
+        ]
+      },
+      "source": "mcp_tools_test›update_settings 错误透传领域码"
+    },
+    {
+      "id": "tj_fixed_slots_invalid",
+      "op": "tool_reject",
+      "input": {
+        "seed": [],
+        "tool": "update_fixed_slots",
+        "args": {
+          "slots": [
+            {
+              "name": "x",
+              "weekdays": [
+                9
+              ],
+              "start_min": 0,
+              "end_min": 60
+            }
+          ]
+        }
+      },
+      "expect": {
+        "code": -32602,
+        "data_code": "invalid_request",
+        "data_keys": [
+          "code",
+          "hint"
+        ]
+      },
+      "source": "mcp_tools_test›update_settings 错误透传领域码（码值=实现快照）"
+    },
+    {
+      "id": "tj_schedule_rejected",
+      "op": "tool_reject",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          }
+        ],
+        "tool": "propose_schedule",
+        "args": {
+          "date": "2026-10-06",
+          "items": [
+            {
+              "start_min": 300,
+              "end_min": 360
+            }
+          ]
+        }
+      },
+      "expect": {
+        "code": -32602,
+        "data_code": "schedule_rejected",
+        "data_keys": [
+          "available_free_windows",
+          "code",
+          "date",
+          "hint",
+          "rejections"
+        ]
+      },
+      "source": "mcp_tools_test›propose_schedule（明细+available_free_windows）"
+    },
+    {
+      "id": "tj_forbidden",
+      "op": "tool_reject",
+      "input": {
+        "seed": [
+          {
+            "tool": "update_settings",
+            "args": {
+              "wake_time": 420,
+              "sleep_time": 1380
+            }
+          },
+          {
+            "tool": "adjust_blocks",
+            "args": {
+              "action": "add",
+              "date": "2026-10-06",
+              "start_min": 540,
+              "end_min": 600,
+              "label": "赶车"
+            }
+          }
+        ],
+        "tool": "adjust_blocks",
+        "args": {
+          "action": "move",
+          "block_id": {
+            "$ref": "1.snapshot.id"
+          },
+          "start_min": 700,
+          "expected_version": 0
+        }
+      },
+      "expect": {
+        "code": -32602,
+        "data_code": "forbidden",
+        "data_keys": [
+          "code",
+          "hint"
+        ]
+      },
+      "source": "mcp_tools_test›adjust_blocks（和平条款 §3）"
+    },
+    {
+      "id": "tj_suggest_bad_key",
+      "op": "tool_reject",
+      "input": {
+        "seed": [],
+        "tool": "suggest_user_setting",
+        "args": {
+          "key": "wake_time",
+          "reason": "x"
+        }
+      },
+      "expect": {
+        "code": -32602
+      },
+      "source": "mcp_tools_test›suggest_user_setting"
+    },
+    {
+      "id": "tj_suggest_missing",
+      "op": "tool_reject",
+      "input": {
+        "seed": [],
+        "tool": "suggest_user_setting",
+        "args": {
+          "key": "user_rules"
+        }
+      },
+      "expect": {
+        "code": -32602
+      },
+      "source": "mcp_tools_test›suggest_user_setting"
+    },
+    {
+      "id": "tj_budget_exceeded",
+      "op": "tool_reject",
+      "input": {
+        "seed": [
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 0"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 1"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 2"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 3"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 4"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 5"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 6"
+            }
+          },
+          {
+            "tool": "upsert_background",
+            "args": {
+              "scope": "global",
+              "content": "背景 7"
+            }
+          }
+        ],
+        "tool": "upsert_background",
+        "args": {
+          "scope": "global",
+          "content": "第9条"
+        }
+      },
+      "expect": {
+        "code": -32602,
+        "data_code": "budget_exceeded",
+        "data_keys": [
+          "code",
+          "current",
+          "final_state",
+          "hint",
+          "limit"
+        ]
+      },
+      "source": "mcp_tools_test›背景双工具›budget_exceeded（现场全量）"
+    }
+  ]
+}

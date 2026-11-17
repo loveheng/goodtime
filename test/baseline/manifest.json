@@ -1,0 +1,473 @@
+{
+  "device": "3B161700Y0600000",
+  "dpr": 3.5,
+  "resolution": "1272x2800",
+  "note": "ui-pages §8 84 组状态矩阵的采集产物；同设备同 DPR 逐字节可比",
+  "groups": [
+    {
+      "page": "settings_page",
+      "state": "S1",
+      "file": "settings_page_S1.png",
+      "bytes": 208058,
+      "sha256": "f4fccb5c62855c9069053ba13655a17688140eb050b77e32828f4101ad139994",
+      "capturedAt": "2026-11-14T11:23:08.364887"
+    },
+    {
+      "page": "settings_page",
+      "state": "S2",
+      "file": "settings_page_S2.png",
+      "bytes": 208058,
+      "sha256": "f4fccb5c62855c9069053ba13655a17688140eb050b77e32828f4101ad139994",
+      "capturedAt": "2026-11-14T11:23:10.178165"
+    },
+    {
+      "page": "rhythm_settings",
+      "state": "S1",
+      "file": "rhythm_settings_S1.png",
+      "bytes": 55962,
+      "sha256": "ba9180102909f92bd59d76be4c95438432d12e847a8a464e86fa399b80e97c8d",
+      "capturedAt": "2026-11-14T11:23:15.348175"
+    },
+    {
+      "page": "rhythm_settings",
+      "state": "S2",
+      "file": "rhythm_settings_S2.png",
+      "bytes": 55962,
+      "sha256": "ba9180102909f92bd59d76be4c95438432d12e847a8a464e86fa399b80e97c8d",
+      "capturedAt": "2026-11-14T11:23:17.047261"
+    },
+    {
+      "page": "prefs_settings",
+      "state": "S1",
+      "file": "prefs_settings_S1.png",
+      "bytes": 162988,
+      "sha256": "524f7639c4eb82246f51f62729c313b1eede213baa1ad215d4b003d3603c9914",
+      "capturedAt": "2026-11-14T11:23:18.792906"
+    },
+    {
+      "page": "prefs_settings",
+      "state": "S2",
+      "file": "prefs_settings_S2.png",
+      "bytes": 162988,
+      "sha256": "524f7639c4eb82246f51f62729c313b1eede213baa1ad215d4b003d3603c9914",
+      "capturedAt": "2026-11-14T11:23:20.531200"
+    },
+    {
+      "page": "exceptions_settings",
+      "state": "S1",
+      "file": "exceptions_settings_S1.png",
+      "bytes": 51613,
+      "sha256": "90e6a2b0f51dbb9fc18883135c3edbe2bec6ed6f49d12ec9649e0ab143a95cd6",
+      "capturedAt": "2026-11-14T11:23:22.235916"
+    },
+    {
+      "page": "exceptions_settings",
+      "state": "S2",
+      "file": "exceptions_settings_S2.png",
+      "bytes": 51613,
+      "sha256": "90e6a2b0f51dbb9fc18883135c3edbe2bec6ed6f49d12ec9649e0ab143a95cd6",
+      "capturedAt": "2026-11-14T11:23:23.946181"
+    },
+    {
+      "page": "update_page",
+      "state": "S1",
+      "file": "update_page_S1.png",
+      "bytes": 171347,
+      "sha256": "086f0a7229841a23bded4a0023ef953dd1a55107090938091c7ea0340a6b2e6c",
+      "capturedAt": "2026-11-14T11:23:25.691483"
+    },
+    {
+      "page": "update_page",
+      "state": "S2",
+      "file": "update_page_S2.png",
+      "bytes": 171347,
+      "sha256": "086f0a7229841a23bded4a0023ef953dd1a55107090938091c7ea0340a6b2e6c",
+      "capturedAt": "2026-11-14T11:23:27.437263"
+    },
+    {
+      "page": "onboarding",
+      "state": "base",
+      "file": "onboarding_base.png",
+      "bytes": 86989,
+      "sha256": "fdee43535cff163ba92677bed6bce7bda57ca7130849dedbd8da4867f250e85a",
+      "capturedAt": "2026-11-14T11:52:56.693955"
+    },
+    {
+      "page": "account_page",
+      "state": "base",
+      "file": "account_page_base.png",
+      "bytes": 82384,
+      "sha256": "3524476eff3d69983eb4a803b822383d59377a44b2ecc40271bfe62ede725225",
+      "capturedAt": "2026-11-14T11:52:58.422232"
+    },
+    {
+      "page": "fact_sheet",
+      "state": "BS_S1_block_sheet:baseline_ov_a",
+      "file": "fact_sheet_BS_S1_block_sheet:baseline_ov_a.png",
+      "bytes": 238476,
+      "sha256": "9994ec7864747a1e88e34ff623cfe50ac2d9c553752ff50d65b20e8ad441f43b",
+      "capturedAt": "2026-11-16T06:11:06.686581"
+    },
+    {
+      "page": "fact_sheet",
+      "state": "BS_S2_block_sheet:baseline_ov_a",
+      "file": "fact_sheet_BS_S2_block_sheet:baseline_ov_a.png",
+      "bytes": 199415,
+      "sha256": "cf8d33ce57b3566adff9f7e3af05fdc60fe5f1acdffd80b573fd74ed9c2447cb",
+      "capturedAt": "2026-11-16T06:11:09.098279"
+    },
+    {
+      "page": "fact_sheet",
+      "state": "BS_S3_block_sheet_edit:baseline_ov_a",
+      "file": "fact_sheet_BS_S3_block_sheet_edit:baseline_ov_a.png",
+      "bytes": 152332,
+      "sha256": "51401c905f27cf435c235344368d77c8bca91d5db4927ee355da6353aa645918",
+      "capturedAt": "2026-11-16T06:11:11.471975"
+    },
+    {
+      "page": "block_sheet",
+      "state": "BS_S1_block_sheet:baseline_ov_a",
+      "file": "block_sheet_BS_S1_block_sheet:baseline_ov_a.png",
+      "bytes": 238476,
+      "sha256": "9994ec7864747a1e88e34ff623cfe50ac2d9c553752ff50d65b20e8ad441f43b",
+      "capturedAt": "2026-11-16T06:11:13.858365"
+    },
+    {
+      "page": "block_sheet",
+      "state": "BS_S2_block_sheet:baseline_ov_a",
+      "file": "block_sheet_BS_S2_block_sheet:baseline_ov_a.png",
+      "bytes": 199415,
+      "sha256": "cf8d33ce57b3566adff9f7e3af05fdc60fe5f1acdffd80b573fd74ed9c2447cb",
+      "capturedAt": "2026-11-16T06:11:16.240275"
+    },
+    {
+      "page": "action_pass_bar",
+      "state": "APB_S1",
+      "file": "action_pass_bar_APB_S1.png",
+      "bytes": 132862,
+      "sha256": "1b504027f3f5178722a42d3dccbe67dbe06c7cac0c501ab8b6c36db446208e9f",
+      "capturedAt": "2026-11-16T06:11:17.974006"
+    },
+    {
+      "page": "action_pass_bar",
+      "state": "APB_S2",
+      "file": "action_pass_bar_APB_S2.png",
+      "bytes": 134027,
+      "sha256": "525d4462f9b9797166b32b16b5a39edb9ee146f80b5e6b488412651f399cb44b",
+      "capturedAt": "2026-11-16T06:11:19.698747"
+    },
+    {
+      "page": "app_gate",
+      "state": "base",
+      "file": "app_gate_base.png",
+      "bytes": 59772,
+      "sha256": "fb2612dacf365d0e68946dcddba7d94a453c9fd0f73f11263064ac167193cf70",
+      "capturedAt": "2026-11-16T06:11:28.278420"
+    },
+    {
+      "page": "plans_page",
+      "state": "S1",
+      "file": "plans_page_S1.png",
+      "bytes": 754978,
+      "sha256": "35632fe8dfeca24ad3466ee082aa0d5029daefdea6a91ad9b78f7df1cef3e64a",
+      "capturedAt": "2026-11-16T06:43:12.386953"
+    },
+    {
+      "page": "plans_page",
+      "state": "S2",
+      "file": "plans_page_S2.png",
+      "bytes": 47021,
+      "sha256": "cc870dd9f632d92e63469dbcc7aa72c8e5faaa8cd0ce38912af69fe3e4d386c0",
+      "capturedAt": "2026-11-16T06:43:14.162743"
+    },
+    {
+      "page": "gallery",
+      "state": "pass1",
+      "file": "gallery_pass1.png",
+      "bytes": 42889,
+      "sha256": "dbef4dd98c06f9d5714f1764cda51dfc0c5d1d7561c9960b229ee09cfcc72481",
+      "capturedAt": "2026-11-16T06:43:23.438428"
+    },
+    {
+      "page": "gallery",
+      "state": "pass2",
+      "file": "gallery_pass2.png",
+      "bytes": 44765,
+      "sha256": "38ee55aa0a7c78cd75e918fb9a72963b5b30d35a908f54b757b1d4f30e4a06dd",
+      "capturedAt": "2026-11-16T06:43:25.195185"
+    },
+    {
+      "page": "gallery",
+      "state": "fab",
+      "file": "gallery_fab.png",
+      "bytes": 23659,
+      "sha256": "62ac4d605c014542e4f818c21fa74a6fa5a7791d2a70bcb5eb811926fee75dbb",
+      "capturedAt": "2026-11-16T06:43:26.899511"
+    },
+    {
+      "page": "gallery",
+      "state": "fabDraft",
+      "file": "gallery_fabDraft.png",
+      "bytes": 24137,
+      "sha256": "6d3273ff36fa339ccd0fc17a72f1090d6216e483c36312299cafbc069b9002d9",
+      "capturedAt": "2026-11-16T06:43:28.591806"
+    },
+    {
+      "page": "gallery",
+      "state": "rejectD",
+      "file": "gallery_rejectD.png",
+      "bytes": 180130,
+      "sha256": "957b95ee63f259c29aec02b59367d6d14d0f110c7d2d328364df6a42407909a8",
+      "capturedAt": "2026-11-16T06:43:30.335375"
+    },
+    {
+      "page": "gallery",
+      "state": "rejectC",
+      "file": "gallery_rejectC.png",
+      "bytes": 180130,
+      "sha256": "957b95ee63f259c29aec02b59367d6d14d0f110c7d2d328364df6a42407909a8",
+      "capturedAt": "2026-11-16T06:43:32.082888"
+    },
+    {
+      "page": "collab_my_qr",
+      "state": "S1",
+      "file": "collab_my_qr_S1.png",
+      "bytes": 134383,
+      "sha256": "c65197251c7a8d3ca7bcaaacaafcc906f16f0bb60eac67486f6da1b7b60c93fd",
+      "capturedAt": "2026-11-16T15:31:54.341344"
+    },
+    {
+      "page": "collab_account",
+      "state": "S1",
+      "file": "collab_account_S1.png",
+      "bytes": 156871,
+      "sha256": "bd42160f0a817d7a97a8de1bdfbbc64ce3e5f47a5cd2fa9b6ad4b975caf580b5",
+      "capturedAt": "2026-11-16T15:34:04.357540"
+    },
+    {
+      "page": "collab_decision_matrix",
+      "state": "S1",
+      "file": "collab_decision_matrix_S1.png",
+      "bytes": 163035,
+      "sha256": "1905e6ced1e0f3eb54e9a43495813f65742d5f5f62deddb96801869bf7e74693",
+      "capturedAt": "2026-11-16T15:41:48.590643"
+    },
+    {
+      "page": "collab_audit_timeline",
+      "state": "S1",
+      "file": "collab_audit_timeline_S1.png",
+      "bytes": 110430,
+      "sha256": "861770ac5c4cb8c4a13f3994db7135a0a1a56be93dff60f15fb137bfcc811f15",
+      "capturedAt": "2026-11-16T15:43:02.485845"
+    },
+    {
+      "page": "collab_canvas",
+      "state": "S1",
+      "file": "collab_canvas_S1.png",
+      "bytes": 117819,
+      "sha256": "5b717b20ee41fb9243cfda09345cea4a1e344e57b0d984ab638042100ef7de72",
+      "capturedAt": "2026-11-16T15:54:09.715481"
+    },
+    {
+      "page": "collab_safety_number",
+      "state": "S1",
+      "file": "collab_safety_number_S1.png",
+      "bytes": 145135,
+      "sha256": "a6773fcde1123adb6c1681052702ab173379d705a066ea6865dd83d6ff262dde",
+      "capturedAt": "2026-11-16T17:12:12.547250"
+    },
+    {
+      "page": "collab_friends",
+      "state": "S1",
+      "file": "collab_friends_S1.png",
+      "bytes": 145263,
+      "sha256": "f2ee5df07bbcb0ba0f17524ff0134977cc205c222be0850dfba8c2b2583c966d",
+      "capturedAt": "2026-11-17T08:50:03.136604"
+    },
+    {
+      "page": "collab_member_calendar",
+      "state": "S1",
+      "file": "collab_member_calendar_S1.png",
+      "bytes": 119106,
+      "sha256": "4f513cc60f769d155aef3abf3ca71d2b10533d99d0b677859c227ab4665df3e3",
+      "capturedAt": "2026-11-17T08:50:22.718277"
+    },
+    {
+      "page": "collab_compose_bundle",
+      "state": "S1",
+      "file": "collab_compose_bundle_S1.png",
+      "bytes": 135933,
+      "sha256": "231c6976f5ae46403ff2e9c9fe5b6b0cce4f674dc6af0a3ca57a675128631b7c",
+      "capturedAt": "2026-11-17T08:51:16.965290"
+    },
+    {
+      "page": "mcp",
+      "state": "S1",
+      "file": "mcp_S1.png",
+      "bytes": 204091,
+      "sha256": "4cd349f1828374f2bd33f0f09e001865979e067b1e2dc7c29ee08c098c020c63",
+      "capturedAt": "2026-11-17T14:45:26.267221"
+    },
+    {
+      "page": "schedule_page",
+      "state": "S1",
+      "file": "schedule_page_S1.png",
+      "bytes": 204091,
+      "sha256": "4cd349f1828374f2bd33f0f09e001865979e067b1e2dc7c29ee08c098c020c63",
+      "capturedAt": "2026-11-17T14:45:31.319852"
+    },
+    {
+      "page": "schedule_page",
+      "state": "S2",
+      "file": "schedule_page_S2.png",
+      "bytes": 204091,
+      "sha256": "4cd349f1828374f2bd33f0f09e001865979e067b1e2dc7c29ee08c098c020c63",
+      "capturedAt": "2026-11-17T14:45:33.063186"
+    },
+    {
+      "page": "schedule_page",
+      "state": "S3",
+      "file": "schedule_page_S3.png",
+      "bytes": 204091,
+      "sha256": "4cd349f1828374f2bd33f0f09e001865979e067b1e2dc7c29ee08c098c020c63",
+      "capturedAt": "2026-11-17T14:45:34.787725"
+    },
+    {
+      "page": "plan_facts",
+      "state": "PLAN_S1",
+      "file": "plan_facts_PLAN_S1.png",
+      "bytes": 78113,
+      "sha256": "00870b18f024c9cc7921be551e5e2e2f6ed59f3b96d4ebca2630e9588e9a37f6",
+      "capturedAt": "2026-11-17T14:45:39.846763"
+    },
+    {
+      "page": "plan_background",
+      "state": "PLAN_S1",
+      "file": "plan_background_PLAN_S1.png",
+      "bytes": 77918,
+      "sha256": "f1e8d7029a2e8d3e115bac5ee18bc7137b768a985cf5fbdc6e993ebbdcabfc05",
+      "capturedAt": "2026-11-17T14:45:43.196101"
+    },
+    {
+      "page": "schedule_page",
+      "state": "S1_block_sheet:baseline_ov_a",
+      "file": "schedule_page_S1_block_sheet:baseline_ov_a.png",
+      "bytes": 77918,
+      "sha256": "f1e8d7029a2e8d3e115bac5ee18bc7137b768a985cf5fbdc6e993ebbdcabfc05",
+      "capturedAt": "2026-11-17T14:45:50.591512"
+    },
+    {
+      "page": "plan_detail",
+      "state": "PLAN_S1",
+      "file": "plan_detail_PLAN_S1.png",
+      "bytes": 115172,
+      "sha256": "b645f11c6dd672da49b95200cbf1c201c220858c86411f643e31f6e188ffe0f5",
+      "capturedAt": "2026-11-17T14:45:55.834814"
+    },
+    {
+      "page": "plan_detail",
+      "state": "PLAN_S2",
+      "file": "plan_detail_PLAN_S2.png",
+      "bytes": 115172,
+      "sha256": "b645f11c6dd672da49b95200cbf1c201c220858c86411f643e31f6e188ffe0f5",
+      "capturedAt": "2026-11-17T14:45:57.513483"
+    },
+    {
+      "page": "plan_facts",
+      "state": "PLAN_S2",
+      "file": "plan_facts_PLAN_S2.png",
+      "bytes": 78113,
+      "sha256": "00870b18f024c9cc7921be551e5e2e2f6ed59f3b96d4ebca2630e9588e9a37f6",
+      "capturedAt": "2026-11-17T14:45:59.153470"
+    },
+    {
+      "page": "plan_background",
+      "state": "PLAN_S2",
+      "file": "plan_background_PLAN_S2.png",
+      "bytes": 77918,
+      "sha256": "f1e8d7029a2e8d3e115bac5ee18bc7137b768a985cf5fbdc6e993ebbdcabfc05",
+      "capturedAt": "2026-11-17T14:46:00.795830"
+    },
+    {
+      "page": "mcp",
+      "state": "S2",
+      "file": "mcp_S2.png",
+      "bytes": 204091,
+      "sha256": "4cd349f1828374f2bd33f0f09e001865979e067b1e2dc7c29ee08c098c020c63",
+      "capturedAt": "2026-11-17T14:46:02.475192"
+    },
+    {
+      "page": "collab_friends",
+      "state": "S2",
+      "file": "collab_friends_S2.png",
+      "bytes": 113727,
+      "sha256": "ae460936ca3ff324de6a4557dc9da3109d2092401850291aae3b317131eeab8b",
+      "capturedAt": "2026-11-17T14:46:16.501011"
+    },
+    {
+      "page": "collab_member_calendar",
+      "state": "S2",
+      "file": "collab_member_calendar_S2.png",
+      "bytes": 122870,
+      "sha256": "07c8ffcb6256c242379a52cc27a96d5fb8fc8b44eaa72c9c0a7d5e750988549c",
+      "capturedAt": "2026-11-17T14:46:25.758998"
+    },
+    {
+      "page": "collab_decision_matrix",
+      "state": "S2",
+      "file": "collab_decision_matrix_S2.png",
+      "bytes": 140150,
+      "sha256": "3bae9170b26e3712ef1c2dc3ee0aa500df90097b7c014856173bffcd75c478c4",
+      "capturedAt": "2026-11-17T14:46:34.984119"
+    },
+    {
+      "page": "collab_audit_timeline",
+      "state": "S2",
+      "file": "collab_audit_timeline_S2.png",
+      "bytes": 98108,
+      "sha256": "67a0a3fb016569f3ef8ac85a9e0499443c4e48c8c5647ca531d69d68f3ea2a0a",
+      "capturedAt": "2026-11-17T14:46:44.196963"
+    },
+    {
+      "page": "collab_canvas",
+      "state": "S2",
+      "file": "collab_canvas_S2.png",
+      "bytes": 101997,
+      "sha256": "5820549c7aa2ab1d093dd38483813194d9c801a11e91cb43b429831c1f965ac6",
+      "capturedAt": "2026-11-17T14:46:53.408289"
+    },
+    {
+      "page": "collab_compose_bundle",
+      "state": "S2",
+      "file": "collab_compose_bundle_S2.png",
+      "bytes": 149979,
+      "sha256": "04c705d534ba29bf203cdb4ad9ba7c02046145c4364a2f0808d884d1dc48a207",
+      "capturedAt": "2026-11-17T14:47:02.622999"
+    },
+    {
+      "page": "collab_my_qr",
+      "state": "S2",
+      "file": "collab_my_qr_S2.png",
+      "bytes": 148080,
+      "sha256": "e7d0b04803fe4817370ea141e0f456f655072d9c792a8db8af69cac285c6ed87",
+      "capturedAt": "2026-11-17T14:47:11.827003"
+    },
+    {
+      "page": "collab_safety_number",
+      "state": "S2",
+      "file": "collab_safety_number_S2.png",
+      "bytes": 163205,
+      "sha256": "af9112e9b63ace556d39212cb1ffd3bd22e0e9d27369701306d0a7b50372bc08",
+      "capturedAt": "2026-11-17T14:47:21.040072"
+    },
+    {
+      "page": "collab_account",
+      "state": "S2",
+      "file": "collab_account_S2.png",
+      "bytes": 108611,
+      "sha256": "57efa3cdfd9cd76e31eb8a05774651eb33cda69097007e88941df238947b8cf4",
+      "capturedAt": "2026-11-17T14:47:30.247635"
+    }
+  ],
+  "capturedAt": "2026-11-17T14:47:30.247862"
+}

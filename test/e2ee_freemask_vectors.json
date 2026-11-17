@@ -1,0 +1,258 @@
+{
+  "set": "e2ee-freemask",
+  "schema": 1,
+  "generated": "2026-11-14",
+  "generator": "tool/golden/gen_freemask_vectors.dart",
+  "reference": "lib/collab/freemask.dart（Dart 参考实现，向量生成时点冻结）",
+  "consumers": [
+    "test/golden/golden_e2ee_test.dart（Dart 基准执行器）",
+    "Kotlin 对拍（P2）"
+  ],
+  "encoding": "bytes 字段一律小写 hex；时间字段为毫秒时间戳（绝对值，无本地时区依赖）；status 缺省 ok / reject_argument / reject_auth",
+  "rules": {
+    "bucket_ms": "kFreeMaskBucketMs = 1800000（30 分钟量化桶）",
+    "quantize": "半开区间判据 busyStart < bucketEnd && bucketStart < busyEnd；桶数 = ceil((end-start)/bucket)；start >= end 拒绝",
+    "bitwise_and": "逐位全员与；掩码同长强制；空列表拒绝",
+    "ecies": "X25519(ek_seed→EK, spk_pub) 裸 DH 输出（无 KDF）即 AES-256-GCM 密钥；明文 = signal JSON 紧凑序列化（字段序 target_start,target_end,mask，无空白）；12B nonce；信封字段 ek_pub/nonce/cipher_text/mac 均为 hex",
+    "envelope_json": "经临时信箱透传时信封字段为 base64（键 ek_pub/nonce/cipher_text/mac）；本向量集以 hex 记录，对拍前按字段转码"
+  },
+  "cases": [
+    {
+      "id": "x25519_pub_ek",
+      "op": "x25519_publickey",
+      "input": {
+        "seed": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+      },
+      "expect": {
+        "pub": "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254"
+      }
+    },
+    {
+      "id": "x25519_pub_spk",
+      "op": "x25519_publickey",
+      "input": {
+        "seed": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+      },
+      "expect": {
+        "pub": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a"
+      }
+    },
+    {
+      "id": "x25519_dh_ek_spk",
+      "op": "x25519_dh",
+      "input": {
+        "ek_seed": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "spk_pub": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a"
+      },
+      "expect": {
+        "shared": "04c304fb1ca83cee75e206344231f33797e07d9929db670994b7c6fbeb1dc255"
+      }
+    },
+    {
+      "id": "x25519_dh_spk_ek",
+      "op": "x25519_dh",
+      "input": {
+        "ek_seed": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "spk_pub": "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254"
+      },
+      "expect": {
+        "shared": "04c304fb1ca83cee75e206344231f33797e07d9929db670994b7c6fbeb1dc255"
+      }
+    },
+    {
+      "id": "quantize_two_hour_busy",
+      "op": "quantize",
+      "input": {
+        "target_start": 1792832400000,
+        "target_end": 1792839600000,
+        "busy": [
+          [
+            1792836000000,
+            1792839600000
+          ]
+        ]
+      },
+      "expect": {
+        "mask": "1100"
+      }
+    },
+    {
+      "id": "quantize_1ms_pin",
+      "op": "quantize",
+      "input": {
+        "target_start": 1792832400000,
+        "target_end": 1792839600000,
+        "busy": [
+          [
+            1792836000000,
+            1792836000001
+          ]
+        ]
+      },
+      "expect": {
+        "mask": "1101"
+      }
+    },
+    {
+      "id": "quantize_100min_tail",
+      "op": "quantize",
+      "input": {
+        "target_start": 1792832400000,
+        "target_end": 1792838400000,
+        "busy": []
+      },
+      "expect": {
+        "mask": "1111"
+      }
+    },
+    {
+      "id": "quantize_empty_reject",
+      "op": "quantize",
+      "input": {
+        "target_start": 1792832400000,
+        "target_end": 1792832400000,
+        "busy": []
+      },
+      "expect": {
+        "status": "reject_argument"
+      }
+    },
+    {
+      "id": "quantize_aligned_busy",
+      "op": "quantize",
+      "input": {
+        "target_start": 1792832400000,
+        "target_end": 1792839600000,
+        "busy": [
+          [
+            1792834200000,
+            1792836000000
+          ]
+        ]
+      },
+      "expect": {
+        "mask": "1011"
+      }
+    },
+    {
+      "id": "and_three_members",
+      "op": "bitwise_and",
+      "input": {
+        "masks": [
+          "11010",
+          "11110",
+          "01111"
+        ]
+      },
+      "expect": {
+        "mask": "01010"
+      }
+    },
+    {
+      "id": "and_single",
+      "op": "bitwise_and",
+      "input": {
+        "masks": [
+          "1010"
+        ]
+      },
+      "expect": {
+        "mask": "1010"
+      }
+    },
+    {
+      "id": "and_empty_reject",
+      "op": "bitwise_and",
+      "input": {
+        "masks": []
+      },
+      "expect": {
+        "status": "reject_argument"
+      }
+    },
+    {
+      "id": "and_len_mismatch_reject",
+      "op": "bitwise_and",
+      "input": {
+        "masks": [
+          "101",
+          "1010"
+        ]
+      },
+      "expect": {
+        "status": "reject_argument"
+      }
+    },
+    {
+      "id": "ecies_seal_signal",
+      "op": "ecies_seal",
+      "input": {
+        "ek_seed": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "spk_seed": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "spk_pub": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+        "nonce": "c0c1c2c3c4c5c6c7c8c9cacb",
+        "signal": {
+          "target_start": 1792832400000,
+          "target_end": 1792864800000,
+          "mask": "110011010"
+        },
+        "signal_json": "{\"target_start\":1792832400000,\"target_end\":1792864800000,\"mask\":\"110011010\"}"
+      },
+      "expect": {
+        "ek_pub": "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254",
+        "cipher_text": "89540de3d910df8ff25d521adb390113e25e729084a47eedc9eba8a81167771751d1b0f7a96ed686f906fac7b19da2971c93fde2f90641d83f1dd59cc2293ee0d62761750c86baf1e8164e0a",
+        "mac": "1321922c3e971ca3932a8282d7380fd2"
+      }
+    },
+    {
+      "id": "ecies_open_ok",
+      "op": "ecies_open",
+      "input": {
+        "spk_seed": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "envelope": {
+          "ek_pub": "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254",
+          "nonce": "c0c1c2c3c4c5c6c7c8c9cacb",
+          "cipher_text": "89540de3d910df8ff25d521adb390113e25e729084a47eedc9eba8a81167771751d1b0f7a96ed686f906fac7b19da2971c93fde2f90641d83f1dd59cc2293ee0d62761750c86baf1e8164e0a",
+          "mac": "1321922c3e971ca3932a8282d7380fd2"
+        }
+      },
+      "expect": {
+        "target_start": 1792832400000,
+        "target_end": 1792864800000,
+        "mask": "110011010"
+      }
+    },
+    {
+      "id": "ecies_open_wrong_spk",
+      "op": "ecies_open",
+      "input": {
+        "spk_seed": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+        "envelope": {
+          "ek_pub": "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254",
+          "nonce": "c0c1c2c3c4c5c6c7c8c9cacb",
+          "cipher_text": "89540de3d910df8ff25d521adb390113e25e729084a47eedc9eba8a81167771751d1b0f7a96ed686f906fac7b19da2971c93fde2f90641d83f1dd59cc2293ee0d62761750c86baf1e8164e0a",
+          "mac": "1321922c3e971ca3932a8282d7380fd2"
+        }
+      },
+      "expect": {
+        "status": "reject_auth"
+      }
+    },
+    {
+      "id": "ecies_open_tampered",
+      "op": "ecies_open",
+      "input": {
+        "spk_seed": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+        "envelope": {
+          "ek_pub": "358072d6365880d1aeea329adf9121383851ed21a28e3b75e965d0d2cd166254",
+          "nonce": "c0c1c2c3c4c5c6c7c8c9cacb",
+          "cipher_text": "76540de3d910df8ff25d521adb390113e25e729084a47eedc9eba8a81167771751d1b0f7a96ed686f906fac7b19da2971c93fde2f90641d83f1dd59cc2293ee0d62761750c86baf1e8164e0a",
+          "mac": "1321922c3e971ca3932a8282d7380fd2"
+        }
+      },
+      "expect": {
+        "status": "reject_auth"
+      }
+    }
+  ]
+}
