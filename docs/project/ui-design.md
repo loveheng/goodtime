@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-11-15
+updated: 2026-11-18
 ---
 
 # 拾光 UI 设计规范 · 心理层日程台账风格
@@ -73,6 +73,7 @@ updated: 2026-11-15
 - **时间轴基准比例尺：1dp = 1min（60dp/h）**——常规作息聚焦窗（约 16.5h）总高 ≈990dp，单手 1–2 屏通览全天，认知负荷最低。
 - **最小触控热区钳制：块渲染高度 clamp(min: 44dp)**（Material 最小触控目标）——物理时长 <44min 的块强制撑高至 44dp、内部单行居中排版（微型火种胶囊 5min 是主要受益者）。借用顺序：先借后置自由流动区/普通空白 → 仍不足则**向下溢出覆盖**（钳制块时间轴内 z 序最高 + 4dp 投影），被覆盖的补给带/块按真实 y 位渲染、可见部分走 §3.4 三级过滤——呼吸律补给带不被钳制清零。
 - **主题模式**：设置页「外观」三档（跟随系统/浅色/深色，默认跟随系统）；浅/深同 seed `#283593`（=deepFocus 底色）经 `fromSeed` 派生，深色换 `brightness: dark`，语义色板经 tokens.dart `StColors.applyBrightness` 整体切换（§1.2）。`theme_mode` 为 **uiOnly 设置键**：AI 经 update_settings 触碰即拒，外观是人的感官偏好。
+- **底部导航栏高度：总 footprint 72dp（含手势带 24dp）、图标+文字标签（2026-11-18 用户拍板五轮修订，云闪付同级）**——不用 M3 默认 80dp；**双层结构内建 bottom inset 保留**（图标+标签悬于手势带上方，清零 inset 会压住药丸/裁切文字）；**选中态无药丸底**（参考云闪付：选中=primary 着色、未选中=中性灰，纯靠色彩区分）；**壳层 content 禁止重复扣减手势带**（Scaffold bottomBar padding 已含手势带，再叠 `windowInsetsPadding(Bottom)` 会导致内容区底界恒定、导航区缩减无效——五轮返工根因）；**下滑隐藏/上滑重现为设置项「下滑隐藏导航栏」默认关**（2026-11-18 拍板：默认常驻，开启后 scroll-aware chrome——下滑让出导航区给内容，上滑即回，NestedScroll 连接于壳层 content）。
 
 ### 3.2 层叠 Z 序
 
@@ -85,6 +86,7 @@ updated: 2026-11-15
 | 长按坍缩 | 300ms ease-out（块高收缩至 5min 等比，剩余释放为补给带） |
 | 右滑融化 | 400ms（不透明度+上移消散，**绝不显红**） |
 | 安全线点亮 | spring 单次，阻尼 **0.75** / 刚度 **400**，**名义感知时长 ≈250ms**——spring 无固定时长（时长由物理参数决定），250ms 是感知窗口径，不是传给动画 API 的时长参数 |
+| 导航过渡（2026-11-18 新增档，用户拍板「跳转不自然」） | 220ms ease-out 交叉淡入淡出：页面进出/子路由推入返回统一用此档；壳层大标题随子路由进出做淡出+垂直收展 |
 
 曲线与弹簧物理参数的单一事实源 = `tokens.dart` `StMotion`（`easeOutX1..easeOutY2` / `easeInOutX1..easeInOutY2` / `fastOutSlowInX1..fastOutSlowInY2` / `springDampingRatio` / `springStiffness`），Kotlin 侧逐字翻译为 `CubicBezierEasing` / `Spring`；**严禁实现时现推参数，或以「原生手感更佳」覆盖**（native-migration §9.1.2 禁止项）。
 

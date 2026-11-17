@@ -7,7 +7,19 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.height
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import app.shiguang.core.tokens.StMotion
+import app.shiguang.shiguang.ui.theme.ShiguangMotion
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
@@ -18,6 +30,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.SnackbarHostState
@@ -77,6 +90,7 @@ import app.shiguang.shiguang.ui.schedule.SchedulePage
 import app.shiguang.shiguang.ui.schedule.TodayViewModel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
+import app.shiguang.core.model.SettingsKeys
 import kotlinx.serialization.json.contentOrNull
 
 /**
@@ -95,11 +109,34 @@ fun ShiguangAppShell(modifier: Modifier = Modifier) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var floatingSnackbar by remember { mutableStateOf(false) }
+    // ui-design §3.1（2026-11-18 拍板）：下滑隐藏/上滑重现改为设置项 nav_auto_hide（默认关=常驻）
+    var navBarVisible by remember { mutableStateOf(true) }
     // 错误底色状态（update_page 转正清单 §A：error 口径 SnackBar——壳层统一提升）
     var errorSnackbar by remember { mutableStateOf(false) }
     val vm: TodayViewModel = viewModel(factory = TodayViewModel.factory)
     val plansVm: PlansViewModel = viewModel(factory = PlansViewModel.factory)
     val settingsVm: SettingsViewModel = viewModel(factory = SettingsViewModel.factory)
+    // nav_auto_hide（uiOnly，默认 false=常驻）：开启时才挂滚动隐现连接（设置变更重挂连接）
+    val settingsUi by settingsVm.uiState.collectAsState()
+    val navAutoHide = (settingsUi.settings?.get(SettingsKeys.NAV_AUTO_HIDE) as? JsonPrimitive)
+        ?.contentOrNull == "true"
+    val navBarScrollConnection = remember(navAutoHide) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                if (!navAutoHide) {
+                    navBarVisible = true // 关闭开关（或默认）：强制常驻
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+                val dy = available.y
+                if (dy < -40f) navBarVisible = false // 下滑内容→隐
+                else if (dy > 40f) navBarVisible = true // 上滑→回
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
     val subpagesVm: SubpagesViewModel = viewModel(factory = SubpagesViewModel.factory)
     var quickNoteInitial by remember { mutableStateOf<QuickNoteDraft?>(null) }
     var showQuickNote by remember { mutableStateOf(false) }
@@ -228,7 +265,20 @@ fun ShiguangAppShell(modifier: Modifier = Modifier) {
 
     val backStack by nav.currentBackStackEntryAsState()
     val isToday = backStack?.destination?.hasRoute(ShiguangRoute.Today::class.qualifiedName.orEmpty(), null) == true
-    val isPlans = backStack?.destination?.hasRoute(ShiguangRoute.Plans::class.qualifiedName.orEmpty(), null) == true
+    // Day-2 残留修复：子路由（PlanDetail/PlanBackground/PlanFacts/Plan 族其余 + Collab 族）
+    // 也要归入所属 Tab——否则标题/底部选中恒落「设置」else 分支（用户报「跳转有残留」）
+    val destRoute = backStack?.destination?.route ?: ""
+    val routePrefix = "app.shiguang.shiguang.ui.nav.ShiguangRoute."
+    val isPlansTab = destRoute == routePrefix + "Plans"
+    val isPlans = isPlansTab ||
+        destRoute.startsWith(routePrefix + "PlanDetail") ||
+        destRoute.startsWith(routePrefix + "PlanBackground") ||
+        destRoute.startsWith(routePrefix + "PlanFacts")
+    val isTodayFamily = isToday || destRoute.startsWith(routePrefix + "Collab")
+    val isSettingsMain = destRoute == routePrefix + "Settings"
+    // 主三 Tab 才显示壳层大标题与 Tab 级修饰；子路由（详情/编辑器族）自带标题栏
+    val isTopLevel = isTodayFamily && isToday || isPlansTab || isSettingsMain
+    val isTopLevelFamily = isTodayFamily || isPlans || isSettingsMain
     val tabTitle = when {
         isToday -> "日程"
         isPlans -> "清单"
@@ -255,43 +305,95 @@ fun ShiguangAppShell(modifier: Modifier = Modifier) {
             }
         },
         topBar = {
-            TopAppBar(
-                title = { Text(tabTitle) },
-                actions = {
-                    // 协同日程入口（ui-pages §9.1：日程 Tab 顶部「👥」图标钮——T4.9 接线）
-                    if (isToday) {
-                        IconButton(onClick = { nav.navigate(ShiguangRoute.CollabMemberCalendar) }) {
-                            Icon(Icons.Outlined.Groups, contentDescription = "协同日程")
+            // 子路由（详情/编辑器族）自带标题栏，隐藏壳层大标题避免双标题堆叠；
+            // 进出走 §3.3 导航过渡档：淡出+垂直收展（220ms ease-out）
+            AnimatedVisibility(
+                visible = isTopLevel,
+                enter = fadeIn(tween(StMotion.navTransitionMs, easing = ShiguangMotion.easeOut)) +
+                    expandVertically(animationSpec = tween(StMotion.navTransitionMs, easing = ShiguangMotion.easeOut)),
+                exit = fadeOut(tween(StMotion.navTransitionMs, easing = ShiguangMotion.easeOut)) +
+                    shrinkVertically(animationSpec = tween(StMotion.navTransitionMs, easing = ShiguangMotion.easeOut)),
+            ) {
+                TopAppBar(
+                    title = { Text(tabTitle) },
+                    actions = {
+                        // 协同日程入口（ui-pages §9.1：日程 Tab 顶部「👥」图标钮——T4.9 接线）
+                        if (isToday) {
+                            IconButton(onClick = { nav.navigate(ShiguangRoute.CollabMemberCalendar) }) {
+                                Icon(Icons.Outlined.Groups, contentDescription = "协同日程")
+                            }
                         }
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = isToday,
-                    onClick = { nav.navigateTab(ShiguangRoute.Today) },
-                    icon = { Icon(Icons.Outlined.CalendarMonth, contentDescription = null) },
-                    label = { Text("日程") },
-                )
-                NavigationBarItem(
-                    selected = isPlans,
-                    onClick = { nav.navigateTab(ShiguangRoute.Plans) },
-                    icon = { Icon(Icons.AutoMirrored.Outlined.ListAlt, contentDescription = null) },
-                    label = { Text("清单") },
-                )
-                NavigationBarItem(
-                    selected = !isToday && !isPlans,
-                    onClick = { nav.navigateTab(ShiguangRoute.Settings) },
-                    icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-                    label = { Text("设置") },
+                    },
                 )
             }
         },
+        bottomBar = {
+            // ui-design §3.1（2026-11-18 拍板）：64dp 仅图标（无标签，双层结构在 64dp 含手势带内裁切）
+            // + 下滑隐藏/上滑重现（scroll-aware chrome，slide 动效）
+            AnimatedVisibility(
+                visible = navBarVisible,
+                enter = slideInVertically { it },
+                exit = slideOutVertically { it },
+            ) {
+                NavigationBar(
+                    modifier = Modifier.height(72.dp),
+                    // 内建 bottom inset（手势带 24dp）保留：图标+标签悬于其上，
+                    // 与系统小横条不重叠（对齐云闪付同级高度）
+                    containerColor = MaterialTheme.colorScheme.background,
+                ) {
+                    // ui-design §3.1（2026-11-18 拍板，云闪付参考）：选中态无药丸底，
+                    // 纯靠图标着色区分——选中=primary，未选中=中性灰
+                    val navItemColors = NavigationBarItemDefaults.colors(
+                        indicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    )
+                    NavigationBarItem(
+                        selected = isTodayFamily,
+                        onClick = { nav.navigateTab(ShiguangRoute.Today) },
+                        icon = {
+                            Icon(
+                                Icons.Outlined.CalendarMonth,
+                                contentDescription = "日程",
+                                tint = if (isTodayFamily) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        label = { Text("日程") },
+                        colors = navItemColors,
+                    )
+                    NavigationBarItem(
+                        selected = isPlans,
+                        onClick = { nav.navigateTab(ShiguangRoute.Plans) },
+                        icon = {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.ListAlt,
+                                contentDescription = "清单",
+                                tint = if (isPlans) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        label = { Text("清单") },
+                        colors = navItemColors,
+                    )
+                    NavigationBarItem(
+                        selected = !isTodayFamily && !isPlans,
+                        onClick = { nav.navigateTab(ShiguangRoute.Settings) },
+                        icon = {
+                            Icon(
+                                Icons.Outlined.Settings,
+                                contentDescription = "设置",
+                                tint = if (!isTodayFamily && !isPlans) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        label = { Text("设置") },
+                        colors = navItemColors,
+                    )
+                }
+            }
+        },
         floatingActionButton = {
-            // 快记两 Tab 恒在（OP1）；设置页无 FAB
-            if (isToday || isPlans) {
+            // 快记两 Tab 恒在（OP1）；设置页与子路由（详情/编辑器）无 FAB
+            if (isToday || isPlansTab) {
                 val hasDraft by vm.hasDraft.collectAsState()
                 QuickNoteFab(
                     hasDraft = hasDraft,
@@ -310,12 +412,13 @@ fun ShiguangAppShell(modifier: Modifier = Modifier) {
             // 丢失点 #8（Day-2 修订 2026-11-17）：仅保留底部手势带避让；横向保留区曾致
             // 内容两侧各 30dp 额外内缩（+页面 insetLg=46dp 大外边界，用户报「左右没全屏」）。
             // 回退手势区横排透传=系统返回手势区与内容重叠属标准 e2e 行为。
+            // 丢失点 #8（Day-2 五轮修订）：手势带扣减已由 Scaffold bottomBar padding 承担，
+            // 此处再叠 windowInsetsPadding 属重复扣减——内容区底界恒定、导航栏缩减全部
+            // 无效（用户报「总高度一直没降」的真正根因）。横向保留区此前亦已撤销。
             Box(
                 Modifier
                     .padding(padding)
-                    .windowInsetsPadding(
-                        WindowInsets.systemGestures.only(WindowInsetsSides.Bottom),
-                    ),
+                    .nestedScroll(navBarScrollConnection),
             ) {
                 ShiguangNavHost(navController = nav, startDestination = ShiguangRoute.Today) {
                     composable<ShiguangRoute.Today> {

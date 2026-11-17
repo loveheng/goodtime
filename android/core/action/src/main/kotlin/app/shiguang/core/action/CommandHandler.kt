@@ -80,7 +80,7 @@ class CommandHandler(private val repo: BridgeRepositoryPort) {
             for (key in cmd.values.keys) {
                 if (key == SettingsKeys.THEME_MODE || key == SettingsKeys.USER_RULES ||
                     key == SettingsKeys.WEATHER_LOCATION || key == SettingsKeys.EXCEPTIONS ||
-                    key == SettingsKeys.IDENTITY_PROMPT
+                    key == SettingsKeys.IDENTITY_PROMPT || key == SettingsKeys.NAV_AUTO_HIDE
                 ) {
                     throw ActionException(
                         "越权：设置键 $key 仅限用户本人在设置页修改",

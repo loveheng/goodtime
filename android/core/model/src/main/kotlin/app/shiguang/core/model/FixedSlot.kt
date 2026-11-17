@@ -210,11 +210,14 @@ object SettingsKeys {
     const val IDENTITY_PROMPT = "identity_prompt"
     const val THEME_MODE = "theme_mode"
 
+    /** 导航栏下滑隐藏开关（uiOnly 感官偏好，Day-2 UI 走查 2026-11-18 拍板：默认关=常驻）。 */
+    const val NAV_AUTO_HIDE = "nav_auto_hide"
+
     /** 合法键全列（Dart SettingsKeys.all 同序——未知键拒绝 hint 的逐字文案源）。 */
     val ALL = listOf(
         WAKE_TIME, SLEEP_TIME, MIN_BLOCK_MINUTES, DAILY_NEW_BLOCKS_LIMIT,
         TODAY_ENERGY, USER_RULES, WEATHER_LOCATION, EXCEPTIONS,
-        FILL_RATE_LIMIT, THEME_MODE, IDENTITY_PROMPT,
+        FILL_RATE_LIMIT, THEME_MODE, IDENTITY_PROMPT, NAV_AUTO_HIDE,
     )
 
     /** suggest_user_setting 建言落键（app_settings 内部键，不入 ALL 白名单）。 */

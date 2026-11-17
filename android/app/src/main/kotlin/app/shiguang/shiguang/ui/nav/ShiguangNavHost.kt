@@ -1,11 +1,16 @@
 package app.shiguang.shiguang.ui.nav
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.navOptions
+import app.shiguang.core.tokens.StMotion
+import app.shiguang.shiguang.ui.theme.ShiguangMotion
 
 /**
  * 路由薄宿主（P4①-d）：只承载 NavHost 接缝，页面随各页轮以 composable&lt;ShiguangRoute.X&gt;
@@ -18,10 +23,16 @@ fun ShiguangNavHost(
     startDestination: ShiguangRoute = ShiguangRoute.Onboarding,
     builder: NavGraphBuilder.() -> Unit,
 ) {
+    // 导航过渡（ui-design §3.3 2026-11-18 新增档）：页面进出/推入返回统一 220ms ease-out 交叉淡入淡出
+    val navSpec = tween<Float>(StMotion.navTransitionMs, easing = ShiguangMotion.easeOut)
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier,
+        enterTransition = { fadeIn(navSpec) },
+        exitTransition = { fadeOut(navSpec) },
+        popEnterTransition = { fadeIn(navSpec) },
+        popExitTransition = { fadeOut(navSpec) },
         builder = builder,
     )
 }

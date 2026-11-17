@@ -155,6 +155,9 @@ object StScale {
 
 /** 动效时长、曲线与弹簧物理参数（ui-design §3.3 全 app 仅三处微动效）。 */
 object StMotion {
+    /** 导航过渡（ui-design §3.3 2026-11-18 新增档）：页面进出/子路由推入返回的交叉淡入淡出时长。 */
+    const val navTransitionMs: Int = 220
+
     /** 长按触发后的原地坍缩（「只做 5 分钟」）。 */
     const val collapseMs: Int = 300
 

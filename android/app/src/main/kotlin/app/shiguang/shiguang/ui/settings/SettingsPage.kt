@@ -39,6 +39,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerDialog
 import androidx.compose.material3.rememberTimePickerState
@@ -189,7 +190,23 @@ fun SettingsPage(
             }
             Spacer(Modifier.height(StScale.insetLg.dp))
         }
-        // ── 更新区（公告行 N8c 接线：RemoteConfig 快照随 reload 刷新） ──
+        // ── 导航栏（nav_auto_hide uiOnly 键；默认关=常驻，ui-design §3.1 2026-11-18 拍板） ──
+        if (settings != null) {
+            SettingsCard {
+                SectionTitle("导航栏")
+                ListItem(
+                    headlineContent = { Text("下滑时隐藏导航栏") },
+                    supportingContent = { Text("开启后下滑内容自动隐藏底部导航，上滑恢复") },
+                    trailingContent = {
+                        Switch(
+                            checked = settings.strOf("nav_auto_hide") == "true",
+                            onCheckedChange = { vm.setNavAutoHide(it) },
+                        )
+                    },
+                )
+            }
+            Spacer(Modifier.height(StScale.insetLg.dp))
+        }
         SettingsCard {
             SectionTitle("应用更新")
             ListItem(

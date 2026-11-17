@@ -229,6 +229,16 @@ class ResidualHandler(private val repo: BridgeRepositoryPort) {
                 }
                 SettingsKeys.USER_RULES, SettingsKeys.WEATHER_LOCATION, SettingsKeys.IDENTITY_PROMPT ->
                     toSet[key] = v.jsonPrimitive.content
+                SettingsKeys.NAV_AUTO_HIDE -> {
+                    val s = v.jsonPrimitive.content
+                    if (s != "true" && s != "false") {
+                        throw ActionException(
+                            "nav_auto_hide 须为 true/false（下滑隐藏导航栏开关，ui-design §3.1）",
+                            ActionErrorCode.INVALID_REQUEST,
+                        )
+                    }
+                    toSet[key] = s
+                }
                 SettingsKeys.THEME_MODE -> {
                     val s = v.jsonPrimitive.content
                     if (s != "system" && s != "light" && s != "dark") {

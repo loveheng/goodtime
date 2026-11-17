@@ -79,6 +79,7 @@ class ScheduleQueries(private val repo: BridgeRepositoryPort) {
             put("identity_prompt", raw["identity_prompt"]?.let { JsonPrimitive(it) } ?: JsonNull)
             put("exceptions", exceptionsRaw?.let { Json.parseToJsonElement(it) } ?: JsonArray(emptyList()))
             put("theme_mode", raw["theme_mode"] ?: "system")
+            put("nav_auto_hide", raw["nav_auto_hide"] ?: "false")
         }
     }
 

@@ -150,6 +150,14 @@ class SettingsViewModel(
         )
     }
 
+    /** 下滑隐藏导航栏开关（nav_auto_hide uiOnly 键——默认 false=常驻）。 */
+    fun setNavAutoHide(enabled: Boolean) = launchCommand {
+        handler.execute(
+            ScheduleCommand.UpdateSettings(values = mapOf(SettingsKeys.NAV_AUTO_HIDE to JsonPrimitive(enabled))),
+            actor = CommandActor.HUMAN,
+        )
+    }
+
     /** 建议条目移除通道（§B：settingsGet→JSON 过滤→settingsSet 回写——采纳/忽略共用）。 */
     private suspend fun removeSuggestionBy(test: (JsonObject) -> Boolean) = withContext(Dispatchers.IO) {
         val raw = repo.settingsGet(SettingsKeys.AI_SETTING_SUGGESTIONS) ?: return@withContext
