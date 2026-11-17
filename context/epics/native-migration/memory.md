@@ -107,5 +107,5 @@ last-merge: 2026-11-17
 
 
 
-- [断点] 下一步：P5 收尾与切包八项全毕（①切流②Dart 删除③构建链④dogfood⑤Release 验收链⑥协同重置⑦文档重写⑧Day-2 五件）；Day-2 遗留=collab_canvas 入口真机走查未做（编译+单测绿）；下一步=按用户指令或收尾（::done 候选：devlog 待归并 30+ 条待 ::merge）
+- [断点] 下一步：Day-2 全屏修复完成并真机验证（主题 modern 化+系统栏透明+e2e）；遗留=①修复后全页视觉需日常走查复核（分页 inset 语义变化：contentWindowInsets 清零后各页避让回归 TopAppBar/NavigationBar 自带 insets）②dogfood/release 包同修待重装 ③提交待用户指令（全屏修复未入库）
 - [并行] 像素基线采图窗口已前移至 P0 末期–P1：P0 内需定稿「页面 × 状态」枚举范围并确认真机可采（debug 桥 `/debug/screenshot` 端点现成），P2/P3 期间不补采

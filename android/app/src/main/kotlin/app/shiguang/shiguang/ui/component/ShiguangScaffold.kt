@@ -1,6 +1,7 @@
 package app.shiguang.shiguang.ui.component
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -54,6 +55,11 @@ fun ShiguangScaffold(
 ) {
     Scaffold(
         modifier = modifier,
+        // Day-2 全屏修正（用户报「小一圈/大外边界」2026-11-17）：新版 M3 Scaffold
+        // 会把 contentWindowInsets 应用到整个 Surface（表面随系统栏内缩，透明栏下
+        // 露出黑底窗口背景）——清零后表面满窗，系统栏避让回归 TopAppBar/NavigationBar
+        // 自带 insets（M3 默认行为）。
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = snackbarHost,
         topBar = topBar,
         bottomBar = bottomBar,

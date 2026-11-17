@@ -56,6 +56,11 @@ fun ShiguangTheme(
         darkColorScheme(
             primary = Color(palette.deepFocusBg),
             onPrimary = Color(palette.deepFocusText),
+            // Day-2 全屏修正（用户报「小一圈/大外边界」2026-11-17）：M3 1.4 深色基线
+            // surface=纯黑，透明系统栏下 TopAppBar/底部露出黑底与内容区 #141218 断层
+            // ——background/surface 双槽位锁定设计底色，系统栏区无缝融合。
+            background = Color(0xFF141218),
+            surface = Color(0xFF141218),
         )
     } else {
         lightColorScheme(
