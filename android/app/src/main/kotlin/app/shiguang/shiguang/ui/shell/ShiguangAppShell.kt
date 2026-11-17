@@ -307,15 +307,14 @@ fun ShiguangAppShell(modifier: Modifier = Modifier) {
             }
         },
         content = { padding ->
-            // 丢失点 #8：边缘手势保留区——systemGestures（横向+底部）不与内容重叠
-            // （24dp 语义=保留系统手势带；手势→页面透传禁令属逐层 BackHandler 面）
+            // 丢失点 #8（Day-2 修订 2026-11-17）：仅保留底部手势带避让；横向保留区曾致
+            // 内容两侧各 30dp 额外内缩（+页面 insetLg=46dp 大外边界，用户报「左右没全屏」）。
+            // 回退手势区横排透传=系统返回手势区与内容重叠属标准 e2e 行为。
             Box(
                 Modifier
                     .padding(padding)
                     .windowInsetsPadding(
-                        WindowInsets.systemGestures.only(
-                            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-                        ),
+                        WindowInsets.systemGestures.only(WindowInsetsSides.Bottom),
                     ),
             ) {
                 ShiguangNavHost(navController = nav, startDestination = ShiguangRoute.Today) {

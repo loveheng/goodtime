@@ -338,6 +338,7 @@ update_plan：spec="2026-11-20 期末考试，共 3 科：高等数学、大学�
 | 顺延微调 | 单块「+30min」快捷键级联后续 AI 块；human 块不动（2026-10-05 拍板） |
 | 排程死锁 | propose 被拒附 available_free_windows + playbook「先读后排」纪律（2026-10-05 拍板） |
 | 上下文膨胀 | list_plans 默认过滤未完成叶子+就绪态；get_history 恒为聚合非明细（2026-10-05 拍板） |
+| 边缘手势保留区 | 2026-11-17 用户报「左右没全屏」→ Day-2 修订丢失点 #8：壳层 content 只保留底部手势带避让（`systemGestures` Bottom），横向保留区撤销——原横向 30dp×2 内缩叠加页面 insetLg=16dp 致 46dp 大外边界；系统返回手势与内容重叠属标准 e2e 行为（拍板留痕） |
 | 远期硬锚点搭载 | get_schedule 追加 `upcoming_facts`：视窗外（>3 天）~14 天内 structured 凭证只投影 date/title/deadline_min/plan_title 四个轻量字段，补「提前多日整段排行程看不到票」盲区（2026-10-08 拍板，MCP 端到端实测发现的 P1 盲区；原「V1.5 挂账」提前落地，细节见 fact-user-relay-draft §1.6） |
 | 孤儿概念 | 晨间 digest 第一项=超龄孤儿清单，AI 开工先清（2026-10-05 拍板） |
 | 最小澄清 | ≤30min 或琐事类免澄清直接生成叶子行动（2026-10-05 拍板） |
